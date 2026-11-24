@@ -44,7 +44,9 @@ Each item gets a fresh session (`start_session`, `context` "fresh", own
 worktree, the item's `model` and `effort`). The session builds its pull
 request through `/done` until CI is green and the first independent review is
 clean, fixes every finding of that first round itself (a P0 or P1 too), and
-ends with "PR #N ready, first review clean". Then it is done and archived.
+ends with "PR #N ready, first review clean". Then it takes the next planned
+item the coordinator names (section 4, "Finisher takes next item"); it is
+archived only when its last item is merged and no item is left for it.
 
 **The ship lane** (Maxi, 2026-11-24, "One Sonnet ship lane"): one fresh Sonnet
 `medium` session, started in Maxi's turn together with the first build
@@ -236,12 +238,21 @@ before naming a base.
 - Its own cost counts (24.11.2026: at about 470k context each coordinator turn
   rereads all of it, and four helper agents for the dashboard used about 110k
   tokens each while the window ran +32 ahead). In slow and super slow it starts
-  no helper agents and answers notes in one line; past 400k it asks Maxi to run
-  `/compact` with a short focus on the chain state.
-- Archives a session only on Maxi's word.
-- At 400k context of its own: write the state file (memory, `project` type:
-  merged, open, next starts, waiting decisions), tell Maxi to go on in a fresh
-  coordinator that reads it. Not under the option of section 5a.
+  no helper agents and answers notes in one line.
+- Archives its own side sessions without asking once their items are merged or
+  stopped without a pull request (Maxi, 2026-11-23: "archive Items which are
+  done for now and in future", "But just for the chain"); other sessions only on
+  his word.
+- Never stops for its own context either (Maxi, 2026-11-24: "Don't stop the
+  chain any more"): auto compaction carries it. So it keeps the chain state
+  outside its context at all times: `~/.claude/chain/notes.txt` gets a line at
+  every start, merge, mode change and rule from Maxi, and a memory state file
+  (`project` type: merged, running with session ids, next starts, waiting
+  decisions, plan link) is rewritten after every merge. After a compaction it
+  rereads that file, `notes.txt`, this command and the chain memories before
+  its next action (seen 24.11.2026: three Dependabot pull requests sat open and
+  unqueued for seven hours across a compaction).
+- Open Dependabot pull requests go to the ship lane's queue whenever it idles.
 
 ## 5. Usage pacing (in every brief)
 
