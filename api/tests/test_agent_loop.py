@@ -51,6 +51,7 @@ from api.agent.loop import (
     _handoff_summary,
     _judged_again,
     _local_times,
+    _marked_callback,
     _note_allergy_said,
     _order_lines,
     _still_open,
@@ -2926,6 +2927,19 @@ def test_a_model_card_naming_the_guests_health_is_rewritten(state, summary, said
     assert card["reason"] == "human_requested"
     assert card["summary"] == _handoff_summary("human_requested", None)
     assert "Erdnüss" not in card["summary"] and "Zöliakie" not in card["summary"]
+
+
+def test_a_model_card_never_names_the_open_order_reason(state):
+    """`order_open` is the core's own reason, as `outage` is for a transfer
+    (#977): a model card that names it reads "Bestellung offen" for a call
+    where nothing may wait, so it goes out as `not_understood`."""
+    call = ToolCall(
+        "create_callback", {"reason": "order_open", "summary": "Rückruf bitte."}
+    )
+
+    card = _marked_callback(state, call).args
+
+    assert card == {"reason": "not_understood", "summary": "Rückruf bitte."}
 
 
 def test_a_model_card_without_health_stays(state):

@@ -624,6 +624,9 @@ def test_a_call_that_ends_on_the_read_back_leaves_a_card(session, state, order):
 
     card = cards(session, state)
     assert len(card) == 1
+    # Its own reason (#977, Maxi 24.11.2026): "Bestellung offen" on the
+    # tablet, not "Nicht verstanden".
+    assert card[0].reason == "order_open"
     assert card[0].summary.startswith(SUMMARY_READBACK_UNANSWERED)
     assert SUMMARY_OPEN_ORDER in card[0].summary
     assert card[0].phone == CALLER

@@ -230,7 +230,7 @@ Ein Eintrag je Anruf. Grundlage für KPIs und Kostenkontrolle.
 | id | UUID PK | |
 | tenant_id / call_id | UUID FK | |
 | phone | TEXT | |
-| reason | TEXT | `complaint` / `not_understood` / `human_requested` / `out_of_scope` |
+| reason | TEXT | `complaint` / `not_understood` / `human_requested` / `out_of_scope` / `order_open` (an order read back and never answered with a yes, the core's own, migration 045, #977) |
 | summary | TEXT | was der Kunde wollte, in einem Satz |
 | status | TEXT | `open` / `done` |
 | done_by / done_at | TEXT / TIMESTAMPTZ | |

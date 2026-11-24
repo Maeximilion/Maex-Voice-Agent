@@ -163,6 +163,9 @@ _TRANSFER_REASONS = frozenset(get_args(TransferReason)) - {"outage"}
 _CALLBACK_REASON_FALLBACK: CallbackReason = "human_requested"
 # An outage's card keeps the reason it had before #769; its text names the fault.
 _CALLBACK_REASON_FOR: dict[str, CallbackReason] = {"outage": "not_understood"}
+# The card of an order read back and never answered (#977): the core's own
+# reason, as an outage is; a model that names it writes `not_understood`.
+ORDER_OPEN: CallbackReason = "order_open"
 
 _HANDOFF_SUMMARIES = {
     "complaint": "Kunde hat sich beschwert.",
@@ -1107,13 +1110,15 @@ class ConversationLoop:
             and state.order_id is not None
             and (phone := state.slots.get("phone") or state.caller_phone)
         ):
+            # Its own reason (#977): the tablet reads "Bestellung offen", not
+            # "Nicht verstanden".
             card, _ = self._card(
-                state, "not_understood", None, summary=SUMMARY_READBACK_UNANSWERED
+                state, ORDER_OPEN, None, summary=SUMMARY_READBACK_UNANSWERED
             )
             result = self._dispatch(
                 state,
                 "create_callback",
-                {"phone": phone, "reason": "not_understood", "summary": card},
+                {"phone": phone, "reason": ORDER_OPEN, "summary": card},
             )
             apply_tool_result(state, "create_callback", result)
 
@@ -1996,11 +2001,17 @@ def _card_without_allergy(state: ConversationState, call: ToolCall) -> ToolCall:
 
 def _marked_callback(state: ConversationState, call: ToolCall) -> ToolCall:
     """A callback the model writes carries the kitchen marker the core's own
-    cards carry when the guest spoke of an allergy in the call (#940)."""
-    summary = call.args.get("summary")
-    if call.name != "create_callback" or not isinstance(summary, str):
+    cards carry when the guest spoke of an allergy in the call (#940). It
+    never carries `order_open`: that card is the core's (#977), and the
+    tablet would read "Bestellung offen" where nothing may wait."""
+    if call.name != "create_callback":
         return call
-    return ToolCall(call.name, {**call.args, "summary": _marked(state, summary)})
+    args = dict(call.args)
+    if args.get("reason") == ORDER_OPEN:
+        args["reason"] = "not_understood"
+    if isinstance(summary := args.get("summary"), str):
+        args["summary"] = _marked(state, summary)
+    return ToolCall(call.name, args)
 
 
 def _marked(state: ConversationState, card: str) -> str:

@@ -567,7 +567,7 @@ Der einzige Übergang von `draft` nach `confirmed`.
 { "call_id": "…", "tenant_id": "…", "phone": "+49…",
   "reason": "not_understood", "summary": "Möchte eine große Bestellung für Samstag, Leitung war schlecht." }
 ```
-Legt die Aufgabe an, GUI meldet sie mit Ton. `reason`: `complaint` · `not_understood` · `human_requested` · `out_of_scope`
+Legt die Aufgabe an, GUI meldet sie mit Ton. `reason`: `complaint` · `not_understood` · `human_requested` · `out_of_scope` · `order_open`. `order_open` is the conversation core's own, never the model's (a model card that names it is written as `not_understood`): the card of an order read back and not answered with a yes when the call ended (#953, #977), "Bestellung offen" on the tablet.
 
 **Response**
 ```json
