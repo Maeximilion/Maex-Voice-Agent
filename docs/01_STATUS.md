@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.54
+> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.55
 
 ---
 
@@ -147,6 +147,7 @@ Settled assumptions: `docs/HISTORY.md` sections "Made Assumptions (archive)" and
 
 | Date | What |
 |---|---|
+| 24.11.2026 | **#74 (T-9.4): uptime check of `/health` from another machine.** `scripts/uptime_check.py` runs one pass a minute from cron (`deploy/uptime.cron`), standard library only, no account: after 3 failed passes in a row one push "Server not answering" to `ops`, one "Server answering again" on recovery, a failed push is tried again on the next pass. Checked end to end against the push server 2.37.2. Open for Maxi (docs/13 §5): which machine checks the server once it exists, and which push server the phone reads while the server is down. |
 | 24.11.2026 | **#984: restore keeps owners and grants, and the client container reaches a loopback-only port.** `scripts/restore.sh` restores a dump with its owners and grants and carries the settings of the replaced database over; on a server without the roles of the dump it stops with nothing changed and names `db_role.sh` and the new `--without-owners`. `pg_resolve_client` (`scripts/lib_pg.sh`) puts the client container on the host network on Linux with a native Docker engine, so the dev stack's 127.0.0.1-only Postgres is reachable without `BACKUP_DOCKER_NETWORK`; Docker Desktop keeps `host.docker.internal`. Both docs/24 rows closed. | Done |
 | 24.11.2026 | **#982: one helper for the forms of a number.** `deploy/asterisk/render.sh` turns a number into its bare international digits in `digits` (`+` and `00` dropped, a leading `0` becomes `49`), and `same` compares those; `e164` is gone. No behaviour change, the render tests unchanged and green. | Done |
 | 24.11.2026 | **#979: English identifiers in the older GUI code.** The route functions of `api/gui/router.py` and the names in `api/gui/ts/app.ts` are English now; URLs, query keys (`tag`, `ergebnis`, `anliegen` through `Query` aliases), element ids, template names and tablet text are unchanged. | Done |
@@ -185,6 +186,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.55 · 24.11.2026:** #74 (T-9.4): uptime check of /health from another machine, scripts/uptime_check.py from cron, one push on down and one on recovery
 - **v2.69.54 · 24.11.2026:** #984: restore.sh keeps owners, grants and database settings (`--without-owners` for a server without the roles), backup and restore reach a 127.0.0.1-only Postgres from a client container on Linux
 - **v2.69.53 · 24.11.2026:** #982: one helper for the forms of a number in deploy/asterisk/render.sh, no behaviour change
 - **v2.69.51 · 24.11.2026:** #979: English identifiers in the older GUI code (route functions of `api/gui/router.py`, names in `app.ts`), no behaviour change
