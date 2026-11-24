@@ -1104,6 +1104,16 @@ def about_a_dish(
     return not changed or mentions_allergy(own) or names_coeliac(own)
 
 
+def speaks_of_the_allergy(
+    turn: AllergenTurn, state: ConversationState, say: str
+) -> bool:
+    """Do the model's own words of `say` speak of the guest's allergy ("Bei
+    Ihrer Allergie ...")? Holds a retry after a refusal for a dish again
+    (#928, Maxi: R1)."""
+    own = _without_core(turn, state, say)
+    return mentions_allergy(own) or names_coeliac(own)
+
+
 def states_a_price(turn: AllergenTurn, state: ConversationState, say: str) -> bool:
     """Do the model's own words of `say` state a price: the answer to a price
     question (Maxi: option B2), read on the model's sentence, not the guest's

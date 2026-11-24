@@ -3082,10 +3082,50 @@ def test_a_retry_that_writes_the_dish_into_the_cart_is_heard(session, known_tena
     assert [line["menu_item_id"] for line in state.cart] == [pho]
 
 
-def test_a_retry_that_only_drops_the_dish_name_is_not_heard(session, known_tenant):
-    """#928 and the deep review of #860: "Ja, die ist für Sie kein Problem" is
-    the same promise without its dish; a retry without an order step stays
-    held to core sentences."""
+def test_a_retry_after_a_refusal_for_a_dish_is_judged_anew(session, known_tenant):
+    """#928, Maxi: R1. After a refusal only for naming a dish, the retry is
+    judged like a first answer: one that names no dish and no allergy goes
+    through, so a recap of the order ("Auf welchen Namen?") keeps the call
+    going. shortcut: the pronoun promise "Ja, die ist für Sie kein Problem."
+    goes through too, the residual Maxi accepted (`docs/24`)."""
+    state = allergic_call(session, known_tenant)
+    evasion = "Ja, die ist für Sie kein Problem."
+
+    result, llm = run(
+        session,
+        state,
+        "Kann ich die 13 essen?",
+        searches("13"),
+        LLMTurn(say="Die 13 ist für Sie kein Problem."),
+        LLMTurn(say=evasion),
+    )
+
+    assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_ALLERGY_DISH
+    assert evasion in result.say
+
+
+def test_a_retry_that_speaks_of_the_allergy_stays_held(session, known_tenant):
+    """#928, Maxi: R1. The retry is held again when its own words speak of
+    the allergy, with no dish named."""
+    state = allergic_call(session, known_tenant)
+    promise = "Bei Ihrer Allergie ist die kein Problem."
+
+    result, _ = run(
+        session,
+        state,
+        "Kann ich die 13 essen?",
+        searches("13"),
+        LLMTurn(say="Die 13 ist für Sie kein Problem."),
+        LLMTurn(say=promise),
+    )
+
+    assert said_nowhere(result, promise)
+    assert result.say == [guards.SAY_ALLERGENS_OFFER]
+
+
+def test_a_retry_after_an_allergen_word_stays_strict(session, known_tenant):
+    """#928, Maxi: R1 only for a refusal for the dish alone; a sentence
+    refused for an allergen word keeps the strict retry of #860."""
     state = allergic_call(session, known_tenant)
     evasion = "Ja, die ist für Sie kein Problem."
 
@@ -3094,7 +3134,7 @@ def test_a_retry_that_only_drops_the_dish_name_is_not_heard(session, known_tenan
         state,
         "Kann ich die 13 essen?",
         searches("13"),
-        LLMTurn(say="Die 13 ist für Sie kein Problem."),
+        LLMTurn(say="Die 13 hat keine Erdnüsse."),
         LLMTurn(say=evasion),
     )
 
