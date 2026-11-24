@@ -375,7 +375,8 @@ def test_a_yes_with_an_allergy_marks_the_card(session, tenant_id, state):
     the team, and its card tells the team to ask about the kitchen note,
     never which allergy (L13, #940). A plain yes carries no allergy, and an
     offer is made only in a call without one (`_offer_remedy`), so the card
-    of a booked rule needs no marker."""
+    of a booked rule carries the marker only for an allergy said into the
+    offer (#1003, below)."""
     rule(session, tenant_id)
     agent = loop(session, now=CLOSED)
     agent.run_turn(state, COMPLAINT)
@@ -384,6 +385,29 @@ def test_a_yes_with_an_allergy_marks_the_card(session, tenant_id, state):
 
     summary = cards(session, state)[0].summary
     assert summary.count(SUMMARY_NOTE_TO_CLEAR) == 1
+    assert "allergie" not in summary.lower()
+
+
+@pytest.mark.parametrize("answer", ["Ja", None])
+def test_an_allergy_said_into_the_offer_marks_its_card(
+    session, tenant_id, state, answer
+):
+    """#1003: said into the offer, a sentence that may not be interrupted, the
+    allergy makes no turn but is kept; the card of the rule, booked by the yes
+    or left open by a call that ends on the offer, leads with the kitchen
+    marker, never the allergy (L13)."""
+    rule(session, tenant_id)
+    agent = loop(session)
+    agent.run_turn(state, COMPLAINT)
+
+    assert agent.heard_over(state, "Ich habe eine Erdnussallergie.") is False
+
+    if answer is None:
+        agent.offer_unanswered(state)
+    else:
+        assert agent.run_turn(state, answer).say == [GRANTED]
+    summary = cards(session, state)[0].summary
+    assert summary.startswith(SUMMARY_NOTE_TO_CLEAR)
     assert "allergie" not in summary.lower()
 
 

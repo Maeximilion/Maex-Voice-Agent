@@ -1211,18 +1211,47 @@ class ConversationLoop:
                 result = self._dispatch(state, "create_callback", args)
             apply_tool_result(state, "create_callback", result)
 
+    def heard_over(self, state: ConversationState, text: str) -> bool:
+        """Words the guest said into a sentence that may not be interrupted
+        make no turn (`telephony/handler.py`), but an allergy among them is
+        health information like any other sentence of theirs (#1003, L13). True
+        when the words must make a turn after all: a read-back waits for its
+        yes, and its draft cannot carry what was just said. The turn sets it
+        aside and the model drafts again with the note (`_guest_turn`), so the
+        next yes covers it (rule 3). Otherwise the sentence is kept here, for
+        the safety net of every later draft (`guards.unnoted_allergy`) and the
+        kitchen marker of the call's cards."""
+        if not escalation.arms_the_net(text):
+            return False
+        if (
+            state.stage == "readback_pending"
+            and state.remedy_offer is None
+            and state.callback_waits is None
+        ):
+            return True
+        _note_allergy_said(state, text)
+        state.allergy_talk = True
+        return False
+
     def _complaint_card(
         self, state: ConversationState, offer: RemedyOffer, sentence: str
     ) -> ToolResult:
-        """The callback card of a complaint a rule was offered for."""
+        """The callback card of a complaint a rule was offered for. An allergy
+        said into the offer (`heard_over`) marks it like every card of the
+        core (#1003)."""
         card = self._dispatch(
             state,
             "create_callback",
             {
                 "phone": state.slots["phone"],
                 "reason": "complaint",
-                "summary": _handoff_summary(
-                    "complaint", offer.complaint, base=_remedy_card(sentence, offer)
+                "summary": _marked(
+                    state,
+                    _handoff_summary(
+                        "complaint",
+                        offer.complaint,
+                        base=_remedy_card(sentence, offer),
+                    ),
                 ),
             },
         )

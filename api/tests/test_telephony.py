@@ -45,6 +45,7 @@ from api.domain.callbacks.transfer import (
 )
 from api.domain.menu.importer import apply
 from api.domain.menu.items import active_count
+from api.domain.menu.wishes import speaks_of_health
 from api.models import (
     Call,
     Callback,
@@ -2855,3 +2856,80 @@ def test_a_failed_order_card_still_closes_the_call_log(session, tenant, monkeypa
 
     call = the_call(session, sid)
     assert call.ended_at is not None and call.outcome == "abandoned"
+
+
+# -- #1003: an allergy said into a protected sentence reaches the core ------------
+
+
+def _order_read_back(session, tenant, port) -> CallHandler:
+    """An order call up to its read-back, which waits for the guest's yes."""
+    apply(session, tenant.id, menu_plan(), now=NOW)
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    for line in ORDER_READ_BACK[:-1]:
+        handler.on_user_turn("s-1", line["text"])
+    assert handler._live["s-1"].state.stage == "readback_pending"
+    return handler
+
+
+def test_an_allergy_said_into_the_read_back_is_read_back_before_the_yes(
+    session, tenant
+):
+    """#1003, rules 2 and 3, L13: the guest names an allergy while the order is
+    read back. The draft without it is set aside and read out again with the
+    note, so the yes after it books the order the kitchen can cook safely."""
+    port = FakeTelephony()
+    handler = _order_read_back(session, tenant, port)
+    first = port.says("s-1")[-1]
+
+    handler.on_talked_over("s-1", "Ich habe eine Erdnussallergie.")
+
+    state = handler._live["s-1"].state
+    assert state.allergy_said == ["Ich habe eine Erdnussallergie."]
+    assert state.stage == "readback_pending" and state.readback_heard
+    assert port.says("s-1")[-1] != first
+    handler.on_user_turn("s-1", "Ja, passt so.")
+    handler.on_call_ended("s-1")
+
+    orders = session.scalars(
+        select(Order).where(Order.call_id == the_call(session, "s-1").id)
+    ).all()
+    placed = [order for order in orders if order.status != "draft"]
+    assert placed, [order.status for order in orders]
+    assert all(speaks_of_health(order.note or "") for order in placed)
+
+
+def test_a_yes_into_the_read_back_with_no_allergy_makes_no_turn(session, tenant):
+    """Only an allergy makes a turn of words said into the read-back: a yes
+    said there still books nothing (rule 3)."""
+    port = FakeTelephony()
+    handler = _order_read_back(session, tenant, port)
+    said = len(port.says("s-1"))
+
+    handler.on_talked_over("s-1", "Ja, passt so.")
+
+    state = handler._live["s-1"].state
+    assert len(port.says("s-1")) == said
+    assert state.stage == "readback_pending" and not state.allergy_said
+
+
+def test_an_allergy_said_into_another_protected_sentence_is_kept_without_a_turn(
+    session, tenant
+):
+    """#1003: into a sentence that waits for no yes (the AI disclosure, a
+    dish offered) the words still make no turn, and the guest hears nothing
+    new; the allergy is kept for the safety net of every later draft."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    handler.on_user_turn("s-1", "Ich haette gern einen Tisch fuer zwei.")
+    said = len(port.says("s-1"))
+
+    handler.on_talked_over("s-1", "Ich habe eine Nussallergie.")
+
+    state = handler._live["s-1"].state
+    assert len(port.says("s-1")) == said
+    assert state.allergy_said == ["Ich habe eine Nussallergie."]
+    assert state.allergy_talk
