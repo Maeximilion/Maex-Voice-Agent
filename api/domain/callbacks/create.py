@@ -184,14 +184,17 @@ def booked(session: Session, tenant_id: uuid.UUID, call_id: uuid.UUID) -> str | 
         for table in tables
     ]
     for order in orders:
-        line = _ORDER_BOOKED[order.type].format(name=order.customer_name)
-        if order.pickup_code:
-            line += f", Code {order.pickup_code}"
-        named.append((order.created_at, line))
+        named.append((order.created_at, order_line(order)))
     if not named:
         return None
     named.sort(key=lambda entry: entry[0])
     return f"{SUMMARY_BOOKED} {'; '.join(line for _, line in named)}."
+
+
+def order_line(order: Order) -> str:
+    """An order as a card names it: its kind, the guest's name, its code."""
+    line = _ORDER_BOOKED[order.type].format(name=order.customer_name)
+    return f"{line}, Code {order.pickup_code}" if order.pickup_code else line
 
 
 def _with_bookings(summary: str, bookings: str | None) -> str:
