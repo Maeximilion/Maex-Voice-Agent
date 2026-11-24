@@ -51,7 +51,8 @@ ends with "PR #N ready, first review clean". Then it is done and archived.
 sessions of the chain, ships the queue: it waits until the coordinator sends
 "ship #N", merges `origin/main` in, gets CI, Codex and the evals on the new
 head, fixes what that round finds, merges, messages the coordinator "merged
-#N", and waits for the next "ship #N". One pull request merges at a time
+#N" before anything else (no sleep or pause comes between the merge and that
+message; Maxi, 2026-11-24), and waits for the next "ship #N". One pull request merges at a time
 anyway, so one lane is enough. Why: a long build session ships in a big Opus
 context, and every CI or Codex wake rereads all of it; the ship lane rereads a
 small Sonnet context. A P1 in an `xhigh` path of the ship round is fixed on
@@ -186,9 +187,15 @@ before naming a base.
   anyway, so there the heartbeat costs nothing. No `CronCreate`.
 - On every child note or milestone message (section 2, item 12): read
   `get_usage`, check the merge with `gh pr view`, update the dashboard in that
-  same turn, answer in one or two lines. A note is the child's report, not
+  same turn, before anything else (a "merged #N" sets the item to done at once;
+  24.11.2026 #968 stayed active after its merge because this was skipped), answer in one or two lines. A note is the child's report, not
   proof. The dashboard stays the coordinator's: its state is per session and
   each update replaces the whole list, so children cannot write to it.
+- Its own cost counts (24.11.2026: at about 470k context each coordinator turn
+  rereads all of it, and four helper agents for the dashboard used about 110k
+  tokens each while the window ran +32 ahead). In slow and super slow it starts
+  no helper agents and answers notes in one line; past 400k it asks Maxi to run
+  `/compact` with a short focus on the chain state.
 - Archives a session only on Maxi's word.
 - At 400k context of its own: write the state file (memory, `project` type:
   merged, open, next starts, waiting decisions), tell Maxi to go on in a fresh
@@ -239,7 +246,7 @@ step holds two).
 | Mode | On at | Back at | Lanes | Heavy steps |
 |---|---|---|---|---|
 | Super slow | over +15 | +5 or below, to slow | 1; every other build session pauses with background sleeps of 50 minutes, renewed on each wake | wait for slow or normal |
-| Slow | over +5 in the first hour, +10 in the middle, +5 in the last 2 hours | to normal at -20 or below in the first hour, -15 in the middle, -5 in the last 2 hours | 2, a 30-minute sleep between parts | one at a time, it holds both lanes |
+| Slow | over +5 in the first hour, +10 in the middle, +5 in the last 2 hours | to normal at -20 or below in the first hour, -15 in the middle, -5 in the last 2 hours | 2, a 45-minute sleep between parts | one at a time, it holds both lanes |
 | Normal | | | 3 | as section 3 |
 | Turbo | under -25 | -10 or above, to normal | up to 5, never above today's row of "Agents per weekday" | as section 3 |
 
@@ -247,9 +254,21 @@ From normal, over +15 goes straight to super slow. When turbo ends, running
 sessions finish their job; only no new start beyond the new count (Maxi: "let
 the lanes get the Job done (no force break)"). In super slow (Maxi,
 2026-11-24) all build sessions but one pause with 50-minute sleeps, renewed on
-each wake, so none falls into a cold cache; when the running one is done, a
-paused item takes its lane over ("go on #N"). The pauses of the first table
-still hold in every mode.
+each wake, so none falls into a cold cache. Each paused session renews its own
+sleep; the coordinator sends no heartbeat (a wake under 60 minutes keeps the
+cache warm and costs one request).
+
+When the running lane frees in super slow, it stays empty until the next
+paused session wakes on its own, at most 50 minutes later (Maxi, 2026-11-24:
+"no new Item get's in the free lane until the pause of 50 Minutes run out").
+The coordinator writes the next item in order, for example `#952`, into the
+baton file `~/.claude/chain/next-lane.txt` (otherwise it holds `none`) and
+sends no message. On every wake a paused session reads that file: when it
+names its own item, it takes the lane, sends the coordinator "lane taken #N"
+and goes on; otherwise it renews its 50-minute sleep. The coordinator writes
+`none` again on "lane taken". If the named session has not taken the lane 60
+minutes after the file was written, the coordinator sends it "go on #N".
+The pauses of the first table still hold in every mode.
 
 A side quest Maxi starts during a chain (a measurement, a question for a
 session) counts as a lane. When it takes the chain above the lanes of its mode,
@@ -264,8 +283,8 @@ thinking"):
 - The next start is the first open item routed to Sonnet or Haiku, or to a
   lower effort; Opus items wait for normal mode unless none of the cheap kind
   is left.
-- A session takes one background `sleep 1800` (30 minutes; Maxi, 2026-11-24,
-  was 15) after each finished part of its work, before it starts the next
+- A session takes one background `sleep 2700` (45 minutes; Maxi, 2026-11-24,
+  was 15, then 30) after each finished part of its work, before it starts the next
   part; a paused session in super slow sleeps 50 minutes. Measured on 23.11.2026
   (6,000 requests of three days): a wake after any wait under 60 minutes costs
   the same as one working request, because the cache is kept for an hour; the
