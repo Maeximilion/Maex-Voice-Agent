@@ -3402,6 +3402,57 @@ def test_a_price_asked_with_an_option_never_gets_the_base_price(session, known_t
     assert result.say == [guards.SAY_ALLERGENS_OFFER]
 
 
+def test_a_plain_search_of_the_same_dish_gives_no_base_price_for_an_option(
+    session, known_tenant
+):
+    """Codex review of #928 (P1): the model searches "47" and then "47 mit
+    Huhn" in one turn; the plain hit must not price the dish asked with its
+    option."""
+    state = allergic_call(session, known_tenant)
+    answer = "Die 47 mit Huhn kostet 14,50 Euro."
+
+    result, _ = run(
+        session,
+        state,
+        "Was kostet die 47 mit Huhn?",
+        searches("47"),
+        searches("47 mit Huhn"),
+        LLMTurn(say=answer),
+        LLMTurn(say=answer),
+    )
+
+    assert said_nowhere(result, "15 Euro 50")
+    assert result.say == [guards.SAY_ALLERGENS_OFFER]
+
+
+@pytest.mark.parametrize("own", [False, True])
+def test_the_candidates_of_an_unclear_part_reach_the_guest(session, own):
+    """Codex review of #928 (P2): with several parts the candidate question of
+    the unclear one is that part's `say`; the retry may say it, and a second
+    refusal says it for the model."""
+    tenant = search_tenant(session)
+    state = allergic_call(session, tenant)
+    query = "eine Suppe und die 23"
+    data = dispatch(
+        session, state.call_id, tenant, "search_menu", {"query": query}, now=NOW
+    ).data
+    assert data["match_type"] == "positions"
+    [question] = [p["say"] for p in data["positions"] if p.get("say")]
+    assert question.startswith("Meinen Sie Nummer 12")
+    worded = "Meinen Sie bei der Suppe die 12 oder die 13?"
+
+    result, _ = run(
+        session,
+        state,
+        "Ich hätte gern eine Suppe und die 23.",
+        searches(query),
+        LLMTurn(say=worded),
+        LLMTurn(say=worded if own else question),
+    )
+
+    assert result.say == [question]
+
+
 def test_a_dish_no_search_of_the_turn_found_gets_the_offer(session, known_tenant):
     """#928: the price comes only from a hit of this turn; a dish known from
     an earlier turn gets the offer."""

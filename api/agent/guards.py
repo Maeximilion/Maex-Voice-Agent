@@ -744,6 +744,9 @@ class AllergenTurn:
     # Every hit this turn's searches without a wish delivered, by its id: the
     # database's price for `price_says` (#928).
     found: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # The dishes a search of this turn delivered with a wish ("die 47 mit
+    # Huhn"): their price is not the card's, whatever other search found them.
+    wished: set[str] = field(default_factory=set)
     # The searches' sentences among `tool_says` (`about_a_dish`).
     search_says: list[str] = field(default_factory=list)
     # The `tool_says` that tell the guest something: all but a search's repeat
@@ -822,25 +825,26 @@ def note_tool(
 ) -> None:
     """Records what a tool that ran in this turn delivered."""
     data = result.data or {}
-    if result.say and not (name == "search_menu" and _allergen_wish(data)):
-        turn.tool_says.append(result.say)
-        if name == "search_menu":
-            turn.search_says.append(result.say)
-        if not (name == "search_menu" and _echoes(data)):
-            turn.answers.append(result.say)
+    _note_say(turn, name, result.say, data)
     if not result.ok:
         return
     if name == "search_menu":
-        parts = (
-            data.get("positions") if data.get("match_type") == "positions" else [data]
-        )
+        positions = data.get("match_type") == "positions"
+        parts = data.get("positions") if positions else [data]
         for part in parts or []:
+            if positions:
+                # A part's own sentence: the candidates of an unclear part,
+                # sold out, not on the card (Codex review of #928).
+                _note_say(turn, name, part.get("say"), part)
             for hit in part.get("results") or []:
                 turn.dish_touched = True
-                if not part.get("wish"):
+                item_id = str(hit.get("menu_item_id"))
+                if part.get("wish"):
                     # Asked with a wish ("die 47 mit Huhn") the dish costs
-                    # other than the hit's price (#928).
-                    turn.found[str(hit.get("menu_item_id"))] = hit
+                    # other than the hit's price (#928, Codex review).
+                    turn.wished.add(item_id)
+                else:
+                    turn.found[item_id] = hit
                 _menu_text(turn, hit, _codes(hit.get("name"), *_option_names(hit)))
     elif name == "get_item_details":
         turn.dish_touched = True
@@ -858,6 +862,22 @@ def note_tool(
             turn.noted_in_draft = turn.noted_in_draft or bool(
                 HEALTH_NOTE_RE.search(note)
             )
+
+
+def _note_say(
+    turn: AllergenTurn, name: str, said: str | None, data: dict[str, Any]
+) -> None:
+    """A tool's sentence is a core string the model may repeat, unless it
+    carries the model's words of an allergen wish; all but a search's echo
+    tell the guest something (`AllergenTurn.answers`)."""
+    if not said or (name == "search_menu" and _allergen_wish(data)):
+        return
+    turn.tool_says.append(said)
+    if name == "search_menu":
+        turn.search_says.append(said)
+        if _echoes(data):
+            return
+    turn.answers.append(said)
 
 
 def _echoes(data: dict[str, Any]) -> bool:
@@ -1096,15 +1116,17 @@ def price_says(turn: AllergenTurn, state: ConversationState, say: str) -> list[s
     found without a wish: its price from the hit, which is the database
     (rule 1), or that it is sold out. What the guest hears in place of a
     refused sentence that states a price (#928, Maxi: option B2).
-    shortcut: the base price without options, as the card prints it; a hit of
-    a search with a wish ("die 47 mit Huhn") is left out, its own sentence
-    names the difference."""
+    shortcut: the base price without options, as the card prints it; a dish
+    any search of the turn delivered with a wish ("die 47 mit Huhn") is left
+    out, its own sentence names the difference."""
     own = _without_core(turn, state, say)
     named = _dishes_said(state, _with_search_says(turn, say, own))
     return [
         _price_say(hit)
         for item_id, hit in turn.found.items()
-        if item_id in named and isinstance(hit.get("price_cents"), int)
+        if item_id in named
+        and item_id not in turn.wished
+        and isinstance(hit.get("price_cents"), int)
     ]
 
 

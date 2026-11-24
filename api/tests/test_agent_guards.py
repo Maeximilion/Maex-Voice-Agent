@@ -2279,6 +2279,47 @@ def test_a_dish_searched_with_a_wish_gets_no_base_price():
     assert turn.answers == []
 
 
+@pytest.mark.parametrize("wish_first", [False, True])
+def test_a_dish_searched_with_a_wish_anywhere_in_the_turn_gets_no_base_price(
+    wish_first,
+):
+    """Codex review of #928 (P1): "47" and "47 mit Huhn" searched in one turn,
+    in either order: the price asked is not the card's."""
+    state = new_state()
+    ente = _dish_seen(state, "47", "Ente knusprig")
+    turn = begin_allergen_turn(state, "Was kostet die 47 mit Huhn?", kept=False)
+    wishes = [None, {"kind": "option", "text": "mit Huhn"}]
+    for wish in reversed(wishes) if wish_first else wishes:
+        _hit_found(turn, ente, "47", "Ente knusprig", 1550, wish=wish)
+
+    assert price_says(turn, state, "Die 47 mit Huhn kostet 14,50 Euro.") == []
+
+
+def test_the_sentence_of_a_part_of_a_search_is_a_core_sentence():
+    """Codex review of #928 (P2): with several parts the candidates of an
+    unclear one are in that part's `say`, not in the search's."""
+    state = new_state()
+    turn = begin_allergen_turn(state, "Eine Suppe und die 23.", kept=False)
+    question = "Meinen Sie Nummer 12, Wan-Tan-Suppe oder Nummer 13, Pho Bo?"
+    data = {
+        "match_type": "positions",
+        "positions": [
+            {
+                "query": "eine Suppe",
+                "ok": True,
+                "match_type": "ambiguous",
+                "say": question,
+            },
+            {"query": "die 23", "ok": True, "match_type": "exact_number"},
+        ],
+    }
+    result = ToolResult(ok=True, data=data, say="Gern, Nummer 23.")
+    note_tool(turn, "search_menu", result, {"query": "eine Suppe und die 23"})
+
+    assert core_only(turn, state, question)
+    assert turn.answers == [question]
+
+
 def test_a_suitability_promise_states_no_price():
     """Deep review of #928: only a sentence with an amount gets the core's
     price; "kein Problem" is no price question."""

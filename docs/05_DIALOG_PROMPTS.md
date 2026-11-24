@@ -260,14 +260,15 @@ up (`guards.is_open`)
        judged as an order step; one without an order step stays held, so
        "Ja, die ist für Sie kein Problem" after the refusal is not heard. A
        refused sentence that states a price (an amount in euro or cent) of
-       a dish this turn's search found without a wish gets the core's
-       sentence at once, with no retry: its price from the database ("Die
-       13, Pho Bo, kostet 11 Euro 90.", the base price) or that it is out
-       today (Maxi 24.11.2026, option B2, `guards.price_says`). A second
-       refusal ends as above, except that it says the turn's tool sentences
-       that tell the guest something (a sold-out dish, the candidates of an
-       unclear search) instead of the offer; never a search's echo of a
-       clear hit, which after "Kann ich die 13 essen?" sounds like a yes.
+       a dish this turn's search found, and no search of the turn with a
+       wish, gets the core's sentence at once, with no retry: its price
+       from the database ("Die 13, Pho Bo, kostet 11 Euro 90.", the base
+       price) or that it is out today (Maxi 24.11.2026, option B2,
+       `guards.price_says`). A second refusal ends as above, except that it
+       says the turn's tool sentences that tell the guest something (a
+       sold-out dish, the candidates of an unclear search or of an unclear
+       part of one) instead of the offer; never a search's echo of a clear
+       hit, which after "Kann ich die 13 essen?" sounds like a yes.
        Not in an open turn: a price is no answer to an allergen question.
        Accepted cost (docs/24): a question or recap about a dish without an
        order step in its turn ("Möchten Sie die 47 mit Ente oder mit
