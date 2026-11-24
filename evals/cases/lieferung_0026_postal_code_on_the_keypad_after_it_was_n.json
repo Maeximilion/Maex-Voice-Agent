@@ -65,7 +65,10 @@
       "check_delivery",
       {
         "tool": "check_delivery",
-        "error": "invalid_input"
+        "error": "invalid_input",
+        "args": {
+          "postal_code": "1234"
+        }
       }
     ],
     "order_type": "delivery"

@@ -70,7 +70,11 @@
       "check_delivery",
       {
         "tool": "draft_order",
-        "error": "invalid_input"
+        "error": "invalid_input",
+        "args": {
+          "type": "delivery",
+          "customer.name": "Neumann"
+        }
       }
     ],
     "order_type": "delivery",

@@ -53,7 +53,10 @@
     "tools": [
       {
         "tool": "check_delivery",
-        "error": "out_of_zone"
+        "error": "out_of_zone",
+        "args": {
+          "postal_code": "54321"
+        }
       }
     ],
     "order_type": "pickup"

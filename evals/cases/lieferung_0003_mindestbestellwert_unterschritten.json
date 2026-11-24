@@ -37,7 +37,11 @@
       "check_delivery",
       {
         "tool": "draft_order",
-        "error": "below_minimum"
+        "error": "below_minimum",
+        "args": {
+          "type": "delivery",
+          "customer.address.postal_code": "12345"
+        }
       }
     ]
   }
