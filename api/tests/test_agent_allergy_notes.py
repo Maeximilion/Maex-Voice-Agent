@@ -845,10 +845,7 @@ def test_a_second_allergy_the_model_leaves_out_twice_gets_the_guests_words(
     assert state.order_note is not None and "Sesam" in state.order_note
 
 
-def test_the_model_may_ask_for_which_dish_a_later_allergy_is(session, known_tenant):
-    """Maxi (#929): unclear for which dish, the model asks with the fixed
-    question, a core sentence of the allergy turn; the answer is kept for the
-    net, and the draft that notes it passes."""
+def _peanut_drafted(session, known_tenant) -> ConversationState:
     state = state_for(session, known_tenant, phone=CALLER)
     run(
         session,
@@ -858,6 +855,15 @@ def test_the_model_may_ask_for_which_dish_a_later_allergy_is(session, known_tena
         draft(session, known_tenant, line_note=PEANUT_NOTE),
         LLMTurn(say=SAY_ALLERGY_NOTED),
     )
+    return state
+
+
+def test_the_model_may_ask_for_which_dish_a_later_allergy_is(session, known_tenant):
+    """Maxi (#929): unclear for which dish, the model asks with the fixed
+    question, a core sentence of the allergy turn. The answer names a dish,
+    not an allergy: it is not kept for the net (deep review), and the draft
+    that notes the sesame passes."""
+    state = _peanut_drafted(session, known_tenant)
 
     asked, _ = run(
         session,
@@ -868,7 +874,6 @@ def test_the_model_may_ask_for_which_dish_a_later_allergy_is(session, known_tena
     )
     assert asked.say == [guards.SAY_ASK_ALLERGY_DISH]
     assert state.stage != "readback_pending"
-    assert state.allergen_question_codes == []
 
     both = f"{PEANUT_NOTE}. WICHTIG !!! Allergie (Frau): Sesam"
     run(
@@ -879,9 +884,51 @@ def test_the_model_may_ask_for_which_dish_a_later_allergy_is(session, known_tena
         LLMTurn(say=SAY_ALLERGY_NOTED),
     )
 
-    assert state.allergy_said == [PEANUT, LATER_SESAME, "Für die Pho Bo."]
+    assert state.allergy_said == [PEANUT, LATER_SESAME]
     assert drafts_logged(session, state) == [None, "invalid_input", None]
     assert state.cart[0].get("note") == both
+
+
+def test_after_the_dish_question_a_draft_without_it_gets_the_guests_words(
+    session, known_tenant
+):
+    """The hint was given the turn before: the answer turn's draft without the
+    sesame gets the guest's words at once, never the question again each
+    turn (deep review)."""
+    state = _peanut_drafted(session, known_tenant)
+    run(
+        session,
+        state,
+        LATER_SESAME,
+        draft(session, known_tenant, line_note=PEANUT_NOTE),
+        LLMTurn(say=guards.SAY_ASK_ALLERGY_DISH),
+    )
+
+    run(
+        session,
+        state,
+        "Für die Pho Bo.",
+        draft(session, known_tenant, line_note=PEANUT_NOTE),
+        LLMTurn(say=SAY_ALLERGY_NOTED),
+    )
+
+    assert drafts_logged(session, state) == [None, "invalid_input", None]
+    assert state.order_note is not None and "keinen Sesam" in state.order_note
+
+
+def test_the_dish_question_leaves_an_open_allergen_question_open(session, known_tenant):
+    """Only "Worauf genau ...?" is answered by an allergen; the dish question
+    must not clear the letters a turn left open (deep review)."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    run(
+        session,
+        state,
+        "Ich habe eine Erdnussallergie, ist Sesam in der Pho Bo?",
+        LLMTurn(say=guards.SAY_ASK_ALLERGY_DISH),
+    )
+
+    assert "N" in state.allergen_question_codes
 
 
 def _two(*notes: tuple[str | None, str | None]) -> ToolCall:
@@ -939,11 +986,64 @@ def test_an_answer_to_the_question_counts_with_all_it_names():
     assert "„Gegen Sesam“" in (refused.hint or "")
 
 
+@pytest.mark.parametrize(
+    "later",
+    [
+        # Coeliac disease names no letter but gluten (deep review).
+        "Und meine Frau hat Zöliakie.",
+        # An ingredient without a letter, by its word.
+        "Ach und meine Frau hat eine Kiwiallergie.",
+        # The allergen in a sentence of its own beside the health one.
+        "Meine Frau hat eine Allergie. Sesam.",
+        "Sesam darf meine Frau nicht essen, sie ist allergisch.",
+    ],
+)
+def test_a_later_allergy_without_its_letter_on_the_first_note_goes_back(later):
+    state = _named()
+    state.allergy_said = [PEANUT, later]
+
+    refused = guards.unnoted_allergy(state, _two((PEANUT_NOTE, None)))
+
+    assert refused is not None
+    assert later.rstrip(".") in (refused.hint or "")
+
+
+@pytest.mark.parametrize(
+    ("later", "note"),
+    [
+        ("Und meine Frau hat Zöliakie.", "WICHTIG !!! Zöliakie (Frau)"),
+        ("Und meine Frau hat Zöliakie.", "WICHTIG !!! Frau: kein Gluten, Allergie"),
+        ("Ach und meine Frau hat eine Kiwiallergie.", "WICHTIG !!! Allergie: Kiwi"),
+    ],
+)
+def test_coeliac_disease_and_an_ingredient_pass_on_a_note_that_names_them(later, note):
+    state = _named()
+    state.allergy_said = [PEANUT, later]
+
+    call = _two((PEANUT_NOTE, None), (note, None))
+
+    assert guards.unnoted_allergy(state, call) is None
+
+
 def test_a_note_without_a_health_word_does_not_count_for_the_letters():
     """ "ohne Sesam" is no health note: the retention job would keep it (L13),
     and the kitchen reads it as a wish."""
     call = _two((PEANUT_NOTE, None), ("ohne Sesam", None))
     assert guards.unnoted_allergy(_peanut_then_sesame(), call) is not None
+
+
+@pytest.mark.parametrize(
+    ("note", "passes"),
+    [
+        # A denied allergy says the opposite of the wife's (deep review).
+        ("WICHTIG !!! Allergie: Erdnuss, keine Sesamallergie", False),
+        # "kein Sesam" is what the kitchen must do: it covers it.
+        ("WICHTIG !!! Erdnussallergie, kein Sesam", True),
+    ],
+)
+def test_a_note_counts_what_it_asks_not_what_it_denies(note, passes):
+    call = _two((note, None))
+    assert (guards.unnoted_allergy(_peanut_then_sesame(), call) is None) is passes
 
 
 @pytest.mark.parametrize(
@@ -955,6 +1055,10 @@ def test_a_note_without_a_health_word_does_not_count_for_the_letters():
         "Die Nudeln mit Garnelen, ich habe eine Erdnussallergie.",
         # Nor a wish before the part about health: no cheese allergy.
         "Die 13 mit extra Käse, ich habe eine Erdnussallergie.",
+        # Nor a wish, a question or an allowance behind it (deep review).
+        "Ich habe eine Erdnussallergie, bitte extra Sesam.",
+        "Ich habe eine Erdnussallergie, ist Sesam in der 13?",
+        "Ich habe eine Erdnussallergie, Sesam ist kein Problem.",
     ],
 )
 def test_letters_the_guest_did_not_name_as_theirs_ask_for_no_note(said):
@@ -965,12 +1069,48 @@ def test_letters_the_guest_did_not_name_as_theirs_ask_for_no_note(said):
     assert guards.unnoted_allergy(state, _two((PEANUT_NOTE, None))) is None
 
 
-def test_the_guests_words_replace_their_earlier_block_never_twice():
-    """A redraft carries the core's earlier "Gast sagte" block; the new one
-    takes its place, so no sentence is noted twice and the cut keeps room
-    (#929)."""
+def test_an_allergy_taken_back_later_is_not_asked_for():
+    """ "Nein, doch keine Erdnussallergie." after the peanut: a sesame note
+    alone passes, and no hint asks for the peanut (deep review)."""
+    state = _named()
+    state.allergy_said = [PEANUT, LATER_SESAME, "Nein, doch keine Erdnussallergie."]
+
+    call = _two(("WICHTIG !!! Allergie (Frau): Sesam", None))
+
+    assert guards.unnoted_allergy(state, call) is None
+
+
+def test_the_hint_asks_for_the_guests_words():
+    """A wish in the quoted sentence must not become an allergy: the model
+    writes the guest's words, never its reading of them (deep review)."""
+    refused = guards.unnoted_allergy(_peanut_then_sesame(), _two((PEANUT_NOTE, None)))
+
+    assert refused is not None
+    assert "Worte des Gastes" in (refused.hint or "")
+
+
+def test_a_table_gets_no_question_about_a_dish():
+    """A reservation has no dish to ask about: the hint asks for the guest's
+    words on the table (deep review)."""
+    table = ToolCall("create_reservation", {"note": PEANUT_NOTE})
+
+    refused = guards.unnoted_allergy(_peanut_then_sesame(), table)
+
+    assert refused is not None
+    assert guards.SAY_ASK_ALLERGY_DISH not in (refused.hint or "")
+    assert "an den Tisch" in (refused.hint or "")
+
+
+@pytest.mark.parametrize(
+    "block",
+    ["WICHTIG !!! Gast sagte:", "Wichtig!!! Gast sagte:", "WICHTIG !!! gast sagte :"],
+)
+def test_the_guests_words_replace_their_earlier_block_never_twice(block):
+    """A redraft carries the core's earlier "Gast sagte" block, also as a
+    model copied it; the new one takes its place, so no sentence is noted
+    twice and the cut keeps room (#929, deep review)."""
     state = _peanut_then_sesame()
-    earlier = f"bitte klingeln. WICHTIG !!! Gast sagte: {PEANUT.rstrip('.')}"
+    earlier = f"bitte klingeln. {block} {PEANUT.rstrip('.')}"
     call = ToolCall("draft_order", {"items": [], "note": earlier})
 
     noted = guards.with_the_guests_words(state, call)

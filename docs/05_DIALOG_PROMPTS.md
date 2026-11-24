@@ -285,9 +285,9 @@ up (`guards.is_open`)
    answer (`allergen_question_open`), also after the offer that ends a
    refused sentence of a turn that was not open (#928); the letters nothing explained are
    kept (`allergen_question_codes`), except after "Worauf genau soll die
-   Küche achten?" or "Für welches Gericht soll die Küche darauf achten?",
-   whose answer comes next and is kept like the answer to the model's own
-   question. A second turn in a row goes to
+   Küche achten?", whose answer comes next. "Für welches Gericht soll die
+   Küche darauf achten?" clears none: its answer names a dish, not an
+   allergen, and is not kept for the safety net. A second turn in a row goes to
    the team when it ends in the offer again or leaves one of those letters
    unexplained again, whatever core sentence it ends in (`guards.left_twice`);
    decided by where the words come from, never by telling a question from a
@@ -385,20 +385,31 @@ eine Sesamallergie") (Maxi, 15.11.2026, #736, #763)
      `guards.with_the_guests_words`); when the cut to the field would drop
      what a kept sentence names, the team takes the call instead. Every
      allergen a kept sentence names as what someone reacts to must be on
-     such a note, compared by letter (`allergens_named`): read from the
-     sentence's part about health on (`guards.reacts_to`, so "Die 13 mit
-     extra Käse, ich habe eine Nussallergie" asks for no cheese), an answer
-     such as "Gegen Sesam." with all it names, plain names of dishes the
-     call found aside. A second allergy
-     said after the read-back ("Ach, und meine Frau verträgt keinen
+     such a note (#929, Maxi 24.11.2026), compared by letter
+     (`allergens_named`, coeliac disease as gluten), an ingredient without a
+     letter ("Kiwi") by its word. A sentence with a health word is read in
+     its parts that speak of health ("Ich habe eine Erdnussallergie, bitte
+     extra Sesam" or "..., Sesam ist kein Problem" asks for no sesame), and
+     in all it says when those parts name nothing ("Ich habe eine Allergie,
+     gegen Erdnüsse.", "Meine Frau hat eine Allergie. Sesam."); an answer
+     without one ("Gegen Sesam.") with all it names; what a part only
+     denies, plain names of dishes the call found and what a later sentence
+     takes back ("Nein, doch keine Erdnussallergie.") aside. A note counts
+     what it asks for ("kein Sesam"), not an allergy it denies. So a second
+     allergy said after the read-back ("Ach, und meine Frau verträgt keinen
      Sesam.") does not pass on the first one's note. The draft goes back
-     once with only the sentences no note covers; the hint says to note the
-     allergy as the guest said it on the dish named right before, for everyone on the order or table,
-     or, unclear for which dish, to ask "Für welches Gericht soll die Küche
-     darauf achten?" (#929, Maxi 24.11.2026). Sent again without, the core's
-     "Gast sagte" block holds every kept sentence; a block a redraft carries
-     from before is replaced, never written twice. An allergy named only by
-     an ingredient ("Kiwi") has no letter and needs any health note. A note that promises a dish free of
+     once with only the sentences no note covers; the hint asks for the
+     guest's words, never a reading of them, as "WICHTIG !!! <words>" on
+     the dish named right before or on the order, or, unclear for which
+     dish, for "Für welches Gericht soll die Küche darauf achten?"; a table
+     gets them on its note. After that question the hint counts as given:
+     a draft without the allergy in the answer turn gets the guest's words
+     from the core at once. Sent again without, the core's "Gast sagte"
+     block holds every kept sentence; a block a redraft carries from before
+     (in any case or spacing) is replaced, never written twice. Residual: a
+     wish in the same part as the health word or behind one that names
+     nothing ("Meine Frau ist allergisch, ich nehme die Garnelen") asks for
+     its letter too; the guest's words then carry it. A note that promises a dish free of
      something ("nussfrei", "keine Spuren") goes back too
      (`guards.claims_in_a_note`)
    → the menu search still splits an allergy said behind a dish off as its

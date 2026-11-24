@@ -157,12 +157,18 @@ _HINT_UNNOTED_SAID = (
 )
 # A health note stands, but an allergen the guest named later is on none
 # (#929, Maxi 24.11.2026: ask for the dish, or the dish named right before).
+# The guest's own words, never a reading of them: a wish or a question in
+# the quoted sentence ("..., bitte extra Sesam") must not become an allergy.
 HINT_UNNOTED_LATER = "Abgelehnt: kein `note` nennt die Allergie aus „{said}“."
-_HINT_UNNOTED_LATER_WHERE = (
-    " Notiere sie, wie der Gast sie gesagt hat, als WICHTIG-Hinweis: am "
-    "Gericht, das er direkt davor genannt hat, wenn sie dafür gilt, für alle "
-    "an der Bestellung oder am Tisch, und ruf denselben Schritt noch einmal "
-    "auf. Ist unklar, für welches Gericht, sag nur „{ask}“"
+_HINT_LATER_ORDER = (
+    " Schreib die Worte des Gastes als „WICHTIG !!! <seine Worte>“ an das "
+    "Gericht, das er direkt davor genannt hat, wenn sie dafür gelten, sonst an "
+    "die Bestellung, und ruf denselben Schritt noch einmal auf. Ist unklar, für "
+    "welches Gericht, sag nur „{ask}“"
+)
+_HINT_LATER_TABLE = (
+    " Schreib die Worte des Gastes als „WICHTIG !!! <seine Worte>“ an den Tisch "
+    "und ruf denselben Schritt noch einmal auf."
 )
 HINT_NOTE_CLAIM = (
     "Abgelehnt: ein `note` sagt etwas über ein Gericht (frei von etwas, sicher, "
@@ -654,9 +660,12 @@ SAY_ALLERGENS_OFFER = (
     "Wenn ich für ein Gericht die Allergene nachsehen soll, nennen Sie mir bitte "
     "seine Nummer."
 )
-# The fixed questions whose answer the guest gives next.
-ASKS_ABOUT_THE_ALLERGY = (SAY_ASK_ALLERGY, SAY_ASK_ALLERGY_DISH)
-FIXED_ALLERGY_SAYS = (SAY_ALLERGY_NOTED, *ASKS_ABOUT_THE_ALLERGY, SAY_ALLERGENS_OFFER)
+FIXED_ALLERGY_SAYS = (
+    SAY_ALLERGY_NOTED,
+    SAY_ASK_ALLERGY,
+    SAY_ASK_ALLERGY_DISH,
+    SAY_ALLERGENS_OFFER,
+)
 HINT_ALLERGY_TURN = (
     "Abgelehnt: der Gast spricht in diesem Zug von einer Allergie oder einem "
     "Allergen, deinen eigenen Satz hört er hier nicht. Fragt er, was in einem "
@@ -1363,9 +1372,7 @@ def codes_left(turn: AllergenTurn, state: ConversationState, say: str) -> list[s
     (`ConversationState.allergen_question_codes`). None when the turn ends
     by asking the guest about the allergy: their next words answer it
     ("Worauf genau soll die Küche achten?" - "Sesam.")."""
-    if any(ask in say for ask in ASKS_ABOUT_THE_ALLERGY) or not leaves_a_question(
-        turn, state
-    ):
+    if SAY_ASK_ALLERGY in say or not leaves_a_question(turn, state):
         return []
     return sorted(unexplained_codes(turn, state))
 
@@ -1402,6 +1409,8 @@ NOTE_CLAIM = ToolResult(ok=False, error_code="invalid_input", hint=HINT_NOTE_CLA
 # What the core writes onto a draft the model sent twice without the guest's
 # words (`with_the_guests_words`).
 NOTED_FOR_THE_GUEST = "WICHTIG !!! Gast sagte: {said}"
+# The core's block as a model may copy it, in any case and spacing.
+_EARLIER_BLOCK = re.compile(r"wichtig\s*!!!\s*gast\s+sagte\s*:", re.IGNORECASE)
 # A note that only repeats the example of a hint names nothing.
 _TEMPLATE = ("…", "<", "WICHTIG-Hinweis")
 
@@ -1415,12 +1424,15 @@ def unnoted_allergy(state: ConversationState, call: ToolCall) -> ToolResult | No
     turn, and writes the guest's words on the next one itself
     (`with_the_guests_words`), never a loop.
 
-    Every allergen the guest named as theirs must be on such a note, compared
-    by letter whatever the wording: a second allergy said after the read-back
-    ("Ach, und meine Frau verträgt keinen Sesam.") must not pass on the first
-    one's note (#929). The hint then quotes only the sentences no note
-    covers. An allergy named only by an ingredient ("Kiwi") has no letter and
-    needs any health note, as before."""
+    Every allergen the guest named as what someone reacts to must be on such
+    a note, compared by letter whatever the wording, coeliac disease as
+    gluten, an ingredient without a letter ("Kiwi") by its word: a second
+    allergy said after the read-back ("Ach, und meine Frau verträgt keinen
+    Sesam.") must not pass on the first one's note (#929). One a later
+    sentence takes back ("Doch keine Erdnussallergie.") is not asked for. The
+    hint quotes only the sentences no note covers and asks for the guest's
+    words, for an order on the dish named right before or after the fixed
+    question about the dish."""
     if not state.allergy_said or call.name not in NOTED:
         return None
     health = [
@@ -1431,28 +1443,77 @@ def unnoted_allergy(state: ConversationState, call: ToolCall) -> ToolResult | No
     if not health:
         hint = HINT_UNNOTED_ALLERGY + _HINT_UNNOTED_SAID.format(said=_said(state))
         return ToolResult(ok=False, error_code="invalid_input", hint=hint)
-    noted = allergens_named(" ".join(health))
-    unnoted = [s for s in state.allergy_said if _named_as_theirs(state, s) - noted]
+    # What a note only denies ("kein Sesam") notes nothing.
+    noted_text = " ".join(_guest_words(note) for note in health)
+    noted = _letters(noted_text)
+    words = noted_text.casefold()
+    said = list(state.allergy_said)
+    unnoted = [
+        sentence
+        for i, sentence in enumerate(said)
+        if any(
+            mark not in noted and mark not in words
+            for mark in _named_as_theirs(state, sentence) - _denied_later(said[i + 1 :])
+        )
+    ]
     if not unnoted:
         return None
-    said = " ".join(s.strip() for s in unnoted).rstrip(" .")
-    hint = HINT_UNNOTED_LATER.format(said=said) + _HINT_UNNOTED_LATER_WHERE.format(
-        ask=SAY_ASK_ALLERGY_DISH
+    quoted = " ".join(s.strip() for s in unnoted).rstrip(" .")
+    where = (
+        _HINT_LATER_ORDER.format(ask=SAY_ASK_ALLERGY_DISH)
+        if call.name == "draft_order"
+        else _HINT_LATER_TABLE
     )
+    hint = HINT_UNNOTED_LATER.format(said=quoted) + where
     return ToolResult(ok=False, error_code="invalid_input", hint=hint)
 
 
+def _letters(text: str) -> set[str]:
+    """The allergen letters `text` names, coeliac disease as gluten."""
+    return allergens_named(text) | (_GLUTEN if names_coeliac(text) else set())
+
+
 def _named_as_theirs(state: ConversationState, said: str) -> set[str]:
-    """The allergen letters a kept sentence names as what someone reacts to,
-    without the plain names of dishes the call found: from its part about
-    health on (`reacts_to`), so "Die 13 mit extra Käse, ich habe eine
-    Nussallergie" asks for no cheese on a note; an answer to the question
-    about the allergy ("Gegen Erdnüsse.") has no health word and names all
-    it says but what it only denies (`_guest_words`)."""
+    """What a kept sentence names as what someone reacts to, without the plain
+    names of dishes the call found: allergen letters (`_letters`) and the
+    casefolded word of an ingredient without one ("kiwi", `reacts_to`). Read
+    from the parts that speak of health, so "Ich habe eine Erdnussallergie,
+    bitte extra Sesam" or "..., Sesam ist kein Problem" asks for no sesame;
+    from all it says but what it only denies when those parts name nothing
+    ("Ich habe eine Allergie, gegen Erdnüsse.", "Meine Frau hat eine
+    Allergie. Sesam."), and so does an answer to the question about the
+    allergy ("Gegen Erdnüsse."), which has no health word.
+    shortcut: there a wish names its letter too ("Meine Frau ist allergisch,
+    ich nehme die Garnelen"), and so does one in the same part as the health
+    word ("die 13 mit Käse ich habe eine Erdnussallergie" without a comma);
+    the hint asks for the guest's words, so the note says what they said."""
     text = _without_dish_names(state, said, plain_only=True)
-    if speaks_of_health(said):
-        return set(reacts_to(text)) & allergens_named(text)
-    return allergens_named(_guest_words(text))
+    every = _letters(_guest_words(text))
+    if not speaks_of_health(said):
+        return every
+    health = " ".join(
+        part
+        for sentence in SENTENCE.split(text)
+        for clause in sentence.split(",")
+        for part in _not_denied(clause)
+        if speaks_of_health(part)
+    )
+    found = reacts_to(text)
+    return (_letters(health) or every) | {
+        word
+        for word in found - allergens_named(text) - {"zöliakie"}
+        if not allergens_named(word)
+    }
+
+
+def _denied_later(later: list[str]) -> set[str]:
+    """What the later kept sentences only deny ("Nein, doch keine
+    Erdnussallergie."): an earlier sentence is not asked for it."""
+    return {
+        mark
+        for sentence in later
+        for mark in reacts_to(sentence, denied=True) - reacts_to(sentence)
+    }
 
 
 def with_the_guests_words(state: ConversationState, call: ToolCall) -> ToolCall | None:
@@ -1473,8 +1534,7 @@ def with_the_guests_words(state: ConversationState, call: ToolCall) -> ToolCall 
         # it said, so it takes its place: no sentence noted twice (#929).
         # shortcut: what the model wrote behind that block goes with it; the
         # core always puts the block last.
-        before = before.partition(NOTED_FOR_THE_GUEST.format(said=""))[0]
-        before = before.rstrip(" .")
+        before = _EARLIER_BLOCK.split(before, maxsplit=1)[0].rstrip(" .")
     note = (
         f"{before.strip()}. {added}"
         if isinstance(before, str) and before.strip()
