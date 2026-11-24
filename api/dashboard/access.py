@@ -20,7 +20,8 @@ Every answer to a wrong name, password or factor is the same. Failures count
 per account and per client address, or on the browser alone when it brings the
 device cookie of an earlier sign-in (at the step-up on the account too, #888
 A3), with the waits of a customer's login (every
-third failure in a row, 1 to 5 minutes; `domain/access/sessions.py`). The
+third failure in a row, 1 to 5 minutes; `domain/access/sessions.py`); an IPv6
+address also counts in its /48, with a wait every 30th failure (#962). The
 attempt is counted before the slow hash, in a transaction of its own, so a
 parallel burst meets the wait.
 
@@ -29,6 +30,7 @@ sign-in opens a new one and ends the one the browser brought.
 """
 
 import base64
+import ipaddress
 import re
 import secrets
 import uuid
@@ -60,6 +62,7 @@ from api.domain.access.hashing import (
 )
 from api.domain.access.sessions import (
     FAILURES_FORGOTTEN,
+    WAIT_EVERY,
     count_failure,
     counted_address,
     minutes_left,
@@ -81,6 +84,12 @@ REPEAT_WINDOW = timedelta(minutes=2)
 KNOWN_PASSWORD_ALARM_EVERY = timedelta(hours=1)
 # Every this many wrong step-ups in a row on an account are pushed (#888 A2).
 STEP_UP_ALARM_EVERY = 3
+# An IPv6 /64 also counts in its /48, which a home line (/56) or a server
+# (/48) holds whole, with a wait every this many failures in a row: a spray of
+# made-up names reaches the hash 30 times, then at most 30 times per 5 minutes
+# (#962). A known device counts alone, so it never meets this wait.
+BLOCK_PREFIX = 48
+BLOCK_WAIT_EVERY = 30
 TOKEN_BYTES = 32
 RECOVERY_CODES = 10
 # 80 random bits, sixteen base32 letters, shown in four groups.
@@ -618,8 +627,24 @@ def _end_other_sessions(db: Session, operator: Operator, device_token: str) -> i
 def _forgive(db: Session, account: OperatorAccount, address: str) -> None:
     account.failures, account.blocked_until, account.last_failed_at = 0, None, None
     db.execute(
-        delete(OperatorLoginFailure).where(OperatorLoginFailure.address == address)
+        delete(OperatorLoginFailure).where(
+            OperatorLoginFailure.address.in_(
+                [key for key in (address, _block(address)) if key]
+            )
+        )
     )
+
+
+def _block(address: str) -> str | None:
+    """The /48 an IPv6 counted address (`x::/64`) lies in; None for anything
+    else, an IPv4 address or a key that is no address."""
+    try:
+        network = ipaddress.ip_network(address)
+    except ValueError:
+        return None
+    if network.version != 6 or network.prefixlen != 64:
+        return None
+    return str(network.supernet(new_prefix=BLOCK_PREFIX))
 
 
 def _checked(name: str, password: str) -> str:
@@ -668,31 +693,33 @@ def _count_attempt(
     ).first()
     device = _device(db, account.id, device_token) if account else None
     counters: list[OperatorAccount | OperatorDevice | OperatorLoginFailure]
+    block = None
     if device is not None:
         counters = [device, account] if account_too and account else [device]
     else:
-        # Two failures from a new address at once must not collide on the insert.
-        db.execute(
-            insert(OperatorLoginFailure)
-            .values(address=address, failures=0, last_failed_at=now)
-            .on_conflict_do_nothing(index_elements=["address"])
-        )
-        known = db.get(
-            OperatorLoginFailure, address, with_for_update=True, populate_existing=True
-        )
-        counters = [row for row in (account, known) if row is not None]
+        counters = [row for row in (account, _counter(db, address, now)) if row]
+        # Every attempt of the block counts, a known name too, or its wait
+        # would tell which names exist.
+        block_key = _block(address)
+        if block_key:
+            block = _counter(db, block_key, now)
+            counters.append(block)
         if account is None:
             # An unknown name waits like a known one, or the wait would tell
             # which names exist (#688, docs/23 §5). Its counter sits beside the
             # addresses under a key no address can have, forgotten the same way.
-            counters.append(_name_counter(db, name, now))
+            # The hash, not the name: any length fits the index (Codex PR #731).
+            counters.append(_counter(db, f"name:{token_hash(name)}", now))
     waits = [row.blocked_until for row in counters if row.blocked_until is not None]
     if waits and max(waits) > now:
         db.rollback()
         raise SignInRefused(minutes_left(max(waits) - now))
     for row in counters:
         row.failures, row.blocked_until, row.last_failed_at = count_failure(
-            row.failures, row.last_failed_at, now
+            row.failures,
+            row.last_failed_at,
+            now,
+            BLOCK_WAIT_EVERY if row is block else WAIT_EVERY,
         )
     stored = account.password_hash if account else None
     account_id = account.id if account else None
@@ -700,9 +727,9 @@ def _count_attempt(
     return stored, account_id, device is not None
 
 
-def _name_counter(db: Session, name: str, now: datetime) -> OperatorLoginFailure:
-    # The hash, not the name: any length fits the index (Codex PR #731).
-    key = f"name:{token_hash(name)}"
+def _counter(db: Session, key: str, now: datetime) -> OperatorLoginFailure:
+    """The failure row of an address, a block or a name, held until the commit."""
+    # Two failures under a new key at once must not collide on the insert.
     db.execute(
         insert(OperatorLoginFailure)
         .values(address=key, failures=0, last_failed_at=now)
