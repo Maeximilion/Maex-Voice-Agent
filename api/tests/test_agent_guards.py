@@ -1563,6 +1563,16 @@ def test_the_read_back_is_a_core_string():
     assert core_only(turn, state, READBACK)
 
 
+def test_a_core_string_counts_whatever_the_case_of_its_card_number():
+    """Deep review of #987: the core says "Nummer S12", the model's tool hits
+    carry "s12"; a copy of the read-back with the stored form is still core."""
+    readback = "Zweimal Nummer S12 Thunfisch Maki. Macht 9 Euro, zur Abholung."
+    state = new_state(readback=readback)
+    turn, state = allergen_turn("Ich habe eine Sesamallergie.", state=state)
+
+    assert core_only(turn, state, readback.replace("S12", "s12"))
+
+
 def test_an_allergy_noted_on_a_changed_line_leaves_no_question():
     """The guest's allergy went onto the note of a line of this turn."""
     turn, state = allergen_turn(
@@ -2220,6 +2230,22 @@ def test_the_searchs_sentence_names_the_dish_a_promise_after_it_speaks_of():
         turn, state, f"{echo} Ja, die können Sie gut essen.", changed=False
     )
     assert not about_a_dish(turn, state, echo, changed=False)
+
+
+def test_a_search_echo_copied_with_the_stored_number_still_names_the_dish():
+    """Codex on #1010 (P1): the core says "Nummer S12", the model copies it as
+    "Nummer s12"; the echo still names the dish a promise after it speaks of."""
+    state = new_state()
+    maki = _dish_seen(state, "s12", "Thunfisch Maki")
+    turn = begin_allergen_turn(state, "Kann ich die S12 essen?", kept=False)
+    _hit_found(turn, maki, "s12", "Thunfisch Maki", 450, say="Nummer S12, sehr gern.")
+
+    assert about_a_dish(
+        turn,
+        state,
+        "Nummer s12, sehr gern. Ja, die können Sie gut essen.",
+        changed=False,
+    )
 
 
 def test_an_order_step_holds_a_dish_sentence_only_with_words_of_the_allergy():

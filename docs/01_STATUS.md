@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.61
+> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.62
 
 ---
 
@@ -187,7 +187,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.61 · 24.11.2026:** #1003: an allergy said into a protected sentence reaches the core; into a read-back the draft is read out again with the note before the yes
+- **v2.69.62 · 24.11.2026:** #1003: an allergy said into a protected sentence reaches the core; into a read-back the draft is read out again with the note before the yes
+- **v2.69.61 · 24.11.2026:** #987: card numbers are said with the prefix in capitals (S12, SM1), the trailing letter as stored
 - **v2.69.60 · 24.11.2026:** #74 (T-9.4): uptime check of /health from another machine, scripts/uptime_check.py from cron, one push on down and one on recovery
 - **v2.69.59 · 24.11.2026:** #980: migration 046, a partial index on the outbox by tenant and order id for the tickets of one order
 - **v2.69.58 · 24.11.2026:** chain: a finisher takes the next item instead of being archived, the coordinator archives finished side sessions, never stops for its own context and keeps the chain state in notes and memory, Dependabot PRs go to the ship lane
