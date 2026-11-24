@@ -14,6 +14,7 @@ from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session
 
 from api.agent.guards import SAY_ALLERGENS_OFFER, SAY_ALLERGY_NOTED, SAY_ASK_ALLERGY
+from api.agent.loop import SAY_ESCALATION
 from api.domain.menu.importer import MENU_FILE, OPTIONS_FILE, apply, parse
 from api.models import Call, Callback, MenuItem, Order, OrderItem
 from api.tests.test_domain_menu_search import KARTE
@@ -1440,21 +1441,28 @@ def test_mehrdeutig_mit_allergie_erst_die_wahl(session, tenant):
     erste = " ".join(turns[1].say)
     assert erste == SAY_ALLERGY_NOTED
     assert "Worauf genau" in " ".join(turns[2].say)
-    [order] = orders(session)
-    # On the dish chosen for it, by the model (Maxi, 15.11.2026).
-    assert "WICHTIG !!! Allergie: Erdnüsse" in _notes(session, order)
-    assert order.note is None
+    _goes_to_the_team(session, turns)
 
 
 def test_mehrdeutig_mit_allergie_und_zutat_fragt_einmal(session, tenant):
     _, turns = _bestellung(
         session, tenant, "Eine Suppe mit Erdnussallergie und die 23.", "Nummer 12."
     )
-    # The allergy turn hears the core's sentence only (#798), and the
-    # allergy still reaches the soup chosen next.
+    # The allergy turn hears the core's sentence only (#798).
     assert " ".join(turns[1].say) == SAY_ALLERGY_NOTED
-    [order] = orders(session)
-    assert "WICHTIG !!! Allergie: Erdnuss" in _notes(session, order)
+    _goes_to_the_team(session, turns)
+
+
+def _goes_to_the_team(session, turns) -> None:
+    """The stand-in keeps its own order and writes `cart` only with the
+    draft. Its sentence that confirms the soup chosen from the offer has no
+    order step in its turn, so in this call about an allergy it is held to
+    core sentences (#928) and the guest never hears the soup named: the
+    draft is refused and the call goes to the team. A real model writes `cart` in that turn (`llm.py`), and its
+    sentence stays its own (`test_an_order_step_keeps_the_models_sentence_
+    about_its_dish` in test_agent_allergens_beyond.py)."""
+    assert orders(session) == []
+    assert SAY_ESCALATION in " ".join(turns[-1].say)
 
 
 @pytest.mark.parametrize("antwort", ["Eine Cola bitte.", "Nummer 12."])
