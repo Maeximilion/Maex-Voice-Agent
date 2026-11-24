@@ -561,7 +561,12 @@ class ScriptedLLM:
                     # With delivery open the core's sentence at the draft
                     # offers it, so that order is still taken.
                     self._opening_query = self._opening_allergy = None
-                    self._pickup.closed = say or SAY_PICKUP_CLOSED
+                    # Open for dining in, the status may speak of no pickup at
+                    # all ("Lieferung ist gerade pausiert.").
+                    named = say and ("Abholung" in say or not data.get("is_open"))
+                    self._pickup.closed = (
+                        say if named else _join(say, SAY_PICKUP_CLOSED)
+                    )
                     return LLMTurn(say=_join(greeting, self._pickup.closed))
                 if self._opening_query:
                     self._opening_prefix = prefix or ""

@@ -52,7 +52,7 @@ SAY_RESTART = "Dann noch einmal von vorn: was möchten Sie bestellen?"
 # A surcharge without a `reason` on the menu (prompt rule, Codex PR #139).
 SAY_NO_REASON = "Der Aufpreis steht so in der Karte."
 _WHY_MORE = re.compile(
-    r"\b(?:warum|wieso|weshalb)\b.*\b(?:kostet|teurer|aufpreis|mehr)\b", re.IGNORECASE
+    r"\b(?:warum|wieso|weshalb)\b.*\b(?:kostet|teurer|aufpreis)\b", re.IGNORECASE
 )
 # An allergy without its ingredient: the model asks (Maxi, 15.11.2026), with
 # the fixed question of an allergy turn (#798); the variant with the dish
@@ -85,6 +85,9 @@ class CartItem:
     pending: list[dict[str, Any]] = field(default_factory=list)
     # Note for the kitchen ("ohne Karotten", an allergy), T-4.10.
     note: str | None = None
+    # Options chosen with a surcharge and their `reason` from the menu, for
+    # "Warum kostet das mehr?" (Codex PR #139); not sent to `draft_order`.
+    surcharges: list[tuple[str, str | None]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -170,9 +173,6 @@ class PickupScript:
         self._complete = False
         # The note for the whole order, once the core asked for one.
         self._order_note: str | None = None
-        # The last option with a surcharge and its `reason` from the menu, for
-        # "Warum kostet das mehr?" (Codex PR #139).
-        self._surcharge: tuple[str, str | None] | None = None
         # What `get_service_status` said when neither pickup nor delivery takes
         # an order: every later sentence gets it again, no dish is asked for.
         self.closed: str | None = None
@@ -259,10 +259,13 @@ class PickupScript:
             self.phase = "dishes"
             self._suggestions = []
             return _search(text, patch)
-        if self._surcharge and _WHY_MORE.search(text):
-            # Searched, the question found no dish: the reason comes from the
-            # menu, and the open question follows it.
-            option, reason = self._surcharge
+        surcharge = next(
+            (i.surcharges[-1] for i in self.cart[::-1] if i.surcharges), None
+        )
+        if surcharge and _WHY_MORE.search(text):
+            # Searched, the question found no dish: the reason of the last
+            # surcharge comes from the menu, and the open question follows it.
+            option, reason = surcharge
             lead = (
                 f"Der Aufpreis für {option}: {reason.rstrip('.')}."
                 if reason
@@ -625,7 +628,7 @@ class PickupScript:
             item.options.append({"group": wish["group"], "name": wish["option"]})
             item.pending = [g for g in item.pending if g["group"] != wish["group"]]
             if (wish.get("price_delta_cents") or 0) > 0:
-                self._surcharge = (wish["option"], wish.get("reason"))
+                item.surcharges.append((wish["option"], wish.get("reason")))
         elif wish["kind"] == "open" and wish.get("groups"):
             # The option stands in several groups: the question stays open
             # until the answer names one, none is chosen here.
@@ -795,7 +798,7 @@ class PickupScript:
             )
         item.options.append({"group": group["group"], "name": chosen[0]})
         if chosen[0] in group["surcharges"]:
-            self._surcharge = (chosen[0], group["surcharges"][chosen[0]])
+            item.surcharges.append((chosen[0], group["surcharges"][chosen[0]]))
         item.pending.remove(group)
         return self._next(slots, patch)
 
