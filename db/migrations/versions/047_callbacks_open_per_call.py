@@ -14,8 +14,9 @@ reads, and closes the others as done by `migration:047`, at the time of the
 migration; they stay in the history sheet. Like a team's "Erledigt", that
 mark starts their deletion period again (`jobs/retention.py` counts from
 `done_at`): kept visible for the team beats a shorter period for a duplicate.
-The downgrade opens exactly those again. The table is locked against writes for the few statements, so no new
-card slips in between the cleanup and the index. On a database a restaurant
+The downgrade opens exactly those again. The table is locked against other
+writers for the few statements, so no new card slips in between the cleanup
+and the index. On a database a restaurant
 signs in to, take a backup first with
 `bash scripts/backup.sh --label before_migration_047` (CLAUDE.md §8, docs/13
 §4).
@@ -41,8 +42,9 @@ OPEN = "status = 'open' AND deleted_at IS NULL"
 
 
 def upgrade() -> None:
-    # SHARE: no insert or update by anyone else until the index stands.
-    op.execute("LOCK TABLE callbacks IN SHARE MODE")
+    # No insert or update by anyone else until the index stands; SHARE ROW
+    # EXCLUSIVE also excludes a second run of this upgrade, which SHARE did not.
+    op.execute("LOCK TABLE callbacks IN SHARE ROW EXCLUSIVE MODE")
     op.execute(
         sa.text(
             f"""

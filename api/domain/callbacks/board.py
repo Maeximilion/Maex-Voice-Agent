@@ -237,7 +237,9 @@ def reopen(
 
     Only one the history shows: a mark older than HISTORY_DAYS or a card that
     is open already changes nothing, so a stale sheet or a second tablet
-    cannot reopen it twice. Clearing done_at hands the deletion period back to
+    cannot reopen it twice. A done card whose call has another open card
+    stays done and raises Conflict with say=CALL_HAS_AN_OPEN_CARD (one open
+    card per call, #981); the caller shows that text. Clearing done_at hands the deletion period back to
     the creation date (jobs/retention.py): a card created more than
     RETENTION_CALLBACK_DAYS ago loses its number on the next run, as any open
     card of that age does.
