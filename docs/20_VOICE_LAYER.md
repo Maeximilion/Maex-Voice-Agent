@@ -379,7 +379,9 @@ is rung (Maxi, 20.10.2026). The outage paths (paused, shadow, `voice` down, a fa
   found by its line id after its log is closed (the newest of the last two hours), the number is
   the one the guest named in the call, kept in the process's memory at the handover, else the
   caller id, else that of an open card of the call; the reason is the transfer's, the text the
-  core's card for the handover, else the reason's sentence, and `create_callback` adds the call's
+  core's card for the handover, else the reason's sentence, led by the kitchen marker when the
+  guest spoke of an allergy in the call and the core's card does not lead with it (#956: a voice
+  that fails mid-call leaves no card of the core), and `create_callback` adds the call's
   standing bookings from the database to either ("Bereits gebucht: ...", #743 follow-up, #764:
   every booking, also one confirmed before a new draft began); the outcome
   becomes `callback` whatever the log derived (an `error` stays). A busy team telephone answers

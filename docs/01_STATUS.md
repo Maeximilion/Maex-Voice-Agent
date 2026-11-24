@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.34
+> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.35
 
 ---
 
@@ -178,6 +178,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.35 · 24.11.2026:** #956: the card of a team leg nobody answered keeps the kitchen marker after a voice failure mid-call
 - **v2.69.34 · 24.11.2026:** #952 and #953: a dropped order draft is never replayed, and a call that ends while an order waits for its yes leaves a callback card
 - **v2.69.33 · 24.11.2026:** chain: a paused session gets no message in super slow, news waits in a note file
 - **v2.69.32 · 24.11.2026:** #775: own Asterisk 22.12.0 image from the official source, lives through failed media connections; drills 58 of 58

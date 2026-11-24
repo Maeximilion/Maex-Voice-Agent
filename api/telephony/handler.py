@@ -231,10 +231,11 @@ class CallHandler:
         self._ai_calls: set[str] = set()
         self._closed: OrderedDict[str, None] = OrderedDict()
         # What a card for a team leg nobody answers needs and only this
-        # process knows: a number the guest named, the card the core wrote.
-        self._named_phones: OrderedDict[str, tuple[str | None, str | None, float]] = (
-            OrderedDict()
-        )
+        # process knows: a number the guest named, the card the core wrote,
+        # whether the guest spoke of an allergy (#956).
+        self._named_phones: OrderedDict[
+            str, tuple[str | None, str | None, bool, float]
+        ] = OrderedDict()
 
     # -- events from the line ----------------------------------------------------
 
@@ -413,16 +414,26 @@ class CallHandler:
             # Or mode shadow with the recording question, hung up on. The card
             # is the team's only notice then (#252 no. 9).
             with self._lock:
-                phone, summary, _ = self._named_phones.pop(
-                    session_id, (None, None, 0.0)
+                phone, summary, kitchen_note, _ = self._named_phones.pop(
+                    session_id, (None, None, False, 0.0)
                 )
-            self._card(session_id, phone=phone, summary=summary, rang=False)
+            self._card(
+                session_id,
+                phone=phone,
+                summary=summary,
+                kitchen_note=kitchen_note,
+                rang=False,
+            )
 
     def on_team_missed(self, session_id: str) -> bool:
         with self._lock:
             self._forget_old_named_phones()
-            phone, summary, _ = self._named_phones.pop(session_id, (None, None, 0.0))
-        return self._card(session_id, phone=phone, summary=summary)
+            phone, summary, kitchen_note, _ = self._named_phones.pop(
+                session_id, (None, None, False, 0.0)
+            )
+        return self._card(
+            session_id, phone=phone, summary=summary, kitchen_note=kitchen_note
+        )
 
     def team_phone(self) -> str:
         """The number the team is at now, for the legs the dialplan dials on
@@ -825,6 +836,7 @@ class CallHandler:
         *,
         phone: str | None = None,
         summary: str | None = None,
+        kitchen_note: bool = False,
         rang: bool = True,
     ) -> bool:
         """A callback card for a call the team did not take (`team_missed`), in
@@ -840,6 +852,7 @@ class CallHandler:
                 summary=summary,
                 now=self._now or utcnow(),
                 rang=rang,
+                kitchen_note=kitchen_note,
             )
         except Exception as exc:  # noqa: BLE001 - a lost card costs no call
             # The type only: a message can carry the guest's number.
@@ -904,17 +917,25 @@ class CallHandler:
 
     def _keep_named_phone(self, live: _LiveCall) -> None:
         """Before the handover, so a report that comes at once finds it. Only a
-        number other than the caller id, which the call log has, and the card
-        the core wrote for the handover (`state.handoff_summary`)."""
+        number other than the caller id, which the call log has, the card the
+        core wrote for the handover (`state.handoff_summary`), and whether the
+        guest spoke of an allergy: a call that failed has no card of the core,
+        and the line's must still lead with the kitchen marker (#956)."""
         phone = live.state.slots.get("phone")
         if phone == live.state.caller_phone:
             phone = None
         summary = live.state.handoff_summary
-        if not phone and not summary:
+        kitchen_note = bool(live.state.allergy_said)
+        if not phone and not summary and not kitchen_note:
             return
         with self._lock:
             self._forget_old_named_phones()
-            self._named_phones[live.session_id] = (phone, summary, self._clock())
+            self._named_phones[live.session_id] = (
+                phone,
+                summary,
+                kitchen_note,
+                self._clock(),
+            )
             self._named_phones.move_to_end(live.session_id)
             while len(self._named_phones) > NAMED_PHONES_KEPT:
                 self._named_phones.popitem(last=False)
