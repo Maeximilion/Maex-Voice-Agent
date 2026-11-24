@@ -513,6 +513,8 @@ def test_a_word_that_only_ends_in_a_joiner_stays_whole_before_a_removal():
         ("ohne Zwiebeln, aber bitte mit Nudeln", "ohne Zwiebeln"),
         ("ohne Zwiebeln und dann mit Nudeln", "ohne Zwiebeln"),
         ("Ohne Zwiebeln. Aber mit Nudeln.", "Ohne Zwiebeln"),
+        ("ohne Zwiebeln und. Aber mit Nudeln", "ohne Zwiebeln"),
+        ("ohne Zwiebeln, bitte! Mit Nudeln", "ohne Zwiebeln"),
     ],
 )
 def test_a_joining_word_of_its_own_is_still_cut(said, note):

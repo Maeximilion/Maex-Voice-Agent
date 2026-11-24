@@ -2045,8 +2045,11 @@ def _split_addition(text: str) -> tuple[str, str | None]:
 def _without_glue(part: str) -> str:
     """The part of a wish in front of the next one, without the joining words
     at its end, each a word of its own: "ohne Zwiebeln, aber bitte" and "ohne
-    Zwiebeln und..." -> "ohne Zwiebeln", "ohne Hund" stays (docs/HISTORY.md)."""
-    return _drop_trailing_glue(part.strip(" ,.;")).strip(" ,.;")
+    Zwiebeln und. Aber" -> "ohne Zwiebeln", "ohne Hund" stays (docs/HISTORY.md).
+    Each round takes at least one character off the end, so it stays linear."""
+    while (cut := _drop_trailing_glue(part.strip(" ,.;!?")).strip(" ,.;!?")) != part:
+        part = cut
+    return part
 
 
 def _swaps(words: list[str], i: int) -> bool:
