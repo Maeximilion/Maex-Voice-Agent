@@ -15,7 +15,7 @@ import pytest
 from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import Session
 
-from api.agent.guards import note_said
+from api.agent.guards import SAY_ASK_ALLERGY, note_said
 from api.agent.llm import FakeLLM, LLMTurn, ToolCall
 from api.agent.loop import (
     SAY_ESCALATION,
@@ -407,7 +407,43 @@ def test_an_allergy_said_into_the_offer_hands_the_complaint_to_the_team(
     summary = cards(session, state)[0].summary
     assert summary.startswith(SUMMARY_NOTE_TO_CLEAR)
     assert "allergie" not in summary.lower()
+    # What the guest complained about stays on the card, only the allergy goes.
+    assert COMPLAINT in summary
     assert state.remedy_offer is None
+
+
+def test_an_allergy_said_into_the_farewell_marks_the_open_offer_card(
+    session, tenant_id, state
+):
+    """#1003: the call ends on the offer, and the guest names an allergy into
+    its last sentence. No turn any more, but the core keeps it, so the card
+    written when the call closes leads with the kitchen marker (L13)."""
+    rule(session, tenant_id)
+    agent = loop(session)
+    agent.run_turn(state, COMPLAINT)
+
+    said = "Ich habe übrigens eine Erdnussallergie."
+    assert agent.heard_over(state, said, ending=True) is False
+    agent.offer_unanswered(state)
+
+    summary = cards(session, state)[0].summary
+    assert summary.startswith(SUMMARY_NOTE_TO_CLEAR)
+    assert "allergie" not in summary.lower()
+
+
+def test_an_answer_to_the_allergy_question_said_into_it_is_kept(session, state):
+    """#1003: the core's question about the allergy may be protected (a dish
+    was found in its turn). "Gegen Erdnüsse." said into it names no health
+    word, yet it answers the question and is kept as the core keeps it in a
+    turn; a bare "Nein" said into it takes nothing back."""
+    agent = loop(session)
+    state.allergy_said = ["Ich habe eine Allergie."]
+    note_said(state, SAY_ASK_ALLERGY)
+
+    assert agent.heard_over(state, "Nein.") is False
+    assert state.allergy_said == ["Ich habe eine Allergie."]
+    assert agent.heard_over(state, "Gegen Erdnüsse.") is False
+    assert state.allergy_said[-1] == "Gegen Erdnüsse."
 
 
 def test_a_yes_to_another_sentence_books_nothing(session, tenant_id, state):

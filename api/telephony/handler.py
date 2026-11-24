@@ -547,9 +547,10 @@ class CallHandler:
         sentence before the call ends (`ending`): no turn, and what was said
         to the guest stands. Only the withdrawal counts, and an allergy among
         the words: for the kitchen marker of a missed team leg (#970), and
-        for the core, which keeps it or, into a read-back that waits for its
-        yes, takes the words as a turn and reads the draft out again with the
-        note (`ConversationLoop.heard_over`, #1003)."""
+        for the core, which keeps it or, while a draft waits for its yes or an
+        offer for its answer, takes the words as a turn
+        (`ConversationLoop.heard_over`, #1003). Never at `ending`: the core
+        only keeps it, for the cards written when the call closes."""
         if not live.health_heard and arms_the_net(text):
             live.health_heard = True
             if ending and self._to_the_team(live):
@@ -557,10 +558,8 @@ class CallHandler:
                 # the line kept what the card needs already, without it. Not
                 # into a farewell: no report would ever take the entry.
                 self._keep_named_phone(live)
-        as_a_turn = (
-            not ending
-            and live.loop is not None
-            and live.loop.heard_over(live.state, text)
+        as_a_turn = live.loop is not None and live.loop.heard_over(
+            live.state, text, ending=ending
         )
         if live.state.recording == "on" and stops_recording(text):
             recording.withdraw(live.session, live.state, self._now)

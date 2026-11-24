@@ -2949,6 +2949,26 @@ def test_a_yes_and_an_allergy_in_one_breath_into_the_read_back_book_nothing(
     assert orders and {order.status for order in orders} == {"draft"}
 
 
+def test_an_allergy_said_into_the_farewell_marks_the_open_order_card(session, tenant):
+    """#1003: the guest stays silent on the read-back, the call ends, and the
+    guest names an allergy into the farewell (heard on a recorded call). No
+    turn, but the core keeps it: the card of the unanswered order leads with
+    the kitchen marker, never the allergy (L13)."""
+    port = FakeTelephony()
+    handler = _order_read_back(session, tenant, port)
+    for _ in range(len(STILL_THERE) + 1):
+        handler.on_silence("s-1")
+    assert port.hangups("s-1")
+
+    handler.on_talked_over("s-1", "Ich habe eine Erdnussallergie.")
+    handler.on_call_ended("s-1")
+
+    [card] = _order_cards(session, "s-1")
+    assert SUMMARY_READBACK_UNANSWERED in card.summary
+    assert card.summary.startswith(SUMMARY_NOTE_TO_CLEAR)
+    assert "Erdnuss" not in card.summary
+
+
 def test_a_yes_into_the_read_back_with_no_allergy_makes_no_turn(session, tenant):
     """Only an allergy makes a turn of words said into the read-back: a yes
     said there still books nothing (rule 3)."""
