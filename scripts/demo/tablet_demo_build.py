@@ -418,8 +418,16 @@ def drive(client: TestClient, seeded: data.Seeded) -> None:
     if mark is None:
         raise SystemExit("the order for the register has no button")
     _ok(client.post(f"/gui/bestellungen/{order}/in-kasse/{mark.group(1)}"), "register")
+    # "Erledigt" sends the version of the card it was drawn with (#998).
+    done = seeded.callbacks["erledigt"]
+    cards = _ok(client.get("/gui/fragments/rueckrufe"), "callbacks").text
+    seen = re.search(rf'data-id="{done}"[^>]*data-version="([^"]+)"', cards)
+    if seen is None:
+        raise SystemExit("the callback to close has no version")
     _ok(
-        client.post(f"/gui/rueckrufe/{seeded.callbacks['erledigt']}/erledigt"),
+        client.post(
+            f"/gui/rueckrufe/{done}/erledigt", data={"gesehen": seen.group(1)}
+        ),
         "callback done",
     )
     _room(
