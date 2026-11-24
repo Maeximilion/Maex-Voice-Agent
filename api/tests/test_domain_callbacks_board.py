@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import Session
 
-from api.core.errors import NotFound
+from api.core.errors import Conflict, NotFound
 from api.domain.callbacks import (
     list_history,
     list_open,
@@ -16,7 +16,7 @@ from api.domain.callbacks import (
     open_change_token,
     reopen,
 )
-from api.domain.callbacks.board import HISTORY_DAYS
+from api.domain.callbacks.board import HISTORY_DAYS, card_version
 from api.jobs.retention import purge
 from api.models import AuditLog, Call, Callback
 from scripts.seed import seed
@@ -314,3 +314,36 @@ def test_reopened_old_card_falls_back_to_its_creation_date(session, tenant_id):
 
     assert session.get(Callback, old).phone == ""
     assert session.get(Callback, fresh).phone == "+4972215551234"
+
+
+# --- #998: "Erledigt" on the version of the card the tablet showed ---------------
+
+
+def test_a_tap_on_a_changed_card_closes_nothing(session, tenant_id):
+    """#998 no. 4: an order joined the card after the tablet drew it. The
+    version drawn no longer matches: nothing is closed, nothing logged; the
+    current version closes it."""
+    cb_id = rueckruf(session, tenant_id)
+    seen = card_version("Moechte zurueckgerufen werden.")
+    session.get_one(Callback, cb_id).summary += " Offene Bestellung: 2x 23."
+    session.commit()
+
+    with pytest.raises(Conflict):
+        mark_done(session, tenant_id, cb_id, seen=seen)
+    session.rollback()
+    card = session.get_one(Callback, cb_id)
+    assert card.status == "open"
+    assert mark_done(session, tenant_id, cb_id, seen=card_version(card.summary))
+    assert session.get_one(Callback, cb_id).status == "done"
+
+
+@pytest.mark.parametrize("seen", ["", None])
+def test_an_emptied_card_closes_without_a_version(session, tenant_id, seen):
+    """The deletion job empties a card that stays open (T-11.2): it has no
+    version, so its tablet does not ring for it, and a tap closes it."""
+    cb_id = rueckruf(session, tenant_id)
+    session.get_one(Callback, cb_id).summary = ""
+    session.commit()
+
+    assert [c.version for c in list_open(session, tenant_id)] == [""]
+    assert mark_done(session, tenant_id, cb_id, seen=seen).status == "done"

@@ -4,6 +4,7 @@ Offene Rückrufe lesen, einen als erledigt markieren. Beschwerden stehen immer
 oben, danach der älteste zuerst: wer am längsten wartet, wird zuerst angerufen.
 """
 
+import hashlib
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -12,7 +13,7 @@ from sqlalchemy import ColumnElement, Text, case, cast, func, literal, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.orm import Session
 
-from api.core.errors import NotFound
+from api.core.errors import Conflict, NotFound
 from api.core.time import utcnow
 from api.domain.status.config import ACTOR_TABLET
 from api.models import AuditLog, Call, Callback
@@ -26,6 +27,17 @@ DONE = "done"
 NUMBER_FROM_CALL = "caller_id"
 NUMBER_OTHER = "other"
 NUMBER_WITHHELD = "withheld"
+# A tap on a card drawn before its text changed (an open order joined it,
+# #993): nothing is closed, and the tablet says why (#998).
+CARD_CHANGED = "Die Karte hat sich gerade geändert. Bitte noch einmal prüfen."
+
+
+def card_version(summary: str) -> str:
+    """The version of a card as the team read it: its text, which is what an
+    order joining it changes (#998). Not updated_at: a raw UPDATE would pass
+    it by, as `open_change_token` says. An emptied card (the deletion job,
+    an erasure) has none: nothing new stands on it to read (#998 review)."""
+    return hashlib.sha256(summary.encode()).hexdigest()[:16] if summary else ""
 
 
 @dataclass(frozen=True)
@@ -46,6 +58,10 @@ class OpenCallback:
         if not (self.caller_id or "").strip():
             return NUMBER_WITHHELD
         return NUMBER_FROM_CALL if self.phone == self.caller_id else NUMBER_OTHER
+
+    @property
+    def version(self) -> str:
+        return card_version(self.summary)
 
 
 def _open_filters(tenant_id: uuid.UUID) -> tuple[ColumnElement[bool], ...]:
@@ -107,11 +123,18 @@ def mark_done(
     tenant_id: uuid.UUID,
     callback_id: uuid.UUID,
     actor: str = ACTOR_TABLET,
+    *,
+    seen: str | None = None,
 ) -> Callback:
     """Rückruf erledigt. Zweimal getippt oder an zwei Tablets: ein Eintrag.
 
     Keine Rückfrage (docs/06 §1 Regel 6: nur Löschen und Stornieren fragen nach);
     erledigt ist erledigt, der Datensatz bleibt für Auswertung und Audit.
+
+    `seen` is the card version the tablet showed (`card_version`): an open
+    card whose text changed since, an order joined it, is not closed, or
+    nobody reads that order (#998). None checks nothing (callers without a
+    view of the card).
     """
     callback = session.scalars(
         select(Callback)
@@ -125,6 +148,11 @@ def mark_done(
     if callback is None:
         raise NotFound(f"Rueckruf {callback_id} nicht gefunden")
     if callback.status != DONE:
+        if seen is not None and seen != card_version(callback.summary):
+            raise Conflict(
+                f"Callback {callback_id}: version {seen!r} seen, the card changed",
+                say=CARD_CHANGED,
+            )
         callback.status = DONE
         callback.done_by = actor
         callback.done_at = utcnow()

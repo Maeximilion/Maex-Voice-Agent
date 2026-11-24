@@ -1,7 +1,8 @@
 {# Spalte "Rückrufe" (docs/06 §3): offene Rückrufe, Beschwerden oben. Wird als
    Ganzes ersetzt - nach "Erledigt" und nach jedem Ereignis "callbacks". Die
    Überschrift gehört dazu, damit die Zahl mitwandert. data-id und data-reason
-   nutzt app.js, um bei neuen Karten den Ton zu spielen. #}
+   nutzt app.js, um bei neuen Karten den Ton zu spielen. data-version: the
+   card's text as a version, for a changed card's tone and "Erledigt" (#998). #}
 <h2>R&uuml;ckrufe{% if callbacks %} <span class="count">{{ callbacks|length }}</span>{% endif %}
  <button type="button" class="h2-action" hx-get="/gui/rueckrufe/verlauf" hx-target="#rueckruf-verlauf">Verlauf</button>
 </h2>
@@ -12,7 +13,7 @@
 {% else %}
 <ul class="cards">
   {% for c in callbacks %}
-  <li class="card cb{{ ' complaint' if c.reason == 'complaint' }}" data-id="{{ c.id }}" data-reason="{{ c.reason }}">
+  <li class="card cb{{ ' complaint' if c.reason == 'complaint' }}" data-id="{{ c.id }}" data-reason="{{ c.reason }}" data-version="{{ c.version }}">
     <div class="res-head">
       {# Wie die Karten in "Heute": Uhrzeit vorn, Anlass daneben. #}
       <span class="when"><span class="muted">Annahme</span> <b class="time">{{ c.time }}</b></span>
@@ -39,7 +40,9 @@
     <div class="cb-actions">
       {% if c.phone and not c.costly %}<a class="button" href="tel:{{ c.phone }}">Anrufen</a>{% endif %}
       {# Keine Rueckfrage: nur Loeschen und Stornieren fragen nach (docs/06 §1 Regel 6). #}
+      {# The version the team read: a card changed since closes nothing (#998). #}
       <button class="primary" hx-post="/gui/rueckrufe/{{ c.id }}/erledigt"
+              hx-vals='{"gesehen": "{{ c.version }}"}'
               hx-target="#rueckrufe-liste" hx-swap="innerHTML">Erledigt</button>
     </div>
   </li>

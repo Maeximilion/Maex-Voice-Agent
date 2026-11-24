@@ -487,3 +487,157 @@ def test_fehler_nach_dem_flush_laesst_keinen_halben_rueckruf_zurueck(
     assert session.scalar(select(func.count()).select_from(Callback)) == 0
     assert session.scalar(select(func.count()).select_from(AuditLog)) == 0
     assert session.scalar(select(func.count()).select_from(OutboxEvent)) == 0
+
+
+# --- #998: a core card that names an open order meets the call's open card ------
+
+OPEN_ORDER = "Offene Bestellung, nicht aufgegeben: 2x 23 Pizza Margherita."
+MARKER = "Hinweis für die Küche mit dem Gast klären."
+
+
+def test_a_handoff_card_brings_its_open_order_onto_the_open_card(
+    session, tenant_id, call_id
+):
+    """#998 no. 1: the model wrote a card earlier in the call; the card of
+    the time limit names the order unplaced. The open card keeps its reason
+    and number and gets that card's text, the order with it; the same card
+    written again changes nothing."""
+    first = create_callback(
+        session,
+        request(tenant_id, call_id, reason="human_requested", summary="Gast will X."),
+        now=NOW,
+    )
+    handoff = request(
+        tenant_id,
+        call_id,
+        summary=f"Anliegen nicht geklärt. {OPEN_ORDER} Kunde sagte: Muss los.",
+    )
+
+    task = create_callback(session, handoff, now=NOW)
+    again = create_callback(session, handoff, now=NOW)
+
+    assert task.callback_id == again.callback_id == first.callback_id
+    assert task.reason == "human_requested"
+    assert task.summary == (
+        f"Gast will X. Anliegen nicht geklärt. {OPEN_ORDER} Kunde sagte: Muss los."
+    )
+    assert again.summary == task.summary
+    assert session.scalar(select(func.count()).select_from(OutboxEvent)) == 2
+
+
+def test_a_second_card_without_an_open_order_changes_nothing(
+    session, tenant_id, call_id
+):
+    """docs/04: a model's retry after a timeout does not update the card,
+    whatever its text says."""
+    first = create_callback(session, request(tenant_id, call_id), now=NOW)
+
+    task = create_callback(
+        session, request(tenant_id, call_id, summary="Ganz anderer Text."), now=NOW
+    )
+
+    assert task.summary == first.summary
+    assert session.scalar(select(func.count()).select_from(OutboxEvent)) == 1
+
+
+def test_an_order_the_card_names_already_is_not_added_twice(
+    session, tenant_id, call_id
+):
+    """The handoff's card names the order; the hang-up after it writes the
+    order's own card (`offer_unanswered`), its lines fitted to another room:
+    the order stands on the card once."""
+    first = create_callback(
+        session,
+        request(tenant_id, call_id, summary=f"Anliegen nicht geklärt. {OPEN_ORDER}"),
+        now=NOW,
+    )
+
+    task = create_callback(
+        session,
+        request(
+            tenant_id,
+            call_id,
+            reason="order_open",
+            summary="Anruf endete vor dem Ja zur vorgelesenen Bestellung. "
+            "Offene Bestellung, nicht aufgegeben: 2x 23.",
+        ),
+        now=NOW,
+    )
+
+    assert task.summary == first.summary
+    assert session.scalar(select(func.count()).select_from(OutboxEvent)) == 1
+
+
+def test_the_kitchen_marker_stands_once_on_a_joined_card(session, tenant_id, call_id):
+    """#998 no. 6: the model's card and the order's both lead with the
+    marker when the guest spoke of an allergy; the joined card names it
+    once."""
+    create_callback(
+        session,
+        request(tenant_id, call_id, reason="human_requested", summary=f"{MARKER} X."),
+        now=NOW,
+    )
+
+    task = create_callback(
+        session,
+        request(
+            tenant_id, call_id, reason="order_open", summary=f"{MARKER} {ORDER_TEXT}"
+        ),
+        now=NOW,
+    )
+
+    assert task.summary == f"{MARKER} X. {ORDER_TEXT}"
+
+
+def test_a_complaint_that_joins_makes_the_card_a_complaint(session, tenant_id, call_id):
+    """#998 review: a complaint's handoff card meets an older card of the
+    call. The card becomes a complaint (top of the column, the tablet's
+    alarm), and the push says so instead of "Bestellung offen"."""
+    first = create_callback(
+        session,
+        request(tenant_id, call_id, reason="out_of_scope", summary="Gast will X."),
+        now=NOW,
+    )
+
+    task = create_callback(
+        session,
+        request(
+            tenant_id,
+            call_id,
+            reason="complaint",
+            summary=f"Kunde hat sich beschwert. {OPEN_ORDER}",
+        ),
+        now=NOW,
+    )
+
+    assert task.callback_id == first.callback_id
+    assert task.reason == "complaint"
+    assert task.summary == f"Gast will X. Kunde hat sich beschwert. {OPEN_ORDER}"
+    pushes = session.scalars(select(OutboxEvent).order_by(OutboxEvent.created_at))
+    assert [e.payload["reason"] for e in pushes] == ["out_of_scope", "complaint"]
+
+
+def test_the_kitchen_marker_survives_a_join_that_fills_the_card(
+    session, tenant_id, call_id
+):
+    """#998 review: the card's own text gives way at its end. Its kitchen
+    marker stands in front of the joined card, however long the order and the
+    bookings are, and once."""
+    _table(session, tenant_id, call_id, "Mueller")
+    create_callback(
+        session,
+        request(tenant_id, call_id, reason="human_requested", summary=f"{MARKER} X."),
+        now=NOW,
+    )
+    order = f"{OPEN_ORDER[:-1]}, " + "2x 23 Pizza Margherita, " * 37
+
+    task = create_callback(
+        session,
+        request(tenant_id, call_id, reason="order_open", summary=order.rstrip(", ")),
+        now=NOW,
+    )
+
+    assert task.summary.startswith(MARKER)
+    assert task.summary.count(MARKER) == 1
+    assert "Bereits gebucht: Reservierung" in task.summary
+    assert len(task.summary) <= 1000

@@ -187,13 +187,14 @@ function detail(event: Event): Record<string, unknown> {
       osc.stop(t + i * 0.25 + 0.23);
     });
   }
-  // The cards of a list by their id. A plain object on purpose: its keys come
-  // back in the order the old script announced new cards in.
-  function karten(liste: string): Record<string, string | null> {
+  // The cards of a list by their id, with their `attr`. A plain object on
+  // purpose: its keys come back in the order the old script announced new
+  // cards in.
+  function karten(liste: string, attr = "data-reason"): Record<string, string | null> {
     const ids: Record<string, string | null> = {};
     document.querySelectorAll("#" + liste + " [data-id]").forEach((el) => {
       const id = el.getAttribute("data-id");
-      if (id !== null) ids[id] = el.getAttribute("data-reason");
+      if (id !== null) ids[id] = el.getAttribute(attr);
     });
     return ids;
   }
@@ -210,6 +211,9 @@ function detail(event: Event): Record<string, unknown> {
   }
   // Was beim Laden schon da war, klingelt nicht.
   let bekannt = karten("rueckrufe-liste");
+  // The text of each callback card, as a version: an open order that joins a
+  // card changes it (#993), and the team must notice that as a new card (#998).
+  let knownVersions = karten("rueckrufe-liste", "data-version");
   let knownOrders = karten("bestellungen-liste");
   let knownOverdue = overdueOrders();
   function newIds(vorher: Record<string, string | null>, jetzt: Record<string, string | null>): string[] {
@@ -257,16 +261,35 @@ function detail(event: Event): Record<string, unknown> {
     }
     if (ziel !== "rueckrufe-liste") return;
     const jetzt = karten("rueckrufe-liste");
+    const versions = karten("rueckrufe-liste", "data-version");
     const neu = newIds(bekannt, jetzt);
+    // A card already seen whose text changed. An emptied one (the deletion
+    // job, an erasure) has no version and nothing new to read.
+    const changed = Object.keys(versions).filter(
+      (id) => id in knownVersions && knownVersions[id] !== versions[id] && versions[id] !== ""
+    );
+    // A card that became a complaint (one joined it, #998) alarms like a new one.
+    const complaints = neu
+      .concat(changed)
+      .filter((id) => jetzt[id] === "complaint" && bekannt[id] !== "complaint");
     bekannt = jetzt;
-    if (!neu.length) return;
-    const beschwerde = neu.some((id) => jetzt[id] === "complaint");
+    knownVersions = versions;
+    // A changed card blinks like a new order: nobody has read its new text.
+    changed.forEach((id) => {
+      const el = document.querySelector('#rueckrufe-liste [data-id="' + id + '"]');
+      if (el) el.classList.add("neu");
+    });
+    if (!neu.length && !changed.length) return;
+    const beschwerde = complaints.length > 0;
     if (beschwerde) {
       notifySheet(
         "Neue Beschwerde · ansehen",
-        '#rueckrufe-liste [data-id="' +
-          neu.filter((id) => jetzt[id] === "complaint")[0] +
-          '"]'
+        '#rueckrufe-liste [data-id="' + complaints[0] + '"]'
+      );
+    } else if (changed.length) {
+      notifySheet(
+        "Rückruf ergänzt · ansehen",
+        '#rueckrufe-liste [data-id="' + changed[0] + '"]'
       );
     }
     ton(beschwerde ? [660, 440, 660, 440] : [880, 1175]);
@@ -372,6 +395,12 @@ function detail(event: Event): Record<string, unknown> {
   document.body.addEventListener("order-notice", (e) => {
     const value = detail(e).value;
     if (typeof value === "string") showBoardNote(value, "ok", 6000);
+  });
+  // An "Erledigt" on a card whose text changed since it was drawn closed
+  // nothing (#998): the board says why, until the next tap.
+  document.body.addEventListener("callback-notice", (e) => {
+    const value = detail(e).value;
+    if (typeof value === "string") showBoardNote(value, "warn");
   });
   // A table the team entered (T-3.12): the sheet closes, the board says so; the
   // column "Heute" follows on its own through the event stream.
