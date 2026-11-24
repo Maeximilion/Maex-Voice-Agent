@@ -23,6 +23,7 @@ from api.agent.llm import LLMTurn, ToolCall
 from api.agent.loop import (
     SAY_ORDER_DROPPED,
     SAY_TIMEOUT,
+    SUMMARY_NOTE_TO_CLEAR,
     SUMMARY_OPEN_ORDER,
     SUMMARY_READBACK_UNANSWERED,
     ConversationLoop,
@@ -667,3 +668,19 @@ def test_a_read_back_without_a_number_leaves_no_card(session, tenant_id, order):
 
     assert cards(session, state) == []
     assert state.stage == "readback_pending"
+
+
+def test_the_card_of_an_unanswered_order_leads_with_the_kitchen_marker(
+    session, state, order
+):
+    """The guest spoke of an allergy in the call (#940): the card leads with
+    the marker and never names the allergy (L13)."""
+    read_to_the_guest(session, state, order)
+    state.allergy_said = True
+    loop = ConversationLoop(session, Model(), "system", now=NOW, clock=lambda: 0)
+
+    loop.offer_unanswered(state)
+
+    (card,) = cards(session, state)
+    assert card.summary.startswith(SUMMARY_NOTE_TO_CLEAR)
+    assert SUMMARY_READBACK_UNANSWERED in card.summary

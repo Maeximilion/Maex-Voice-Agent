@@ -32,6 +32,7 @@ from api.agent.loop import (
     SAY_CALLBACK_NUMBER,
     SAY_TABLE_BOOKED,
     SUMMARY_ALLERGENS,
+    SUMMARY_READBACK_UNANSWERED,
 )
 from api.agent.state import ConversationState
 from api.config import settings
@@ -48,6 +49,7 @@ from api.models import (
     CallLimitWindow,
     ComplaintRule,
     MenuItem,
+    Order,
     Reservation,
     ServiceConfig,
 )
@@ -2675,3 +2677,72 @@ def test_an_outage_transfer_that_reached_the_line_leaves_no_card(session, tenant
 
     assert session.scalars(select(Callback)).all() == []
     assert the_call(session, "s-1").outcome == "error"
+
+
+# -- #953: the call ends while an order waits for its yes ---------------------------
+
+ORDER_READ_BACK = [
+    {"role": "customer", "text": "Guten Tag, ich moechte etwas zum Abholen bestellen."},
+    {"role": "customer", "text": "Zweimal die 23 und einmal die knusprige Ente."},
+    {"role": "customer", "text": "Huhn bitte."},
+    {"role": "customer", "text": "Nein, das wars."},
+    {"role": "customer", "text": "Auf den Namen Mueller."},
+    {"role": "customer", "text": "Meine Nummer ist 0721 5551234."},
+]
+
+
+def _order_cards(session, sid) -> list[Callback]:
+    call = the_call(session, sid)
+    return list(session.scalars(select(Callback).where(Callback.call_id == call.id)))
+
+
+def test_a_hang_up_on_an_order_read_back_leaves_a_card(session, tenant):
+    """Maxi, 24.11.2026: the caller hangs up while the order waits for its
+    yes; a "Danke" alone is none. The team calls back, nothing is booked."""
+    apply(session, tenant.id, menu_plan(), now=NOW)
+    port = FakeTelephony()
+    case = {"transcript": [*ORDER_READ_BACK, {"role": "customer", "text": "Danke."}]}
+    sid = port.play(case, handler_for(session, tenant, port))
+
+    call = the_call(session, sid)
+    assert call.outcome == "callback"
+    cards = _order_cards(session, sid)
+    assert len(cards) == 1 and SUMMARY_READBACK_UNANSWERED in cards[0].summary
+    assert (
+        session.scalars(select(Order).where(Order.call_id == call.id)).one().status
+        == "draft"
+    )
+
+
+def test_an_outage_on_an_order_read_back_leaves_no_card_of_its_own(session, tenant):
+    """The outage takes the call to the team, whose own card waits if nobody
+    answers: the order card is not written for it."""
+    apply(session, tenant.id, menu_plan(), now=NOW)
+    port = FakeTelephony()
+    case = {
+        "transcript": [*ORDER_READ_BACK, {"role": "customer", "voice_failure": True}]
+    }
+    sid = port.play(case, handler_for(session, tenant, port))
+
+    assert port.transfers(sid) == [TEAM_PHONE]
+    assert the_call(session, sid).outcome == "error"
+    assert all(
+        SUMMARY_READBACK_UNANSWERED not in card.summary
+        for card in _order_cards(session, sid)
+    )
+
+
+def test_a_failed_order_card_still_closes_the_call_log(session, tenant, monkeypatch):
+    """A database error on the card costs the card, never the log: without it
+    the call would count as an outage later."""
+    apply(session, tenant.id, menu_plan(), now=NOW)
+
+    def broken(self, state, *, with_the_team=False):
+        raise OperationalError("insert", {}, Exception("lock timeout"))
+
+    monkeypatch.setattr(handler_module.ConversationLoop, "offer_unanswered", broken)
+    port = FakeTelephony()
+    sid = port.play({"transcript": ORDER_READ_BACK}, handler_for(session, tenant, port))
+
+    call = the_call(session, sid)
+    assert call.ended_at is not None and call.outcome == "abandoned"
