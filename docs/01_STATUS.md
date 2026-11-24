@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.50
+> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.51
 
 ---
 
@@ -147,6 +147,7 @@ Settled assumptions: `docs/HISTORY.md` sections "Made Assumptions (archive)" and
 
 | Date | What |
 |---|---|
+| 24.11.2026 | **#979: English identifiers in the older GUI code.** The route functions of `api/gui/router.py` and the names in `api/gui/ts/app.ts` are English now; URLs, query keys (`tag`, `ergebnis`, `anliegen` through `Query` aliases), element ids, template names and tablet text are unchanged. | Done |
 | 24.11.2026 | **#998: every open order reaches a card, and the tablet notices a changed card** (follow-ups of the #993 deep review). A handoff's or a missed team leg's card that names an open order joins the call's open card instead of meeting it unchanged; a model card written after the read-back gets the order at the hang-up; the kitchen marker stands once. The tablet rings and blinks for a card whose text changed, and "Erledigt" sends the version it was drawn with, so a stale tap closes nothing. Points 5, 7, 8 of the issue stay open in `docs/24`. |
 | 24.11.2026 | **#929: a second allergy said after the read-back reaches a note** (Maxi, 24.11.2026: ask for which dish, or the dish named right before). The safety net compared only that some health note stood; now every allergen letter a kept sentence names as the guest's must be on one (`guards.unnoted_allergy`, `allergens_named`). The redraft with only the first allergy's note goes back once with the uncovered sentence and the new fixed question "Für welches Gericht soll die Küche darauf achten?" (`SAY_ASK_ALLERGY_DISH`, a core sentence of the allergy turn, its answer kept); sent again without, the core's "Gast sagte" block replaces an earlier one instead of noting it twice. Eval `allergie_0037`. |
 | 24.11.2026 | **#993: an order read back and never answered joins the call's open card** (Maxi, 24.11.2026, option A). A call whose model wrote a card earlier (for example `human_requested`) and that ended on an unanswered read-back got the old card back from `create_callback`, and the team never read the open order. Now an `order_open` request appends its text to the open card of the call, which keeps its reason, number and id; the card's own text gives way, its bookings are read again from the database. Once per call (a second hang-up changes nothing), audit `callback.order_added`, and a `callback.created` push with the reason `order_open` names the order. The deep review added a row lock against a concurrent "Erledigt" and a gentler cut of the bookings tail. The tablet's event stream now follows each open card's text (`open_change_token`), so an open tablet redraws it. Left open: other cards that name an open order under another reason (`_handoff`, `team_missed`) still hide behind an older card, and the tablet does not ring for a changed card (#998). |
@@ -182,6 +183,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.51 · 24.11.2026:** #979: English identifiers in the older GUI code (route functions of `api/gui/router.py`, names in `app.ts`), no behaviour change
 - **v2.69.50 · 24.11.2026:** #998: every open order reaches the call's card, a changed card rings on the tablet, a stale "Erledigt" closes nothing
 - **v2.69.49 · 24.11.2026:** #983 call_log.py in English (English option names, German kept as aliases), review points 3 and 4 fixed; #985 a partial decision-issue run drops the keys of the sections it rewrites
 - **v2.69.48 · 24.11.2026:** #930: option A recorded as a named residual (the core's note from the guest's words is read back as said), docs/05 and docs/24; docs only
