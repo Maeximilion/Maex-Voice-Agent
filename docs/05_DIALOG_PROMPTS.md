@@ -384,13 +384,16 @@ eine Sesamallergie") (Maxi, 15.11.2026, #736, #763)
      of the order or the table and lets it go (`guards.unnoted_allergy`,
      `guards.with_the_guests_words`); when the cut to the field would drop
      what a kept sentence names, the team takes the call instead. Every
-     allergen a kept sentence names as the guest's (`allergens_named`, read
-     without a denied clause and without the plain names of dishes the call
-     found) must be on such a note, compared by letter: a second allergy
+     allergen a kept sentence names as what someone reacts to must be on
+     such a note, compared by letter (`allergens_named`): read from the
+     sentence's part about health on (`guards.reacts_to`, so "Die 13 mit
+     extra Käse, ich habe eine Nussallergie" asks for no cheese), an answer
+     such as "Gegen Sesam." with all it names, plain names of dishes the
+     call found aside. A second allergy
      said after the read-back ("Ach, und meine Frau verträgt keinen
      Sesam.") does not pass on the first one's note. The draft goes back
-     once with only the sentences no note covers; the hint says to note it
-     on the dish named right before, for everyone on the order or table,
+     once with only the sentences no note covers; the hint says to note the
+     allergy as the guest said it on the dish named right before, for everyone on the order or table,
      or, unclear for which dish, to ask "Für welches Gericht soll die Küche
      darauf achten?" (#929, Maxi 24.11.2026). Sent again without, the core's
      "Gast sagte" block holds every kept sentence; a block a redraft carries

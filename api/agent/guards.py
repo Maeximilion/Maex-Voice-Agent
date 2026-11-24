@@ -157,12 +157,12 @@ _HINT_UNNOTED_SAID = (
 )
 # A health note stands, but an allergen the guest named later is on none
 # (#929, Maxi 24.11.2026: ask for the dish, or the dish named right before).
-HINT_UNNOTED_LATER = "Abgelehnt: kein `note` nennt das Allergen aus „{said}“."
+HINT_UNNOTED_LATER = "Abgelehnt: kein `note` nennt die Allergie aus „{said}“."
 _HINT_UNNOTED_LATER_WHERE = (
-    " Gilt es für das Gericht, das der Gast direkt davor genannt hat, notiere "
-    "es als WICHTIG-Hinweis dort, für alle an der Bestellung oder am Tisch, und "
-    "ruf denselben Schritt noch einmal auf. Ist unklar, für welches Gericht, "
-    "sag nur „{ask}“"
+    " Notiere sie, wie der Gast sie gesagt hat, als WICHTIG-Hinweis: am "
+    "Gericht, das er direkt davor genannt hat, wenn sie dafür gilt, für alle "
+    "an der Bestellung oder am Tisch, und ruf denselben Schritt noch einmal "
+    "auf. Ist unklar, für welches Gericht, sag nur „{ask}“"
 )
 HINT_NOTE_CLAIM = (
     "Abgelehnt: ein `note` sagt etwas über ein Gericht (frei von etwas, sicher, "
@@ -1443,12 +1443,16 @@ def unnoted_allergy(state: ConversationState, call: ToolCall) -> ToolResult | No
 
 
 def _named_as_theirs(state: ConversationState, said: str) -> set[str]:
-    """The allergen letters a kept sentence names, read as the turn reads the
-    guest (`begin_allergen_turn`): without what only denies an allergy and
-    without the plain names of dishes the call found."""
-    return allergens_named(
-        _without_dish_names(state, _guest_words(said), plain_only=True)
-    )
+    """The allergen letters a kept sentence names as what someone reacts to,
+    without the plain names of dishes the call found: from its part about
+    health on (`reacts_to`), so "Die 13 mit extra Käse, ich habe eine
+    Nussallergie" asks for no cheese on a note; an answer to the question
+    about the allergy ("Gegen Erdnüsse.") has no health word and names all
+    it says but what it only denies (`_guest_words`)."""
+    text = _without_dish_names(state, said, plain_only=True)
+    if speaks_of_health(said):
+        return set(reacts_to(text)) & allergens_named(text)
+    return allergens_named(_guest_words(text))
 
 
 def with_the_guests_words(state: ConversationState, call: ToolCall) -> ToolCall | None:

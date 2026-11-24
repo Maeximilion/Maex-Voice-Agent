@@ -927,6 +927,18 @@ def test_the_net_passes_when_some_health_note_names_each_allergen(call):
     assert guards.unnoted_allergy(_peanut_then_sesame(), call) is None
 
 
+def test_an_answer_to_the_question_counts_with_all_it_names():
+    """ "Gegen Sesam." has no health word; it answers the question and names
+    what the kitchen must know."""
+    state = _named()
+    state.allergy_said = [PEANUT, "Ich habe noch eine Allergie.", "Gegen Sesam."]
+
+    refused = guards.unnoted_allergy(state, _two((PEANUT_NOTE, None)))
+
+    assert refused is not None
+    assert "„Gegen Sesam“" in (refused.hint or "")
+
+
 def test_a_note_without_a_health_word_does_not_count_for_the_letters():
     """ "ohne Sesam" is no health note: the retention job would keep it (L13),
     and the kitchen reads it as a wish."""
@@ -941,6 +953,8 @@ def test_a_note_without_a_health_word_does_not_count_for_the_letters():
         "Ich habe keine Sesamallergie, aber eine Erdnussallergie.",
         # A dish name of the call is no allergen the guest named.
         "Die Nudeln mit Garnelen, ich habe eine Erdnussallergie.",
+        # Nor a wish before the part about health: no cheese allergy.
+        "Die 13 mit extra Käse, ich habe eine Erdnussallergie.",
     ],
 )
 def test_letters_the_guest_did_not_name_as_theirs_ask_for_no_note(said):
