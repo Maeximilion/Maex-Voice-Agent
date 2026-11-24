@@ -1,12 +1,13 @@
 """CI skips the Docker jobs only for pull requests that cannot reach the image (#609)."""
 
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-from scripts.ci_changes import image_changed
+from scripts.ci_changes import asterisk_changed, image_changed
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -46,7 +47,7 @@ def test_a_file_moved_out_of_api_still_builds_the_image():
     assert image_changed(["api/old_notes.py", "docs/old_notes.py"]) is True
 
 
-def test_the_script_prints_the_output_line_ci_reads():
+def test_the_script_prints_the_output_lines_ci_reads():
     run = subprocess.run(
         [sys.executable, "scripts/ci_changes.py"],
         cwd=ROOT,
@@ -55,4 +56,45 @@ def test_the_script_prints_the_output_line_ci_reads():
         text=True,
         check=True,
     )
-    assert run.stdout == "image=false\n"
+    assert run.stdout == "image=false\nasterisk=false\n"
+
+
+@pytest.mark.parametrize(
+    "files",
+    [
+        ["deploy/asterisk/image/Dockerfile"],
+        ["docs/20_VOICE_LAYER.md", "deploy/asterisk/image/patches/x.patch"],
+        ["deploy/asterisk/conf/extensions.conf"],
+        ["scripts/asterisk_image_check.sh"],
+        [".github/workflows/ci.yml"],
+        # A broken or empty diff never skips the build.
+        [],
+    ],
+)
+def test_a_change_that_reaches_the_asterisk_image_builds_it(files):
+    assert asterisk_changed(files) is True
+
+
+@pytest.mark.parametrize(
+    "files",
+    [
+        ["api/telephony/router.py", "docs/20_VOICE_LAYER.md"],
+        ["deploy/asterisk/docker-compose.drill.yml", "deploy/asterisk/render.sh"],
+        ["docker-compose.yml"],
+    ],
+)
+def test_anything_else_skips_the_asterisk_build(files):
+    assert asterisk_changed(files) is False
+
+
+def test_ci_runs_the_check_on_the_image_it_built():
+    """The job asterisk-image builds deploy/asterisk/image and runs the check
+    of #775 on that very tag, gated by the output this script prints."""
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    found = re.search(r"\n  asterisk-image:\n(.*?)(?=\n  [a-z-]+:\n|\Z)", ci, re.S)
+    assert found, "ci.yml has no job asterisk-image"
+    job = found.group(1)
+    assert "asterisk: ${{ steps.diff.outputs.asterisk }}" in ci
+    assert "needs.changes.outputs.asterisk != 'false'" in job
+    assert "docker build --tag maex-asterisk:ci deploy/asterisk/image" in job
+    assert "sh scripts/asterisk_image_check.sh maex-asterisk:ci" in job

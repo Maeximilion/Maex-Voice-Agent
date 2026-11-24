@@ -15,6 +15,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from types import EllipsisType
 from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
@@ -389,6 +390,7 @@ def _draft_order(
     tenant_id: uuid.UUID,
     args: dict[str, Any],
     now: datetime | None,
+    pending: uuid.UUID | EllipsisType | None = ...,
 ) -> BaseModel:
     # As with create_reservation: the key comes from the details of the same
     # call. A model retry with the same positions does not create a second
@@ -402,7 +404,7 @@ def _draft_order(
         ),
         "draft_order",
     )
-    return draft_order(session, req, now=now)
+    return draft_order(session, req, now=now, pending=pending)
 
 
 def _check_delivery(
@@ -453,7 +455,11 @@ def dispatch(
     args: dict[str, Any],
     *,
     now: datetime | None = None,
+    pending_order: uuid.UUID | EllipsisType | None = ...,
 ) -> ToolResult:
+    """`pending_order`: the order the conversation holds for a yes, None for
+    none; it decides whether `draft_order` may replay a stored draft (#952).
+    The default is a caller without a conversation."""
     started = time.perf_counter()
     adapter = TOOLS.get(name)
     # Call and tenant come from the code, never from the model. A real model
@@ -466,7 +472,11 @@ def dispatch(
         if adapter is None:
             raise InvalidInput(f"unbekanntes Tool: {name}")
         try:
-            result = adapter(session, call_id, tenant_id, args, now)
+            result = (
+                _draft_order(session, call_id, tenant_id, args, now, pending_order)
+                if adapter is _draft_order
+                else adapter(session, call_id, tenant_id, args, now)
+            )
         except ValidationError as exc:
             hint = validation_hint(exc)
             raise InvalidInput(str(exc)) from exc

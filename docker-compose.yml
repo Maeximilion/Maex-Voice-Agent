@@ -303,21 +303,24 @@ services:
 
   asterisk:
     profiles: ["voice"]
-    # Asterisk 22.11.0 with chan_websocket. Pinned by digest, a third-party
-    # build. Not older: before 22.11.0 a `voice` that takes the connection and
-    # answers nothing held the call for ever, and the team never rang (Asterisk
-    # issue #1979, shown by the drill "voice frozen" before #768). 22.11.0 can
-    # crash after a failed media connection (#768, Asterisk issue #2121): the
-    # dialplan asks `voice` first, until an image of 22.12.0 or later (#775).
-    image: andrius/asterisk:22.11.0_alpine-3.24-537e52c@sha256:98c0e598fb16492215ddc7cc52c3200646b44584ffa9267bebecff531fd3530b
+    # Asterisk 22.12.0 with chan_websocket, built here from the official source
+    # tarball (deploy/asterisk/image/, #775): base image pinned by digest, every
+    # source by checksum. Not older: 22.11.0 crashes after a failed media
+    # connection (Asterisk issue #2121, #768), and before 22.11.0 a `voice`
+    # that takes the connection and answers nothing held the call for ever
+    # (Asterisk issue #1979). `up` builds it, a few minutes the first time;
+    # never pulled: the name is ours alone, not a Docker Hub image.
+    image: maex-voice-agent/asterisk:22.12.0
+    build: ./deploy/asterisk/image
+    pull_policy: build
     restart: unless-stopped
     # It takes outside input: of the containers it reaches `voice` alone.
     networks: [telephony]
     # Renders deploy/asterisk/conf/ into the tmpfs below, then starts as the
     # image does, without its -vvvddd: verbose output prints every dialplan
-    # step with its values, the media token included.
+    # step with its values, the media token included. -n: no colours in the log.
     entrypoint: ["/bin/sh", "/templates/render.sh"]
-    command: ["/usr/sbin/asterisk", "-f", "-T", "-W", "-U", "asterisk", "-p"]
+    command: ["/usr/sbin/asterisk", "-f", "-T", "-n", "-U", "asterisk", "-p"]
     # render.sh and the image's entrypoint run as root: they write the
     # configuration and make the runtime directories the asterisk user's,
     # then Asterisk drops to that user itself. Not read-only: it writes into
@@ -327,7 +330,6 @@ services:
     # Only what the AI telephone needs, not the whole .env: no database or
     # model credentials in this container.
     environment:
-      ASTERISK_TERMINAL_OPTS: "-n"
       VOICE_NUMBER: ${VOICE_NUMBER:-}
       VOICE_MEDIA_TOKEN: ${VOICE_MEDIA_TOKEN:-}
       TEAM_PHONE: ${TEAM_PHONE:-}

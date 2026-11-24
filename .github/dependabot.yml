@@ -65,6 +65,9 @@ updates:
     directories:
       - /api
       - /deploy/speech
+      # The base of the own Asterisk image (#775); the Asterisk version itself
+      # is pinned by checksum there and moves by hand.
+      - /deploy/asterisk/image
     schedule:
       interval: monthly
     # One PR for all Dockerfile base images of a run instead of one per image.

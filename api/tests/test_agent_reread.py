@@ -20,7 +20,14 @@ from api.agent.dispatch import ToolResult
 from api.agent.guards import HINT_CONFIRM, begin_turn, note_said, reread_on_yes
 from api.agent.ladder import UnderstandingLadder
 from api.agent.llm import LLMTurn, ToolCall
-from api.agent.loop import SAY_ORDER_DROPPED, SAY_TIMEOUT, ConversationLoop
+from api.agent.loop import (
+    SAY_ORDER_DROPPED,
+    SAY_TIMEOUT,
+    SUMMARY_NOTE_TO_CLEAR,
+    SUMMARY_OPEN_ORDER,
+    SUMMARY_READBACK_UNANSWERED,
+    ConversationLoop,
+)
 from api.agent.state import ConversationState, apply_tool_result
 from api.events.types import ORDER_CONFIRMED, RESERVATION_CONFIRMED
 from api.models import (
@@ -495,6 +502,30 @@ def test_a_cancel_after_the_stated_time_drops_the_draft_without_the_team(
     assert status(session, order, draft_id) == "draft"
 
 
+def test_the_same_order_after_a_cancel_is_drafted_anew(session, state, order):
+    """#952: the dropped draft stays the call's latest row under the key of
+    the same dishes. Replayed, it kept its old pickup time and skipped the
+    checks of hours and sold-out dishes; the order is drafted anew instead,
+    and that draft's own retry replays it."""
+    read_to_the_guest(session, state, order)
+    dropped = order.draft_id(state)
+    turn(session, state, "Dann stornieren Sie das bitte.", Model(say="x"))
+
+    read_to_the_guest(session, state, order)
+    again = order.draft_id(state)
+    turn(session, state, "Wie bitte?", Model(order.calls[-1]))
+
+    assert again is not None and again != dropped
+    assert order.draft_id(state) == again
+    assert (status(session, order, dropped), status(session, order, again)) == (
+        "draft",
+        "draft",
+    )
+    turn(session, state, "Okay", Model(order.confirm(again), say="Danke."))
+    assert status(session, order, again) == "confirmed"
+    assert status(session, order, dropped) == "draft"
+
+
 @pytest.mark.parametrize(
     "answer",
     [
@@ -565,3 +596,91 @@ def test_a_cancel_of_a_table_keeps_the_order_that_waits(session, state, order):
 
     assert said != [SAY_ORDER_DROPPED]
     assert state.order_id == draft_id
+
+
+# --- #953: a call that ends while a read-back waits for its yes -----------------
+
+
+def cards(session, state) -> list[Callback]:
+    session.expire_all()
+    return list(
+        session.scalars(select(Callback).where(Callback.call_id == state.call_id))
+    )
+
+
+def test_a_call_that_ends_on_the_read_back_leaves_a_card(session, state, order):
+    """#953 (b): "Danke" alone is no yes (Maxi, 23.11.2026), and the caller
+    hangs up. Nothing is booked, and the guest expects the food: the team
+    calls back, with what was read out on the card. Once, however often the
+    end comes."""
+    read_to_the_guest(session, state, order)
+    draft_id = order.draft_id(state)
+    turn(session, state, "Danke", Model(order.confirm(draft_id), say="Gerne."))
+    assert status(session, order, draft_id) == "draft"
+    loop = ConversationLoop(session, Model(), "system", now=NOW, clock=lambda: 0)
+
+    loop.offer_unanswered(state)
+    loop.offer_unanswered(state)
+
+    card = cards(session, state)
+    assert len(card) == 1
+    assert card[0].summary.startswith(SUMMARY_READBACK_UNANSWERED)
+    assert SUMMARY_OPEN_ORDER in card[0].summary
+    assert card[0].phone == CALLER
+    assert status(session, order, draft_id) == "draft"
+    assert state.stage == "callback"
+
+
+def test_a_table_or_a_call_with_the_team_leaves_no_card(session, state, flow):
+    """A table's read-back asks "Passt das so?": unanswered, the guest knows
+    nothing is booked (`reservierung_0032`). An outage or a failed line takes
+    the call to the team, whose own card waits if nobody answers."""
+    read_to_the_guest(session, state, flow)
+    loop = ConversationLoop(session, Model(), "system", now=NOW, clock=lambda: 0)
+
+    loop.offer_unanswered(state, with_the_team=True)
+    if flow.entity == "reservation":
+        loop.offer_unanswered(state)
+
+    assert cards(session, state) == []
+    assert state.stage == "readback_pending"
+
+
+def test_a_booked_order_leaves_no_card(session, state, order):
+    loop = ConversationLoop(session, Model(), "system", now=NOW, clock=lambda: 0)
+    read_to_the_guest(session, state, order)
+
+    turn(session, state, "Okay", Model(order.confirm(order.draft_id(state)), say="x"))
+    loop.offer_unanswered(state)
+    assert cards(session, state) == []
+
+
+def test_a_read_back_without_a_number_leaves_no_card(session, tenant_id, order):
+    """A withheld number nobody named: there is nobody to call back, and the
+    call ends as before."""
+    state = ConversationState(call_id=_call(session, tenant_id), tenant_id=tenant_id)
+    state.slots["phone"] = CALLER
+    read_to_the_guest(session, state, order)
+    state.slots.pop("phone")
+    loop = ConversationLoop(session, Model(), "system", now=NOW, clock=lambda: 0)
+
+    loop.offer_unanswered(state)
+
+    assert cards(session, state) == []
+    assert state.stage == "readback_pending"
+
+
+def test_the_card_of_an_unanswered_order_leads_with_the_kitchen_marker(
+    session, state, order
+):
+    """The guest spoke of an allergy in the call (#940): the card leads with
+    the marker and never names the allergy (L13)."""
+    read_to_the_guest(session, state, order)
+    state.allergy_said = True
+    loop = ConversationLoop(session, Model(), "system", now=NOW, clock=lambda: 0)
+
+    loop.offer_unanswered(state)
+
+    (card,) = cards(session, state)
+    assert card.summary.startswith(SUMMARY_NOTE_TO_CLEAR)
+    assert SUMMARY_READBACK_UNANSWERED in card.summary
