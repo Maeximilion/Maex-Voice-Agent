@@ -546,7 +546,11 @@ class CallHandler:
         """Into a read-back or another protected sentence, or into the last
         sentence before the call ends (`ending`): no turn, and what was said
         to the guest stands. Only the withdrawal counts, and an allergy among
-        the words, for the kitchen marker of a missed team leg (#970)."""
+        the words: for the kitchen marker of a missed team leg (#970), and
+        for the core, which keeps it or, while a draft waits for its yes or an
+        offer for its answer, takes the words as a turn
+        (`ConversationLoop.heard_over`, #1003). Never at `ending`: the core
+        only keeps it, for the cards written when the call closes."""
         if not live.health_heard and arms_the_net(text):
             live.health_heard = True
             if ending and self._to_the_team(live):
@@ -554,6 +558,14 @@ class CallHandler:
                 # the line kept what the card needs already, without it. Not
                 # into a farewell: no report would ever take the entry.
                 self._keep_named_phone(live)
+        if live.loop is not None and live.loop.heard_over(
+            live.state, text, ending=ending
+        ):
+            # A turn like any other: the core takes a stop among the words
+            # itself, after the sentence they answer (`run_turn`), and the
+            # notice here would have become that sentence (#1003 review).
+            self._turn(live, text)
+            return
         if live.state.recording != "on" or not stops_recording(text):
             return
         recording.withdraw(live.session, live.state, self._now)

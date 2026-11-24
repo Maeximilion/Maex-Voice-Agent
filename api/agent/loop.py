@@ -1159,11 +1159,14 @@ class ConversationLoop:
             )
             if self._complaint_card(state, offer, SUMMARY_REMEDY_BOOKED).ok:
                 return TurnResult(state=state, say=[offer.granted_say], ended=True)
+        # An answer that names the guest's health stays off the card (L13),
+        # the complaint itself does not (#1003 review).
+        said = "" if _names_health(state, user_text) else f" {user_text}"
         result = self._handoff(
             state,
             SAY_ESCALATION,
             "complaint",
-            f"{offer.complaint} {user_text}",
+            f"{offer.complaint}{said}",
             summary=_remedy_card(SUMMARY_REMEDY_OPEN, offer),
         )
         return result
@@ -1224,18 +1227,58 @@ class ConversationLoop:
                 result = self._dispatch(state, "create_callback", args)
             apply_tool_result(state, "create_callback", result)
 
+    def heard_over(
+        self, state: ConversationState, text: str, *, ending: bool = False
+    ) -> bool:
+        """Words the guest said into a sentence that may not be interrupted
+        make no turn (`telephony/handler.py`), but an allergy among them, or
+        an answer to the model's question about one, is health information
+        like any other sentence of theirs (#1003, L13). True when the words
+        must make a turn after all. A read-back waits for its yes, and its
+        draft cannot carry what was just said: the turn sets it aside and the
+        model drafts again with the note (`_guest_turn`), so the next yes
+        covers it (rule 3). A remedy offer waits for its answer, and a rule is
+        offered only in a call that never spoke of health (`_offer_remedy`):
+        the turn hands the complaint to the team (`_offer_answered`).
+        Otherwise, and always into the sentence that ends the call (`ending`),
+        the sentence is kept here, for the safety net of every later draft
+        (`guards.unnoted_allergy`) and the kitchen marker of the call's cards,
+        the ones written when it closes too (`offer_unanswered`). A bare
+        denial takes nothing back here: the guest did not hear the question to
+        its end."""
+        asked = _asked_about_an_allergy(state)
+        if not escalation.arms_the_net(text) and (
+            not asked or escalation.bare_denial(text, asked=True)
+        ):
+            return False
+        if not ending and (
+            state.remedy_offer is not None
+            or (state.stage == "readback_pending" and state.callback_waits is None)
+        ):
+            return True
+        _note_allergy_said(state, text)
+        state.allergy_talk = True
+        return False
+
     def _complaint_card(
         self, state: ConversationState, offer: RemedyOffer, sentence: str
     ) -> ToolResult:
-        """The callback card of a complaint a rule was offered for."""
+        """The callback card of a complaint a rule was offered for. An allergy
+        said into the farewell of a call that ends on the offer (`heard_over`)
+        marks it like every card of the core (#1003)."""
         card = self._dispatch(
             state,
             "create_callback",
             {
                 "phone": state.slots["phone"],
                 "reason": "complaint",
-                "summary": _handoff_summary(
-                    "complaint", offer.complaint, base=_remedy_card(sentence, offer)
+                "summary": _marked(
+                    state,
+                    _handoff_summary(
+                        "complaint",
+                        offer.complaint,
+                        base=_remedy_card(sentence, offer),
+                    ),
                 ),
             },
         )

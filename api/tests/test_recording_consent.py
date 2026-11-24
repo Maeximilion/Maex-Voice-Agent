@@ -23,6 +23,7 @@ from api.agent.consent import (
     recording_answer,
     stops_recording,
 )
+from api.agent.guards import SAY_ASK_ALLERGY, note_said
 from api.agent.loop import SAY_NOT_A_PERSON, ConversationLoop
 from api.agent.recording import (
     RECORDING_WITHDRAWN,
@@ -711,6 +712,55 @@ def test_an_okay_to_the_stop_notice_confirms_nothing(session, tenant, switched_o
 
     assert session.scalars(select(Reservation.status)).all() == ["draft"]
     assert "Mueller" in port.says(SID)[-1]
+
+
+def test_a_stop_and_an_allergy_said_into_the_read_back_hold_both(
+    session, tenant, switched_on
+):
+    """#1003: one sentence into the read-back stops the recording and names
+    an allergy. The stop holds once, the notice is said once, and the table
+    is read out again with the note: nothing is booked before a yes to it."""
+    port, handler = on_the_phone(session, tenant)
+    handler.on_user_turn(SID, "Ja.")
+    handler.on_user_turn(SID, A_TABLE)
+    handler.on_user_turn(SID, "Auf den Namen Mueller.")
+    first = port.says(SID)[-1]
+
+    handler.on_talked_over(SID, "Aufnahme stoppen, ich habe eine Nussallergie.")
+
+    assert port.stopped(SID) == ["discard"]
+    assert answers(session) == ["yes", "no"]
+    assert port.says(SID).count(SAY_RECORDING_STOPPED) == 1
+    again = port.says(SID)[-1]
+    assert again != first and "Mueller" in again
+    # The first draft stays one beside the new one: nothing is booked.
+    assert set(session.scalars(select(Reservation.status))) == {"draft"}
+
+
+def test_a_stop_and_an_allergy_answer_said_into_the_question_keep_the_answer(
+    session, tenant, switched_on
+):
+    """#1003 review: while the table waits for its yes, the core asks what
+    the kitchen must watch for, and the guest answers into the question and
+    stops the recording in one breath. The core takes the stop itself, after
+    the question the answer belongs to: the answer is kept, the draft goes
+    back, and the stop holds once."""
+    port, handler = on_the_phone(session, tenant)
+    handler.on_user_turn(SID, "Ja.")
+    handler.on_user_turn(SID, A_TABLE)
+    handler.on_user_turn(SID, "Auf den Namen Mueller.")
+    state = handler._live[SID].state
+    assert state.stage == "readback_pending"
+    first = state.reservation_id
+    note_said(state, SAY_ASK_ALLERGY)
+
+    handler.on_talked_over(SID, "Gegen Sesam. Aufnahme stoppen.")
+
+    assert state.allergy_said == ["Gegen Sesam. Aufnahme stoppen."]
+    assert state.reservation_id != first  # the draft without it went back
+    assert port.stopped(SID) == ["discard"]
+    assert port.says(SID).count(SAY_RECORDING_STOPPED) == 1
+    assert set(session.scalars(select(Reservation.status))) == {"draft"}
 
 
 def test_anything_else_said_into_a_protected_sentence_stays_unheard(

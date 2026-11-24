@@ -45,6 +45,7 @@ from api.domain.callbacks.transfer import (
 )
 from api.domain.menu.importer import apply
 from api.domain.menu.items import active_count
+from api.domain.menu.wishes import speaks_of_health
 from api.models import (
     Call,
     Callback,
@@ -1322,6 +1323,36 @@ def test_a_yes_spoken_into_the_read_back_books_nothing(session, tenant):
     wire.played()
     wire.says("Ja, passt so.")
     assert _reservation_of(session, "voice-1").status == "confirmed"
+
+
+def test_an_allergy_spoken_into_the_read_back_is_read_back_on_the_wire(session, tenant):
+    """#1003 on the wire: the allergy said into the read-back makes the
+    table be read back again with the note, behind the first read-back; a
+    yes said into that one still books nothing, the yes after it books the
+    table with the note (rule 3, L13)."""
+    wire = _Wire(session, tenant)
+    read_back = wire.until_the_read_back()
+    wire.says("Ich habe eine Nussallergie.")  # still playing
+    again = wire.line.played()[-1]
+    assert again != read_back and again.endswith("Passt das so?")
+    assert "flush" not in wire.line.kinds()
+
+    wire.says("Ja, passt so.")  # into the second read-back
+    assert {table.status for table in _tables_of(session, "voice-1")} == {"draft"}
+    wire.played()
+    wire.says("Ja, passt so.")
+
+    # The first draft stays one: a draft the guest moved on from is never booked.
+    [table] = [t for t in _tables_of(session, "voice-1") if t.status != "draft"]
+    assert table.status == "confirmed"
+    assert speaks_of_health(table.note or "")
+
+
+def _tables_of(session, session_id: str) -> list[Reservation]:
+    call = the_call(session, session_id)
+    return list(
+        session.scalars(select(Reservation).where(Reservation.call_id == call.id))
+    )
 
 
 def test_a_yes_that_was_queued_before_the_read_back_books_nothing(session, tenant):
@@ -2855,3 +2886,123 @@ def test_a_failed_order_card_still_closes_the_call_log(session, tenant, monkeypa
 
     call = the_call(session, sid)
     assert call.ended_at is not None and call.outcome == "abandoned"
+
+
+# -- #1003: an allergy said into a protected sentence reaches the core ------------
+
+
+def _order_read_back(session, tenant, port) -> CallHandler:
+    """An order call up to its read-back, which waits for the guest's yes."""
+    apply(session, tenant.id, menu_plan(), now=NOW)
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    for line in ORDER_READ_BACK[:-1]:
+        handler.on_user_turn("s-1", line["text"])
+    assert handler._live["s-1"].state.stage == "readback_pending"
+    return handler
+
+
+def test_an_allergy_said_into_the_read_back_is_read_back_before_the_yes(
+    session, tenant
+):
+    """#1003, rules 2 and 3, L13: the guest names an allergy while the order is
+    read back. The draft without it is set aside and read out again with the
+    note, so only the yes after that books the order the kitchen can cook
+    safely."""
+    port = FakeTelephony()
+    handler = _order_read_back(session, tenant, port)
+    first = port.says("s-1")[-1]
+
+    handler.on_talked_over("s-1", "Ich habe eine Erdnussallergie.")
+
+    state = handler._live["s-1"].state
+    assert state.allergy_said == ["Ich habe eine Erdnussallergie."]
+    assert state.stage == "readback_pending" and state.readback_heard
+    assert port.says("s-1")[-1] != first
+    handler.on_user_turn("s-1", "Ja, passt so.")
+    handler.on_call_ended("s-1")
+
+    orders = session.scalars(
+        select(Order).where(Order.call_id == the_call(session, "s-1").id)
+    ).all()
+    placed = [order for order in orders if order.status != "draft"]
+    assert placed, [order.status for order in orders]
+    assert all(speaks_of_health(order.note or "") for order in placed)
+
+
+def test_a_yes_and_an_allergy_in_one_breath_into_the_read_back_book_nothing(
+    session, tenant
+):
+    """#1003, rule 3: the yes said in the same utterance as the allergy, into
+    the read-back, is no yes to it. Whatever the model makes of the sentence,
+    the order without the note is not placed."""
+    port = FakeTelephony()
+    handler = _order_read_back(session, tenant, port)
+    said = len(port.says("s-1"))
+
+    handler.on_talked_over("s-1", "Ja, passt, ich habe eine Erdnussallergie.")
+    # The words made a turn: the guest hears what became of them.
+    assert len(port.says("s-1")) > said
+    handler.on_call_ended("s-1")
+
+    orders = session.scalars(
+        select(Order).where(Order.call_id == the_call(session, "s-1").id)
+    ).all()
+    assert orders and {order.status for order in orders} == {"draft"}
+
+
+def test_an_allergy_said_into_the_farewell_marks_the_open_order_card(session, tenant):
+    """#1003: the guest stays silent on the read-back, the call ends, and the
+    guest names an allergy into the farewell (heard on a recorded call). No
+    turn, but the core keeps it: the card of the unanswered order leads with
+    the kitchen marker, never the allergy (L13)."""
+    port = FakeTelephony()
+    handler = _order_read_back(session, tenant, port)
+    for _ in range(len(STILL_THERE) + 1):
+        handler.on_silence("s-1")
+    assert port.hangups("s-1")
+
+    handler.on_talked_over("s-1", "Ich habe eine Erdnussallergie.")
+    handler.on_call_ended("s-1")
+
+    [card] = _order_cards(session, "s-1")
+    assert SUMMARY_READBACK_UNANSWERED in card.summary
+    assert card.summary.startswith(SUMMARY_NOTE_TO_CLEAR)
+    assert "Erdnuss" not in card.summary
+
+
+def test_a_yes_into_the_read_back_with_no_allergy_makes_no_turn(session, tenant):
+    """Only an allergy makes a turn of words said into the read-back: a yes
+    said there still books nothing (rule 3)."""
+    port = FakeTelephony()
+    handler = _order_read_back(session, tenant, port)
+    said = len(port.says("s-1"))
+
+    handler.on_talked_over("s-1", "Ja, passt so.")
+
+    state = handler._live["s-1"].state
+    assert len(port.says("s-1")) == said
+    assert state.stage == "readback_pending" and not state.allergy_said
+
+
+def test_an_allergy_said_into_another_protected_sentence_is_kept_without_a_turn(
+    session, tenant
+):
+    """#1003: into a protected sentence while no draft waits for its yes (the
+    session decides which sentence is protected; the handler takes what it
+    hands over as such) the words still make no turn, and the guest hears
+    nothing new; the allergy is kept for the safety net of every later draft."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    handler.on_user_turn("s-1", "Ich haette gern einen Tisch fuer zwei.")
+    said = len(port.says("s-1"))
+
+    handler.on_talked_over("s-1", "Ich habe eine Nussallergie.")
+
+    state = handler._live["s-1"].state
+    assert len(port.says("s-1")) == said
+    assert state.allergy_said == ["Ich habe eine Nussallergie."]
+    assert state.allergy_talk
