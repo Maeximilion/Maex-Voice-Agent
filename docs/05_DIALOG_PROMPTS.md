@@ -262,7 +262,10 @@ up (`guards.is_open`)
        word for word, `get_item_details` for what is in a dish, else the
        noted sentence). The retry is judged like a first answer (Maxi
        24.11.2026, R1): held again when it names a dish or its own words
-       speak of the allergy, else `unlicensed` checks it, so a recap that
+       speak of the allergy (a word for the guest's health, "meiden" too,
+       or an allergen: "Ja, die ist ohne Erdnüsse" is held even where the
+       turn's menu text names peanuts; deep review of #997), else
+       `unlicensed` checks it, so a recap that
        drops the dish ("Auf welchen Namen darf ich bestellen?") goes
        through, and so does "Ja, die ist für Sie kein Problem", the
        accepted residual (`docs/24`). A retry after a sentence refused for

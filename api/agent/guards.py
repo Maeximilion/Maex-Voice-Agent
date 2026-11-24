@@ -1132,11 +1132,15 @@ def about_a_dish(
 def speaks_of_the_allergy(
     turn: AllergenTurn, state: ConversationState, say: str
 ) -> bool:
-    """Do the model's own words of `say` speak of the guest's allergy ("Bei
-    Ihrer Allergie ...")? Holds a retry after a refusal for a dish again
-    (#928, Maxi: R1)."""
+    """Do the model's own words of `say` speak of the guest's allergy: a word
+    for their health ("Bei Ihrer Allergie ...", "Was Sie meiden müssen ...")
+    or an allergen ("Ja, die ist ohne Erdnüsse")? Holds a retry after a
+    refusal for a dish again (#928, Maxi: R1). An allergen counts here, as
+    `unlicensed` licenses one in a sentence without a dish by the whole
+    turn's menu text: the 47's option "Erdnuss" licensed "ohne Erdnüsse"
+    (deep review of #997)."""
     own = _without_core(turn, state, say)
-    return mentions_allergy(own) or names_coeliac(own)
+    return speaks_of_health(own) or bool(allergens_named(own))
 
 
 def states_a_price(turn: AllergenTurn, state: ConversationState, say: str) -> bool:

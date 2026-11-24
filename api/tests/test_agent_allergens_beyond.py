@@ -3104,11 +3104,19 @@ def test_a_retry_after_a_refusal_for_a_dish_is_judged_anew(session, known_tenant
     assert evasion in result.say
 
 
-def test_a_retry_that_speaks_of_the_allergy_stays_held(session, known_tenant):
+@pytest.mark.parametrize(
+    "promise",
+    [
+        "Bei Ihrer Allergie ist die kein Problem.",
+        # Deep review of #997: a word for the guest's health other than
+        # "Allergie" speaks of it too.
+        "Was Sie meiden müssen, ist da nicht drin.",
+    ],
+)
+def test_a_retry_that_speaks_of_the_allergy_stays_held(session, known_tenant, promise):
     """#928, Maxi: R1. The retry is held again when its own words speak of
     the allergy, with no dish named."""
     state = allergic_call(session, known_tenant)
-    promise = "Bei Ihrer Allergie ist die kein Problem."
 
     result, _ = run(
         session,
@@ -3121,6 +3129,36 @@ def test_a_retry_that_speaks_of_the_allergy_stays_held(session, known_tenant):
 
     assert said_nowhere(result, promise)
     assert result.say == [guards.SAY_ALLERGENS_OFFER]
+
+
+@pytest.mark.parametrize("searches_again", [False, True])
+def test_a_retry_that_names_an_allergen_stays_held(
+    session, known_tenant, searches_again
+):
+    """Deep review of #997: a retry that names an allergen speaks of the
+    allergy. `unlicensed` licenses an allergen in a sentence that names no
+    dish by the whole turn's menu text, and the 47's option "Erdnuss" names
+    peanuts, so "ohne Erdnüsse" reached a guest allergic to them about a
+    dish with no allergen in the database. Also after a further search in
+    the retry."""
+    state = allergic_call(session, known_tenant)
+    claim = "Ja, die ist ohne Erdnüsse."
+    retry = (
+        [searches("47"), LLMTurn(say=claim)] if searches_again else [LLMTurn(say=claim)]
+    )
+
+    result, llm = run(
+        session,
+        state,
+        "Kann ich die 47 essen?",
+        searches("47"),
+        LLMTurn(say="Die 47 ist für Sie kein Problem."),
+        *retry,
+    )
+
+    assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_ALLERGY_DISH
+    assert said_nowhere(result, claim)
+    assert not result.ended
 
 
 def test_a_retry_after_an_allergen_word_stays_strict(session, known_tenant):
