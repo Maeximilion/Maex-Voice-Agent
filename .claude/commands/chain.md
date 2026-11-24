@@ -268,6 +268,14 @@ names its own item, it takes the lane, sends the coordinator "lane taken #N"
 and goes on; otherwise it renews its 50-minute sleep. The coordinator writes
 `none` again on "lane taken". If the named session has not taken the lane 60
 minutes after the file was written, the coordinator sends it "go on #N".
+
+A paused session gets no message at all while it sleeps: a message starts a
+turn and breaks the pause (Maxi, 2026-11-24: "The Pause should stay and after
+the pause it get's waked up. The other one after that one in line should get a
+new sleep timer."). Rule news, a merge or a confirmation waits in a note file
+beside the baton, `~/.claude/chain/notes.txt`, which a paused session reads
+with the baton file on every wake. Messages go only to the session in the
+lane, to the ship lane for "ship #N", and the "go on #N" above.
 The pauses of the first table still hold in every mode.
 
 A side quest Maxi starts during a chain (a measurement, a question for a

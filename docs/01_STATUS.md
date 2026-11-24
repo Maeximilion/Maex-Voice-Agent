@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.32
+> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.33
 
 ---
 
@@ -178,6 +178,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.33 · 24.11.2026:** chain: a paused session gets no message in super slow, news waits in a note file
 - **v2.69.32 · 24.11.2026:** #775: own Asterisk 22.12.0 image from the official source, lives through failed media connections; drills 58 of 58
 - **v2.69.31 · 24.11.2026:** Chain: slow mode sleeps 45 minutes between parts; the coordinator counts its own cost (no helper agents in slow modes, /compact past 400k).
 - **v2.69.30 · 24.11.2026:** Chain: lanes counted in units (normal 3, slow 2, super slow 1, turbo up to 5, plus the ship lane), a heavy step with many agents holds two lanes and waits for 'go heavy'; slow breaks 30 minutes, paused sessions in super slow sleep 50 minutes.
