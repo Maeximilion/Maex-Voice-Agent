@@ -22,6 +22,7 @@ from typing import Any, get_args
 
 from pydantic import ValidationError
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from api.agent import escalation, guards, recording
@@ -164,8 +165,18 @@ _CALLBACK_REASON_FALLBACK: CallbackReason = "human_requested"
 # An outage's card keeps the reason it had before #769; its text names the fault.
 _CALLBACK_REASON_FOR: dict[str, CallbackReason] = {"outage": "not_understood"}
 # The card of an order read back and never answered (#977): the core's own
-# reason, as an outage is; a model that names it writes `not_understood`.
+# reason, as an outage is for a transfer.
 ORDER_OPEN: CallbackReason = "order_open"
+# What a model may write a card with (prompts/tools_v3.md). Any other reason is
+# refused with these named: pydantic's own hint would offer `order_open` too.
+_MODEL_CALLBACK_REASONS = tuple(r for r in get_args(CallbackReason) if r != ORDER_OPEN)
+_CALLBACK_REASON_REFUSED = ToolResult(
+    ok=False,
+    error_code="invalid_input",
+    hint="Abgelehnt: `reason` ist einer von "
+    + ", ".join(f"`{reason}`" for reason in _MODEL_CALLBACK_REASONS)
+    + ".",
+)
 
 _HANDOFF_SUMMARIES = {
     "complaint": "Kunde hat sich beschwert.",
@@ -841,6 +852,8 @@ class ConversationLoop:
                 # A note read back must not promise a dish free of anything
                 # (L17).
                 refused = guards.claims_in_a_note(state, call)
+            if refused is None:
+                refused = _callback_reason_refused(call)
             if refused is None and (missing := guards.unnoted_allergy(state, call)):
                 if allergy_hint_given:
                     # Sent again without it: the core writes the guest's own
@@ -1115,11 +1128,17 @@ class ConversationLoop:
             card, _ = self._card(
                 state, ORDER_OPEN, None, summary=SUMMARY_READBACK_UNANSWERED
             )
-            result = self._dispatch(
-                state,
-                "create_callback",
-                {"phone": phone, "reason": ORDER_OPEN, "summary": card},
-            )
+            args = {"phone": phone, "reason": ORDER_OPEN, "summary": card}
+            try:
+                result = self._dispatch(state, "create_callback", args)
+            except IntegrityError:
+                # shortcut: code ahead of its database (a pull before
+                # `make migrate`) refuses the reason; the card goes out as
+                # before #977 rather than not at all (rule 5). Drop once every
+                # stack runs migration 045.
+                self._session.rollback()
+                args["reason"] = "not_understood"
+                result = self._dispatch(state, "create_callback", args)
             apply_tool_result(state, "create_callback", result)
 
     def _complaint_card(
@@ -2001,17 +2020,22 @@ def _card_without_allergy(state: ConversationState, call: ToolCall) -> ToolCall:
 
 def _marked_callback(state: ConversationState, call: ToolCall) -> ToolCall:
     """A callback the model writes carries the kitchen marker the core's own
-    cards carry when the guest spoke of an allergy in the call (#940). It
-    never carries `order_open`: that card is the core's (#977), and the
-    tablet would read "Bestellung offen" where nothing may wait."""
-    if call.name != "create_callback":
+    cards carry when the guest spoke of an allergy in the call (#940)."""
+    summary = call.args.get("summary")
+    if call.name != "create_callback" or not isinstance(summary, str):
         return call
-    args = dict(call.args)
-    if args.get("reason") == ORDER_OPEN:
-        args["reason"] = "not_understood"
-    if isinstance(summary := args.get("summary"), str):
-        args["summary"] = _marked(state, summary)
-    return ToolCall(call.name, args)
+    return ToolCall(call.name, {**call.args, "summary": _marked(state, summary)})
+
+
+def _callback_reason_refused(call: ToolCall) -> ToolResult | None:
+    """A model's card with a reason it may not name: `order_open` is the
+    core's (#977), and the tablet would read "Bestellung offen" where nothing
+    waits. A tuple, so a list or a dict as the reason compares instead of
+    raising (Codex PR #347)."""
+    if call.name != "create_callback":
+        return None
+    reason = call.args.get("reason")
+    return None if reason in _MODEL_CALLBACK_REASONS else _CALLBACK_REASON_REFUSED
 
 
 def _marked(state: ConversationState, card: str) -> str:

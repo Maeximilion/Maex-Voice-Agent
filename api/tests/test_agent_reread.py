@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
-from sqlalchemy import create_engine, func, select, update
+from sqlalchemy import create_engine, func, select, text, update
 from sqlalchemy.orm import Session
 
 from api.agent.dispatch import ToolResult
@@ -40,6 +40,7 @@ from api.models import (
     Reservation,
     ServiceConfig,
 )
+from api.models.calls import CALLBACK_REASONS
 from api.tests.test_domain_draft_order import NOW, _call, _tenant
 
 CALLER = "+497215551234"
@@ -632,6 +633,37 @@ def test_a_call_that_ends_on_the_read_back_leaves_a_card(session, state, order):
     assert card[0].phone == CALLER
     assert status(session, order, draft_id) == "draft"
     assert state.stage == "callback"
+
+
+def _reasons_allowed(session, reasons) -> None:
+    quoted = ", ".join(f"'{reason}'" for reason in reasons)
+    session.execute(
+        text(
+            "ALTER TABLE callbacks DROP CONSTRAINT ck_callbacks_reason, ADD CONSTRAINT"
+            f" ck_callbacks_reason CHECK (reason IN ({quoted}))"
+        )
+    )
+    session.commit()
+
+
+def test_a_database_before_migration_045_still_gets_the_card(session, state, order):
+    """Code ahead of its database (a pull before `make migrate`): the check
+    of revision 044 refuses `order_open`, and the card goes out as before
+    #977 instead of not at all (rule 5)."""
+    read_to_the_guest(session, state, order)
+    _reasons_allowed(session, [r for r in CALLBACK_REASONS if r != "order_open"])
+    try:
+        ConversationLoop(
+            session, Model(), "system", now=NOW, clock=lambda: 0
+        ).offer_unanswered(state)
+
+        (card,) = cards(session, state)
+        assert card.reason == "not_understood"
+        assert card.summary.startswith(SUMMARY_READBACK_UNANSWERED)
+        assert state.stage == "callback"
+    finally:
+        session.rollback()
+        _reasons_allowed(session, CALLBACK_REASONS)
 
 
 def test_a_table_or_a_call_with_the_team_leaves_no_card(session, state, flow):

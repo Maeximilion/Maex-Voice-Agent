@@ -47,11 +47,11 @@ from api.agent.loop import (
     ConversationLoop,
     TurnResult,
     _booked_say,
+    _callback_reason_refused,
     _card_without_allergy,
     _handoff_summary,
     _judged_again,
     _local_times,
-    _marked_callback,
     _note_allergy_said,
     _order_lines,
     _still_open,
@@ -2929,17 +2929,46 @@ def test_a_model_card_naming_the_guests_health_is_rewritten(state, summary, said
     assert "Erdnüss" not in card["summary"] and "Zöliakie" not in card["summary"]
 
 
-def test_a_model_card_never_names_the_open_order_reason(state):
-    """`order_open` is the core's own reason, as `outage` is for a transfer
-    (#977): a model card that names it reads "Bestellung offen" for a call
-    where nothing may wait, so it goes out as `not_understood`."""
+@pytest.mark.parametrize("reason", ["order_open", "cancellation", None, ["x"]])
+def test_a_model_card_with_a_reason_it_may_not_name_is_refused(reason):
+    """`order_open` is the core's own reason (#977), and pydantic's hint for
+    any other wrong reason would offer it to the model: the refusal names the
+    four reasons a model may write a card with, never `order_open`. A list
+    compares instead of raising (Codex PR #347)."""
+    call = ToolCall("create_callback", {"reason": reason, "summary": "Bitte."})
+
+    refused = _callback_reason_refused(call)
+
+    assert refused is not None and refused.error_code == "invalid_input"
+    hint = refused.hint or ""
+    assert "`human_requested`" in hint and "order_open" not in hint
+
+
+def test_a_model_card_with_its_own_reason_goes_through():
+    for reason in ("complaint", "not_understood", "human_requested", "out_of_scope"):
+        assert (
+            _callback_reason_refused(ToolCall("create_callback", {"reason": reason}))
+            is None
+        )
+    assert _callback_reason_refused(ToolCall("search_menu", {"query": "x"})) is None
+
+
+def test_a_model_never_writes_an_open_order_card(session, state):
+    """Through the loop: the model's `order_open` card is refused and the
+    model asked again, no card reads "Bestellung offen" for a call where no
+    order waits (#977)."""
+    state.slots["phone"] = CALLER
     call = ToolCall(
-        "create_callback", {"reason": "order_open", "summary": "Rückruf bitte."}
+        "create_callback",
+        {"phone": CALLER, "reason": "order_open", "summary": "Rückruf bitte."},
     )
+    llm = FakeLLM([LLMTurn(tool_call=call), LLMTurn(say="Worum geht es genau?")])
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
 
-    card = _marked_callback(state, call).args
+    result = loop.run_turn(state, "Rufen Sie mich bitte zurück")
 
-    assert card == {"reason": "not_understood", "summary": "Rückruf bitte."}
+    assert result.say == ["Worum geht es genau?"]
+    assert session.scalars(select(Callback)).all() == []
 
 
 def test_a_model_card_without_health_stays(state):

@@ -10,10 +10,13 @@ The upgrade widens `ck_callbacks_reason` and moves the cards written so far
 to the new reason: they all carry the fixed sentence of that card
 (`SUMMARY_READBACK_UNANSWERED` in `api/agent/loop.py`), behind the kitchen
 marker where the guest spoke of an allergy. The downgrade gives them back as
-`not_understood` and narrows the check again. No column changes, no row is
-lost either way; on a database a restaurant signs in to, take a backup first
-with `bash scripts/backup.sh --label before_migration_045` (CLAUDE.md §8,
-docs/13 §4).
+`not_understood` and narrows the check again. No column changes and no row
+is lost. A card whose text the retention job already blanked cannot be told
+apart: it stays `not_understood` on the upgrade, and an `order_open` card
+blanked before a downgrade comes back as `not_understood` on the next upgrade.
+On a database a restaurant signs in to, take a backup first with
+`bash scripts/backup.sh --label before_migration_045` (CLAUDE.md §8, docs/13
+§4).
 
 Revision: 045
 Revises: 044
@@ -46,12 +49,12 @@ def _check(values: tuple[str, ...]) -> None:
 
 def upgrade() -> None:
     _check(AFTER)
-    op.get_bind().execute(
+    # Bound on the statement, so `alembic upgrade --sql` prints the value too.
+    op.execute(
         sa.text(
             "UPDATE callbacks SET reason = 'order_open'"
             " WHERE reason = 'not_understood' AND strpos(summary, :said) > 0"
-        ),
-        {"said": UNANSWERED},
+        ).bindparams(said=UNANSWERED)
     )
 
 
