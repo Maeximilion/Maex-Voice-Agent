@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.56
+> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.57
 
 ---
 
@@ -185,6 +185,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.57 · 24.11.2026:** deps: fastapi 0.165.0, pydantic 2.14.4, pyyaml 6.0.4, ruff 0.17.6, sqlalchemy 2.1.9 (Dependabot #976, python-minor-patch group); no code change
 - **v2.69.56 · 24.11.2026:** deps: dependency-review-action v5.0.1 and action-semantic-pull-request v6.1.3 (Dependabot #975, actions group); no code change
 - **v2.69.55 · 24.11.2026:** deps: ntfy v2.38.1 and n8n 2.48.7 in the compose files (Dependabot #974, compose-images group); no code change
 - **v2.69.54 · 24.11.2026:** #984: restore.sh keeps owners, grants and database settings (`--without-owners` for a server without the roles), backup and restore reach a 127.0.0.1-only Postgres from a client container on Linux
