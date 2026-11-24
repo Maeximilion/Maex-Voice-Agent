@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.40
+> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.41
 
 ---
 
@@ -179,6 +179,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.41 · 24.11.2026:** #928 R1 (Maxi): after a refusal only for naming a dish, the retry is judged like a first answer, held again only when it names a dish or speaks of the allergy
 - **v2.69.40 · 24.11.2026:** #928: dish sentences in a call about an allergy held to core sentences, price from the database (B, B2), with the deep review's fixes
 - **v2.69.39 · 24.11.2026:** #977 point 2: a plain decline without a cancel word after the stated time drops the order, and the hang-up writes no card
 - **v2.69.38 · 24.11.2026:** #977 point 4: the card of an unanswered order has its own reason, order_open ("Bestellung offen"), migration 045

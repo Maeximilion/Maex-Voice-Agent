@@ -725,16 +725,19 @@ class ConversationLoop:
                     and not open_turn
                     and guards.about_a_dish(aturn, state, say, changed=changed)
                 )
-                # A retry after a refusal only for naming a dish that takes the
-                # order step the hint asks for is judged as an order step is
-                # (deep review of #928).
+                # A retry after a refusal only for naming a dish is judged like
+                # a first answer: held again when it names a dish or speaks of
+                # the allergy, else `unlicensed` checks it (#928, Maxi: R1).
                 strict = (
                     open_turn
                     or about_a_dish
                     or (
                         allergen_back
                         and in_allergy_call
-                        and not (dish_only and changed)
+                        and (
+                            not dish_only
+                            or guards.speaks_of_the_allergy(aturn, state, say)
+                        )
                     )
                 )
                 if (
