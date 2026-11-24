@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.68
+> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.69
 
 ---
 
@@ -189,7 +189,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.68 · 24.11.2026:** #888 round 3: six scripted stand-in gaps of docs/24 closed (split number, surcharge reason, nested group names, doch, replacement quantity, closed pickup)
+- **v2.69.69 · 25.11.2026:** #888 round 3: six scripted stand-in gaps of docs/24 closed (split number, surcharge reason, nested group names, doch, replacement quantity, closed pickup)
+- **v2.69.68 · 24.11.2026:** #888 round 3: an expected rejection in an eval case names its call with args (postal code, draft type or address), the recorder keeps the arguments of rejected calls
 - **v2.69.67 · 24.11.2026:** #981: migration 047, one open callback per call as a partial unique index; a conflict is a replay, reopening next to an open card of the call is refused
 - **v2.69.66 · 24.11.2026:** #888 S8: a complaint rule is offered only for the newest order booked under the calling line in the last 24 hours, one offer per order and none after a complaint card; the card names the order
 - **v2.69.65 · 24.11.2026:** chain: one item per side session, archived after its merge; queued sessions started in Maxi's turn take free lanes while he is away; merged PRs on the ship lane row only Maxi clears
