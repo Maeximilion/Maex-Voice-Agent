@@ -726,6 +726,22 @@ def test_anything_else_said_into_a_protected_sentence_stays_unheard(
     assert answers(session) == ["yes"]
 
 
+def test_a_stop_said_into_a_protected_sentence_without_a_recording_does_nothing(
+    session, tenant
+):
+    """#970 hands every talked-over sentence to the handler, not only while a
+    recording runs: a stop with nothing to stop writes no answer and says
+    nothing."""
+    port, handler = on_the_phone(session, tenant, llm_factory=lambda _: NoLLM())
+    said = list(port.says(SID))
+
+    handler.on_talked_over(SID, "Aufnahme stoppen!")
+
+    assert port.says(SID) == said
+    assert answers(session) == []
+    assert port.stopped(SID) == []
+
+
 # -- a stop while the call ends (#522) -------------------------------------------
 
 ENDS = pytest.mark.parametrize("how", ["farewell", "transfer"])
@@ -1070,6 +1086,23 @@ def test_shadow_an_allergy_in_the_answer_marks_the_missed_card(
 
     [card] = cards(session)
     assert (SUMMARY_NOTE_TO_CLEAR in card.summary) is marked
+    assert "Nuss" not in card.summary
+
+
+def test_shadow_an_allergy_said_over_the_question_marks_the_hang_up_card(
+    session, tenant, shadow
+):
+    """#970 review: said over the question, which may not be interrupted, and
+    hung up before any answer: no handover kept anything, and the card the
+    hang-up writes still leads with the marker."""
+    _, handler = shadow_call(session, tenant)
+    handler.on_talked_over(SID, "Ich habe eine Nussallergie.")
+
+    handler.on_call_ended(SID, caller_hung_up=True)
+
+    [card] = cards(session)
+    assert card.summary.startswith(SUMMARY_HUNG_UP)
+    assert SUMMARY_NOTE_TO_CLEAR in card.summary
     assert "Nuss" not in card.summary
 
 

@@ -13,7 +13,7 @@ import pytest
 from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import Session
 
-from api.domain.callbacks import create_callback, team_missed
+from api.domain.callbacks import create_callback, team_missed, transfer
 from api.domain.callbacks.create import SUMMARY_BOOKED
 from api.domain.callbacks.transfer import (
     SUMMARY_HUNG_UP,
@@ -355,6 +355,8 @@ def test_a_deleted_booking_is_not_named(session, tenant_id):
 
     assert task is not None
     assert "nicht bekannt" in task.summary and SUMMARY_BOOKED not in task.summary
+    # Its note still marks the card: the guest spoke of it in the call (#969).
+    assert task.summary.startswith(f"{SUMMARY_MISSED} {MARKER}")
 
 
 def test_the_cores_summary_is_followed_by_every_booking_of_the_call(session, tenant_id):
@@ -811,9 +813,14 @@ def test_a_health_note_of_the_call_marks_the_card_without_the_lines_memory(
     assert task.summary == f"{SUMMARY_MISSED} {MARKER} Anliegen nicht bekannt."
 
 
-def test_a_note_that_speaks_of_no_health_marks_nothing(session, tenant_id):
+@pytest.mark.parametrize(
+    "note", ["Bitte klingeln", "Koriander vermeiden", "WICHTIG !!! Hintereingang"]
+)
+def test_a_note_that_speaks_of_no_health_marks_nothing(session, tenant_id, note):
+    """Read as the core reads a note (`speaks_of_health`), not by the wider
+    pattern the retention job deletes notes by: "vermeiden" names no health."""
     call = make_call(session, tenant_id, transfer_reason=None, outcome="error")
-    _order(session, call, status="draft").note = "Bitte klingeln"
+    _order(session, call, status="draft").note = note
     session.commit()
 
     task = team_missed(session, tenant_id, "1760000000.1", now=REPORTED)
@@ -831,3 +838,23 @@ def test_a_health_note_of_another_call_marks_nothing(session, tenant_id):
 
     assert task is not None
     assert SUMMARY_NOTE_TO_CLEAR not in task.summary
+
+
+def test_a_failing_read_of_the_notes_costs_the_marker_never_the_card(
+    session, tenant_id, monkeypatch
+):
+    """Rule 5: the card is the team's only notice of the call; a read of the
+    notes that fails (a statement timeout) leaves it without the marker."""
+    call = make_call(session, tenant_id, transfer_reason=None, outcome="error")
+    _order(session, call, status="draft")
+
+    def broken(db, _call):
+        db.execute(text("SELECT 1 / 0"))
+
+    monkeypatch.setattr(transfer, "_call_notes", broken)
+
+    task = team_missed(session, tenant_id, "1760000000.1", now=REPORTED)
+
+    assert task is not None
+    assert task.summary == f"{SUMMARY_MISSED} Anliegen nicht bekannt."
+    assert len(cards(session, call.id)) == 1

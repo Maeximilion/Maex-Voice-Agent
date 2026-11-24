@@ -425,7 +425,9 @@ class CallHandler:
                 session_id,
                 phone=phone,
                 summary=summary,
-                kitchen_note=kitchen_note,
+                # Also an allergy said over the question before any handover
+                # kept it (#970).
+                kitchen_note=kitchen_note or live.health_heard,
                 rang=False,
             )
 
@@ -547,9 +549,10 @@ class CallHandler:
         the words, for the kitchen marker of a missed team leg (#970)."""
         if not live.health_heard and arms_the_net(text):
             live.health_heard = True
-            if ending:
-                # Into the sentences before a transfer: the line kept what
-                # the card needs already, without it.
+            if ending and self._to_the_team(live):
+                # Into the sentence before a transfer or the outage sentence:
+                # the line kept what the card needs already, without it. Not
+                # into a farewell: no report would ever take the entry.
                 self._keep_named_phone(live)
         if live.state.recording != "on" or not stops_recording(text):
             return
@@ -561,6 +564,13 @@ class CallHandler:
         # The notice is the last sentence heard: an "Okay" answers it, not the
         # read-back or the question it was said into (rule 3, L13).
         note_said(live.state, recording.SAY_RECORDING_STOPPED)
+
+    def _to_the_team(self, live: _LiveCall) -> bool:
+        """The call ending is a handover to the team or an outage."""
+        with self._lock:
+            ending = self._ending.get(live.session_id)
+        failed = ending is not None and ending[1] == "error"
+        return failed or live.state.stage == "transferred"
 
     def _turn(self, live: _LiveCall, text: str) -> None:
         if live.loop is None:
