@@ -119,7 +119,7 @@ Der fehleranfälligste Bereich, deshalb am stärksten zerlegt.
 - `create.py` — Rückruf-Aufgabe mit Zusammenfassung
 - `transfer.py` — Durchwahl, Erreichbarkeit, Schleifenschutz (einmal je Anruf)
 - `board.py` — the tablet's column "Rückrufe": open callbacks, `mark_done`, and the history of the last `HISTORY_DAYS` with `reopen` for a mistaken "Erledigt" (T-3.15)
-- `complaint_rules.py` — which rule of the catalogue answers a complaint (D19, T-10.11): `matching_rule` reads the tenant's active rows against the guest's sentence, words only, one match or none; `note_remedy` writes the audit row of a yes. What follows a match stays in `agent/loop.py`
+- `complaint_rules.py` — which rule of the catalogue answers a complaint (D19, T-10.11): `matching_rule` reads the tenant's active rows against the guest's sentence, words only, one match or none; `remedy_order` finds the order a remedy can be for (the calling line's newest standing order of the last day, booked under that line, not remedied yet, #888 S8); `note_remedy` writes the audit row of a yes with that order. What follows a match stays in `agent/loop.py`
 
 ### `domain/calls/`
 Anruf-Log, nicht Gesprächsführung — das bleibt `agent/`. Eigenes Modul statt Teil

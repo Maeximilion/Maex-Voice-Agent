@@ -211,6 +211,9 @@ _MARKER = f"{SUMMARY_NOTE_TO_CLEAR}."
 # guest's sentence behind them. Draft wording.
 SUMMARY_REMEDY_BOOKED = "Beschwerde, Gast hat zugestimmt, bitte ausführen: {remedy}."
 SUMMARY_REMEDY_OPEN = "Kunde hat sich beschwert, Angebot nicht angenommen: {remedy}."
+# The order a rule's card is for (#888 S8): without it the line reads like an
+# order of this call.
+SUMMARY_REMEDY_ORDER = "Betrifft:"
 # The call ended after an order's read-back and before its yes (#953). Draft
 # wording.
 SUMMARY_READBACK_UNANSWERED = "Anruf endete vor dem Ja zur vorgelesenen Bestellung."
@@ -1117,6 +1120,9 @@ class ConversationLoop:
         if (
             state.stage != "start"
             or state.slots.keys() != {"phone"}
+            # The card calls back the slot, the order is the caller ID's: a
+            # number the guest gave instead would not match it (#888 S8).
+            or state.slots["phone"] != state.caller_phone
             or state.cart
             or state.seen_items
             or state.allergy_talk
@@ -2257,7 +2263,7 @@ def _remedy_card(card: str, offer: RemedyOffer) -> str:
     """A card sentence with the rule's name and amount, both from its row,
     and the order the remedy is for (#888 S8)."""
     remedy = card.format(remedy=f"{offer.name}, {spoken_euro(offer.remedy_cents)}")
-    return f"{remedy} {offer.order}."
+    return f"{remedy} {SUMMARY_REMEDY_ORDER} {offer.order}."
 
 
 def _tool_result_as_input(name: str, result: ToolResult, zone: tzinfo) -> str:

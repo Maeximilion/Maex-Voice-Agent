@@ -10,7 +10,7 @@ import re
 import uuid
 from datetime import datetime, timedelta
 
-from sqlalchemy import Text, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.models import AuditLog, ComplaintRule, Order
@@ -18,7 +18,7 @@ from api.models import AuditLog, ComplaintRule, Order
 ACTION_REMEDY_BOOKED = "complaint.remedy_booked"
 # A rule books money for whoever says its words: it is offered only for an
 # order the calling line placed this long before the call, and once per
-# order (#888 S8, Claude's choice awaiting Maxi). Longer is kinder to a guest
+# order (#888 S8, a default awaiting Maxi's decision). Longer is kinder to a guest
 # who calls the next evening, shorter gives a stranger less to name.
 REMEDY_ORDER_WINDOW = timedelta(hours=24)
 # What the guest's yes made of an order and nobody took back (`create._ORDER_STANDS`).
@@ -65,34 +65,44 @@ def _spoken(text: str) -> str:
 def remedy_order(
     session: Session, tenant_id: uuid.UUID, phone: str | None, now: datetime
 ) -> Order | None:
-    """The order a remedy can be for: the newest of the line `phone` (the
-    caller ID, never a number said in the call: that one can be anyone's)
-    that stands, placed within `REMEDY_ORDER_WINDOW` before `now`, with no
-    remedy booked for it yet (#888 S8). None sends the complaint to the team.
+    """The order a remedy can be for: the newest order that stands, placed
+    within `REMEDY_ORDER_WINDOW` before `now` from the line `phone` (the
+    caller ID) and booked under it (#888 S8). A number said in either call
+    can be anyone's, so an order booked under one counts for nothing. The
+    complaint is about that newest order: once it has a remedy, None, and no
+    older order of the line stands in for it. None sends the complaint to
+    the team.
     shortcut: two calls of one line at the same moment can both be offered a
     remedy for the same order; the team sees both cards. A lock on the order
     row in the booking transaction closes it, once a catalogue is live."""
     if not phone:
         return None
-    remedied = select(AuditLog.payload["order_id"].astext).where(
-        AuditLog.tenant_id == tenant_id,
-        AuditLog.action == ACTION_REMEDY_BOOKED,
-        AuditLog.payload["order_id"].astext.is_not(None),
-    )
-    return session.scalars(
+    order = session.scalars(
         select(Order)
         .where(
             Order.tenant_id == tenant_id,
             Order.phone == phone,
+            Order.booked_on_own_line.is_(True),
             Order.status.in_(_ORDER_STANDS),
             Order.deleted_at.is_(None),
             Order.created_at >= now - REMEDY_ORDER_WINDOW,
             Order.created_at <= now,
-            Order.id.cast(Text).not_in(remedied),
         )
         .order_by(Order.created_at.desc())
         .limit(1)
     ).first()
+    if order is None:
+        return None
+    remedied = session.scalar(
+        select(AuditLog.id)
+        .where(
+            AuditLog.tenant_id == tenant_id,
+            AuditLog.action == ACTION_REMEDY_BOOKED,
+            AuditLog.payload["order_id"].astext == str(order.id),
+        )
+        .limit(1)
+    )
+    return None if remedied is not None else order
 
 
 def note_remedy(

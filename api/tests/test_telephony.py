@@ -1079,6 +1079,7 @@ def _a_rule(session, tenant) -> str:
             type="pickup",
             status="confirmed",
             phone="+497215551234",
+            booked_on_own_line=True,
             customer_name="Mueller",
             items_total_cents=1000,
             total_cents=1000,

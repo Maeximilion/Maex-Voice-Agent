@@ -92,9 +92,10 @@ def _state(session, tenant_id, **fields) -> ConversationState:
 
 
 def ordered(
-    session, tenant_id, *, phone=CALLER, at=ORDERED, status="confirmed"
+    session, tenant_id, *, phone=CALLER, at=ORDERED, status="confirmed", own=True
 ) -> Order:
-    """An order of an earlier call of the line, the one a remedy can be for."""
+    """An order of an earlier call of the line, the one a remedy can be for.
+    `own` False: the order was booked under a number said in that call."""
     order = Order(
         tenant_id=tenant_id,
         call_id=_call(session, tenant_id),
@@ -107,6 +108,7 @@ def ordered(
         idempotency_key=uuid.uuid4().hex,
         pickup_code="A17",
         created_at=at,
+        booked_on_own_line=own,
     )
     session.add(order)
     session.commit()
@@ -234,8 +236,16 @@ def test_a_matching_rule_is_offered_in_its_own_words_and_books_nothing_yet(
         {"status": "draft"},
         {"status": "cancelled"},
         {"phone": "+4972215559999"},
+        {"own": False},
     ],
-    ids=["no order", "older than a day", "a draft", "cancelled", "another line"],
+    ids=[
+        "no order",
+        "older than a day",
+        "a draft",
+        "cancelled",
+        "another line",
+        "booked under a said number",
+    ],
 )
 def test_without_a_recent_order_of_the_line_the_team_takes_the_complaint(
     session, tenant_id, order
@@ -255,6 +265,21 @@ def test_without_a_recent_order_of_the_line_the_team_takes_the_complaint(
     assert booked(session) == []
 
 
+@pytest.mark.parametrize("status", ["approved", "handed_over"])
+def test_an_order_taken_on_or_handed_over_still_earns_the_offer(
+    session, tenant_id, status
+):
+    """The kitchen took the order or the guest has it: it still stands, and a
+    complaint about it is the common case."""
+    rule(session, tenant_id)
+    ordered(session, tenant_id, status=status)
+    state = _state(session, tenant_id)
+
+    result = loop(session).run_turn(state, COMPLAINT)
+
+    assert result.say == [OFFER]
+
+
 def test_a_number_said_in_the_call_earns_no_remedy(session, tenant_id):
     """Only the caller ID ties a call to an order: a number the guest says
     can be anyone's."""
@@ -269,6 +294,21 @@ def test_a_number_said_in_the_call_earns_no_remedy(session, tenant_id):
     assert_went_to_the_team(result, session, state)
 
 
+def test_a_callback_number_other_than_the_line_earns_no_remedy(session, tenant_id):
+    """The card's callback number is the slot, the order is the caller ID's:
+    when the guest gave another number, the two would not match on the card,
+    so the team takes the complaint."""
+    rule(session, tenant_id)
+    ordered(session, tenant_id)
+    state = _state(session, tenant_id)
+    state.slots["phone"] = "+4972215559999"
+
+    result = loop(session).run_turn(state, COMPLAINT)
+
+    assert result.say != [OFFER] and state.remedy_offer is None
+    assert booked(session) == []
+
+
 def test_an_order_gets_one_remedy(session, tenant_id, state):
     """A yes books the rule for the caller's order, and the audit row and the
     card say which; a second complaint about the same order goes to the team."""
@@ -280,12 +320,31 @@ def test_an_order_gets_one_remedy(session, tenant_id, state):
     [row] = booked(session)
     order = session.scalars(select(Order).where(Order.phone == CALLER)).one()
     assert row.payload is not None and row.payload["order_id"] == str(order.id)
-    assert "A17" in cards(session, state)[0].summary
+    assert (
+        "Betrifft: Bestellung zur Abholung, Name Mueller, Code A17."
+        in cards(session, state)[0].summary
+    )
 
     again = _state(session, tenant_id)
     result = loop(session).run_turn(again, COMPLAINT)
     assert result.say != [OFFER] and result.ended
     assert again.stage == "transferred" and again.remedy_offer is None
+    assert len(booked(session)) == 1
+
+
+def test_a_remedied_order_leaves_no_older_order_to_remedy(session, tenant_id, state):
+    """The complaint is about the line's newest order: once that one is
+    remedied, an older order of the same day earns no second remedy."""
+    ordered(session, tenant_id, at=ORDERED - timedelta(hours=2))
+    rule(session, tenant_id)
+    agent = loop(session)
+    agent.run_turn(state, COMPLAINT)
+    agent.run_turn(state, "Ja")
+
+    again = _state(session, tenant_id)
+    result = loop(session).run_turn(again, COMPLAINT)
+
+    assert result.say != [OFFER] and again.remedy_offer is None
     assert len(booked(session)) == 1
 
 
@@ -586,9 +645,9 @@ def test_a_card_that_cannot_be_written_books_nothing(session, tenant_id, state):
     """The guest's yes then moves no money, the audit row goes with the card,
     and the team takes the call."""
     rule(session, tenant_id)
-    state.slots["phone"] = "keine Nummer"
     agent = loop(session)
     agent.run_turn(state, COMPLAINT)
+    state.slots["phone"] = "keine Nummer"
 
     result = agent.run_turn(state, "Ja")
 
