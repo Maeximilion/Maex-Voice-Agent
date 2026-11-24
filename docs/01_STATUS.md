@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.37
+> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.38
 
 ---
 
@@ -179,6 +179,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.38 · 24.11.2026:** #977 point 4: the card of an unanswered order has its own reason, order_open ("Bestellung offen"), migration 045
 - **v2.69.37 · 24.11.2026:** #966 (d): a code step-up counts the passkeys again under the account's row
 - **v2.69.36 · 24.11.2026:** Leftover scan of /start lists files hidden by an index flag (#986)
 - **v2.69.35 · 24.11.2026:** #956: the card of a team leg nobody answered keeps the kitchen marker after a voice failure mid-call
