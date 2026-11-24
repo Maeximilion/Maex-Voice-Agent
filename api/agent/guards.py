@@ -66,7 +66,10 @@ from api.agent.state import (
 )
 from api.domain.menu.details import SAY_ALLERGENS_LEAD, say_allergens
 from api.domain.menu.items import option_key
+from api.domain.menu.normalize import normalize_query
+from api.domain.menu.numberwords import canonical_card, find_numbers
 from api.domain.menu.pos_convert import allergens_named, names_an_allergen
+from api.domain.menu.search import CLEAR_MATCHES
 from api.domain.menu.wishes import (
     HEALTH_NOTE_RE,
     _ingredient,
@@ -74,6 +77,7 @@ from api.domain.menu.wishes import (
     names_coeliac,
     speaks_of_health,
 )
+from api.domain.ordering.readback import spoken_euro
 from api.schemas.orders import NOTE_MAX
 from api.schemas.reservations import RESERVATION_NOTE_MAX
 
@@ -663,7 +667,22 @@ HINT_ALLERGY_CALL = (
     + SAY_ALLERGY_NOTED
     + "“"
 )
+# In the same call a sentence about a dish of the call, with no order step in
+# the turn (`about_a_dish`, #928): "Bei Ihrer Allergie ist die 13 kein
+# Problem" promises without an allergen noun.
+HINT_ALLERGY_DISH = (
+    "Abgelehnt: der Gast hat in diesem Gespräch eine Allergie genannt, und dein "
+    "Satz spricht von einem Gericht: deinen eigenen Satz hört er jetzt nicht. "
+    "Nimmt der Gast ein Gericht, schreib es in den `cart`. Fragt er nach dem "
+    "Preis, nenn den Preis aus search_menu in diesem Zug: den Satz sagt dann der "
+    "Kern. Den `say` eines Werkzeugs aus diesem Zug darfst du wörtlich sagen. Nur "
+    "wenn er wissen will, was in einem Gericht ist oder ob es für ihn passt: lies "
+    "es mit get_item_details, den Satz sagt der Kern. Sonst sag nur „"
+    + SAY_ALLERGY_NOTED
+    + "“"
+)
 ALLERGY_TURN = ToolResult(ok=False, error_code="invalid_input", hint=HINT_ALLERGY_TURN)
+ALLERGY_DISH = ToolResult(ok=False, error_code="invalid_input", hint=HINT_ALLERGY_DISH)
 UNLICENSED_ALLERGEN = ToolResult(
     ok=False, error_code="invalid_input", hint=HINT_UNLICENSED_ALLERGEN
 )
@@ -690,7 +709,8 @@ class AllergenTurn:
     that menu text nor a changed order line explains (`is_open`). In an open
     turn the guest hears only sentences the core wrote; in every other turn
     the model's sentence is spoken when each allergen word in it is licensed
-    (`unlicensed`)."""
+    (`unlicensed`) and, in a call where the guest named an allergy, when it
+    speaks of no dish of the call (`about_a_dish`, #928)."""
 
     # The allergen letters the guest's sentence names, without the sentences
     # that only deny an allergy and without the names of dishes the call
@@ -721,6 +741,17 @@ class AllergenTurn:
     tool_says: list[str] = field(default_factory=list)
     # Every dish a lookup that worked delivered in this turn, by its id.
     looked_up: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Every hit this turn's searches without a wish delivered, by its id: the
+    # database's price for `price_says` (#928).
+    found: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # The dishes a search of this turn delivered with a wish ("die 47 mit
+    # Huhn"): their price is not the card's, whatever other search found them.
+    wished: set[str] = field(default_factory=set)
+    # The searches' sentences among `tool_says` (`about_a_dish`).
+    search_says: list[str] = field(default_factory=list)
+    # The `tool_says` that tell the guest something: all but a search's repeat
+    # of what it understood (`_echoes`).
+    answers: list[str] = field(default_factory=list)
     # A draft of this turn noted the guest's health.
     noted_in_draft: bool = False
     # A search hit or a lookup in this turn.
@@ -794,17 +825,26 @@ def note_tool(
 ) -> None:
     """Records what a tool that ran in this turn delivered."""
     data = result.data or {}
-    if result.say and not (name == "search_menu" and _allergen_wish(data)):
-        turn.tool_says.append(result.say)
+    _note_say(turn, name, result.say, data)
     if not result.ok:
         return
     if name == "search_menu":
-        parts = (
-            data.get("positions") if data.get("match_type") == "positions" else [data]
-        )
+        positions = data.get("match_type") == "positions"
+        parts = data.get("positions") if positions else [data]
         for part in parts or []:
+            if positions:
+                # A part's own sentence: the candidates of an unclear part,
+                # sold out, not on the card (Codex review of #928).
+                _note_say(turn, name, part.get("say"), part)
             for hit in part.get("results") or []:
                 turn.dish_touched = True
+                item_id = str(hit.get("menu_item_id"))
+                if part.get("wish"):
+                    # Asked with a wish ("die 47 mit Huhn") the dish costs
+                    # other than the hit's price (#928, Codex review).
+                    turn.wished.add(item_id)
+                else:
+                    turn.found[item_id] = hit
                 _menu_text(turn, hit, _codes(hit.get("name"), *_option_names(hit)))
     elif name == "get_item_details":
         turn.dish_touched = True
@@ -822,6 +862,35 @@ def note_tool(
             turn.noted_in_draft = turn.noted_in_draft or bool(
                 HEALTH_NOTE_RE.search(note)
             )
+
+
+def _note_say(
+    turn: AllergenTurn, name: str, said: str | None, data: dict[str, Any]
+) -> None:
+    """A tool's sentence is a core string the model may repeat, unless it
+    carries the model's words of an allergen wish; all but a search's echo
+    tell the guest something (`AllergenTurn.answers`)."""
+    if not said or (name == "search_menu" and _allergen_wish(data)):
+        return
+    turn.tool_says.append(said)
+    if name == "search_menu":
+        turn.search_says.append(said)
+        if _echoes(data):
+            return
+    turn.answers.append(said)
+
+
+def _echoes(data: dict[str, Any]) -> bool:
+    """Does a search's sentence repeat what it understood ("Notiert: Nummer
+    13.", several parts of an order)? Alone after "Kann ich die 13 essen?" it
+    sounds like a yes (deep review of #928). A sold-out or unclear hit has a
+    sentence of its own."""
+    results = data.get("results") or []
+    return data.get("match_type") == "positions" or (
+        data.get("match_type") in CLEAR_MATCHES
+        and bool(results)
+        and not results[0].get("sold_out")
+    )
 
 
 def _allergen_wish(data: dict[str, Any]) -> bool:
@@ -956,10 +1025,18 @@ def reacts_to(said: str, *, denied: bool = False) -> frozenset[str]:
 
 
 def sticky(state: ConversationState) -> bool:
-    """The call keeps speaking of allergies: the guest named one (an allergy
-    word, coeliac disease or an allergen in a kept sentence; not every
-    sentence the safety net keeps, "die Stoßzeit meiden" is none, #798), or
-    the last sentence the guest heard was the core's table sentence."""
+    """The call keeps speaking of allergies: the guest named one
+    (`allergy_named`), or the last sentence the guest heard was the core's
+    table sentence."""
+    return allergy_named(state) or (state.last_said or "").startswith(
+        SAY_ALLERGENS_LEAD
+    )
+
+
+def allergy_named(state: ConversationState) -> bool:
+    """The guest named an allergy in this call: an allergy word, coeliac
+    disease or an allergen in a kept sentence; not every sentence the safety
+    net keeps, "die Stoßzeit meiden" is none (#798)."""
     # A denial the safety net keeps ("Haben Sie Pizza? Ich habe keine
     # Allergie.") speaks of none, as in `begin_allergen_turn` (Codex review
     # of #860, P1).
@@ -967,7 +1044,7 @@ def sticky(state: ConversationState) -> bool:
     return any(
         mentions_allergy(said) or names_coeliac(said) or allergens_named(said)
         for said in kept
-    ) or (state.last_said or "").startswith(SAY_ALLERGENS_LEAD)
+    )
 
 
 def is_open(turn: AllergenTurn, state: ConversationState) -> bool:
@@ -1007,6 +1084,96 @@ def _without_core(turn: AllergenTurn, state: ConversationState, say: str) -> str
 def core_only(turn: AllergenTurn, state: ConversationState, say: str) -> bool:
     """Is `say` made of sentences the core wrote and nothing else (row 2)?"""
     return _WORDS.search(_without_core(turn, state, say)) is None
+
+
+def about_a_dish(
+    turn: AllergenTurn, state: ConversationState, say: str, *, changed: bool
+) -> bool:
+    """Is `say` a sentence of the model about a dish of the call that goes
+    core-only in a call about an allergy (#928, Maxi: option B)? Its own words
+    name a dish, or speak with a search's sentence that does ("Nummer 13,
+    sehr gern. Ja, die können Sie essen."), and the turn took no order step;
+    with an order step only when its own words speak of the allergy too ("Bei
+    Ihrer Allergie ist die 13 kein Problem", next to the `cart` the model
+    writes for every dish a search found clearly) (deep review of #928)."""
+    own = _without_core(turn, state, say)
+    if _WORDS.search(own) is None:
+        return False
+    if not _dishes_said(state, _with_search_says(turn, say, own)):
+        return False
+    return not changed or mentions_allergy(own) or names_coeliac(own)
+
+
+def states_a_price(turn: AllergenTurn, state: ConversationState, say: str) -> bool:
+    """Do the model's own words of `say` state a price: the answer to a price
+    question (Maxi: option B2), read on the model's sentence, not the guest's
+    (deep review of #928: a suitability promise gets no price)."""
+    return _AMOUNT.search(_without_core(turn, state, say)) is not None
+
+
+def price_says(turn: AllergenTurn, state: ConversationState, say: str) -> list[str]:
+    """The core's sentence for each dish `say` names that this turn's search
+    found without a wish: its price from the hit, which is the database
+    (rule 1), or that it is sold out. What the guest hears in place of a
+    refused sentence that states a price (#928, Maxi: option B2).
+    shortcut: the base price without options, as the card prints it; a dish
+    any search of the turn delivered with a wish ("die 47 mit Huhn") is left
+    out, its own sentence names the difference."""
+    own = _without_core(turn, state, say)
+    named = _dishes_said(state, _with_search_says(turn, say, own))
+    return [
+        _price_say(hit)
+        for item_id, hit in turn.found.items()
+        if item_id in named
+        and item_id not in turn.wished
+        and isinstance(hit.get("price_cents"), int)
+    ]
+
+
+def _price_say(hit: dict[str, Any]) -> str:
+    name, number = hit.get("name"), hit.get("number")
+    dish = f"Die {number}, {name}," if number else str(name)
+    if hit.get("sold_out"):
+        return f"{dish} ist heute leider aus."
+    # "kostet einen Euro 50": `spoken_euro` writes a lone 1 as "ein".
+    price = re.sub(r"^ein\b", "einen", spoken_euro(hit["price_cents"]))
+    return f"{dish} kostet {price}."
+
+
+# A price in the model's own words (`states_a_price`).
+_AMOUNT = re.compile(r"\b(?:euro|eur|cent)\b|€", re.IGNORECASE)
+# Prices, times and dates are no card number ("11,90", "19:30", "24.11.").
+_FIGURES = re.compile(r"\d+(?:[.,:]\d+)+\.?")
+
+
+def _with_search_says(turn: AllergenTurn, say: str, own: str) -> str:
+    """The model's own words with the sentences of this turn's searches that
+    `say` carries: an echo names the dish a pronoun after it speaks of."""
+    return " ".join([own, *(said for said in turn.search_says if said in say)])
+
+
+def _dishes_said(state: ConversationState, text: str) -> set[str]:
+    """The dishes of the call `text` names, read as the guest's words are: a
+    card number also as a number word or without its leading zeros ("die
+    Dreizehn", "013"), a whole name also without its count ("Frühlingsrollen
+    (4 Stück)") (deep review of #928). Prices, times and dates name none.
+    shortcut: a card number with a letter said apart ("35 A") and other
+    numbers (an address, a party size) are read as said; a dish named by a
+    word of its name only is missed (docs/24)."""
+    text = _FIGURES.sub(" ", text)
+    numbers = {str(n) for n in find_numbers(text)}
+    lowered = text.lower()
+    said = set()
+    for item_id, seen in state.seen_items.items():
+        number, name = seen.get("number"), seen.get("name")
+        short = normalize_query(name) if isinstance(name, str) else ""
+        if (
+            _names_it(text, seen)
+            or (isinstance(number, str) and canonical_card(number) in numbers)
+            or (short and re.search(rf"(?<!\w){re.escape(short)}(?!\w)", lowered))
+        ):
+            said.add(item_id)
+    return said
 
 
 def unlicensed(turn: AllergenTurn, state: ConversationState, say: str) -> set[str]:
