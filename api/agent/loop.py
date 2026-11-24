@@ -712,15 +712,14 @@ class ConversationLoop:
                 # Sie kein Problem" is the same claim without its noun (deep
                 # review of #860, P1).
                 in_allergy_call = guards.sticky(state)
-                # In that call a sentence about a dish of the call is held to
-                # core sentences too when the turn took no order step: "Bei
-                # Ihrer Allergie ist die 13 kein Problem" names no allergen
-                # (#928, Maxi: option B). An open turn is strict already and
-                # keeps its own ending: a price is no answer to an allergen
-                # question.
-                # Only where the guest named an allergy: after a table sentence
-                # alone the hint and its noted sentence would claim one (sweep
-                # of the deep review of #928).
+                # Where the guest named an allergy, a sentence about a dish of
+                # the call is held to core sentences too (`about_a_dish`):
+                # "Bei Ihrer Allergie ist die 13 kein Problem" names no
+                # allergen (#928, Maxi: option B). Not after a table sentence
+                # alone, where the hint and its noted sentence would claim an
+                # allergy (sweep of the deep review of #928). An open turn is
+                # strict already and keeps its own ending: a price is no
+                # answer to an allergen question.
                 about_a_dish = (
                     guards.allergy_named(state)
                     and not open_turn
