@@ -1325,6 +1325,36 @@ def test_a_yes_spoken_into_the_read_back_books_nothing(session, tenant):
     assert _reservation_of(session, "voice-1").status == "confirmed"
 
 
+def test_an_allergy_spoken_into_the_read_back_is_read_back_on_the_wire(session, tenant):
+    """#1003 on the wire: the allergy said into the read-back makes the
+    table be read back again with the note, behind the first read-back; a
+    yes said into that one still books nothing, the yes after it books the
+    table with the note (rule 3, L13)."""
+    wire = _Wire(session, tenant)
+    read_back = wire.until_the_read_back()
+    wire.says("Ich habe eine Nussallergie.")  # still playing
+    again = wire.line.played()[-1]
+    assert again != read_back and again.endswith("Passt das so?")
+    assert "flush" not in wire.line.kinds()
+
+    wire.says("Ja, passt so.")  # into the second read-back
+    assert {table.status for table in _tables_of(session, "voice-1")} == {"draft"}
+    wire.played()
+    wire.says("Ja, passt so.")
+
+    # The first draft stays one: a draft the guest moved on from is never booked.
+    [table] = [t for t in _tables_of(session, "voice-1") if t.status != "draft"]
+    assert table.status == "confirmed"
+    assert speaks_of_health(table.note or "")
+
+
+def _tables_of(session, session_id: str) -> list[Reservation]:
+    call = the_call(session, session_id)
+    return list(
+        session.scalars(select(Reservation).where(Reservation.call_id == call.id))
+    )
+
+
 def test_a_yes_that_was_queued_before_the_read_back_books_nothing(session, tenant):
     """Hard rule 3 on the wire (Codex PR #286): the guest gives the name and
     says "Ja" at once, before the worker has handled the name. The core has
