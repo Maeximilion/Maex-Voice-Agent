@@ -415,7 +415,15 @@ eine Sesamallergie") (Maxi, 15.11.2026, #736, #763)
      allergy), and an allergy the guest takes back without a question stays
      asked for. A note that promises a dish free of
      something ("nussfrei", "keine Spuren") goes back too
-     (`guards.claims_in_a_note`)
+     (`guards.claims_in_a_note`, run on the model's call before the core
+     replaces the note). Residual (Maxi's rule of 15.11.2026, "words, never a
+     reading of them"; #930, option A): the core's own "Gast sagte" note is
+     not run through that check, so a guest's free-from assumption in it
+     ("die Frühlingsrollen sind doch nussfrei, oder?") is read back as said,
+     attributed to the guest, and printed on the slip; the agent itself
+     promises nothing. Reopened by a kitchen complaint about such a slip or by
+     Maxi choosing option B (check the core's note too and hand the call to the
+     team); `docs/24_OPEN_REVIEW_POINTS.md`
    → the menu search still splits an allergy said behind a dish off as its
      `wish` (`kind: allergy`, text "WICHTIG !!! Allergie: <Zutat>"), and the
      dish is found as before
