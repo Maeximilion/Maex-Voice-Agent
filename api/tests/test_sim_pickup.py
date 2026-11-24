@@ -2389,62 +2389,6 @@ def test_a_split_number_books_the_dish_once(session, tenant):
 
 
 @pytest.fixture
-def priced_reason(session, tenant):
-    """A dish whose surcharge has a reason on the menu, and one without."""
-    head, *rows = KARTE[OPTIONS_FILE].splitlines()
-    plan = parse(
-        {
-            **KARTE,
-            MENU_FILE: KARTE[MENU_FILE]
-            + "57;Bratnudeln;Hauptgerichte;10,00;;ja\n"
-            + "58;Reispfanne;Hauptgerichte;9,00;;ja\n",
-            OPTIONS_FILE: f"{head};price_reason\n"
-            + "".join(f"{row};\n" for row in rows)
-            + "57;Fleisch;Rind;3,00;nein;nein;Bio-Rind aus der Region\n"
-            + "57;Fleisch;Tofu;1,00;nein;nein;\n"
-            + "58;Größe;Normal;0,00;ja;ja;\n"
-            + "58;Größe;Groß;2,00;nein;ja;doppelte Portion\n",
-        }
-    )
-    assert plan.ok, plan.errors
-    apply(session, tenant.id, plan, now=NOW)
-    return tenant
-
-
-@pytest.mark.parametrize(
-    ("dish", "question", "answer"),
-    [
-        ("Die 57 mit Rind.", "Warum kostet das mehr?", "Bio-Rind aus der Region"),
-        ("Die 57 mit Tofu.", "Wieso ist das teurer?", "steht so in der Karte"),
-    ],
-)
-def test_the_reason_for_a_surcharge_is_answered(
-    session, priced_reason, dish, question, answer
-):
-    """Codex PR #139: the question is answered with `reason` from the menu,
-    not searched as a dish; without a reason the price stands so on the menu
-    (prompt rule)."""
-    _, turns = _bestellung(session, priced_reason, dish, question)
-    assert answer in " ".join(turns[2].say)
-    assert "search_menu" not in str(turns[2].tools)
-    [order] = orders(session)
-    assert order.status == "confirmed"
-    assert positions(session, order) == [("57", 1, [dish.split()[-1].rstrip(".")])]
-
-
-def test_the_reason_for_a_mandatory_choice_is_answered(session, priced_reason):
-    """The surcharge of a mandatory option chosen by its name has its reason
-    too, and the order goes on after the answer."""
-    _, turns = _bestellung(
-        session, priced_reason, "Die 58.", "Groß.", "Warum kostet das mehr?"
-    )
-    assert "Der Aufpreis für Groß: doppelte Portion." in " ".join(turns[3].say)
-    [order] = orders(session)
-    assert order.status == "confirmed"
-    assert positions(session, order) == [("58", 1, ["Groß"])]
-
-
-@pytest.fixture
 def warm_side(session, tenant):
     """Group names that contain each other: "Beilage" and "Warme Beilage"."""
     plan = parse(
@@ -2474,6 +2418,25 @@ def test_the_longest_group_name_wins(session, warm_side, answer, group):
     [order] = orders(session)
     assert order.status == "confirmed"
     assert _chosen(session, order) == [(group, "Reis")]
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Beilage oder Warme Beilage, was ist der Unterschied?",
+        "Warme Beilage oder Beilage?",
+    ],
+)
+def test_both_group_names_said_leave_the_question_open(session, warm_side, answer):
+    """Codex PR #1023: an answer that names the shorter group outside the
+    longer one too chooses neither, and no surcharge is added."""
+    _, turns = _bestellung(
+        session, warm_side, "Die 56 mit Reis.", answer, "Warme Beilage."
+    )
+    assert "Meinen Sie Reis" in " ".join(turns[2].say)
+    assert "search_menu" not in str(turns[2].tools)
+    [order] = orders(session)
+    assert _chosen(session, order) == [("Warme Beilage", "Reis")]
 
 
 def test_doch_after_a_rejection_is_filler():

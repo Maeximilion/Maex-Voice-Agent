@@ -49,11 +49,6 @@ SAY_MORE = "Darf es noch etwas sein?"
 SAY_NAME = "Auf welchen Namen darf ich die Bestellung notieren?"
 SAY_PHONE = "Unter welcher Telefonnummer sind Sie erreichbar?"
 SAY_RESTART = "Dann noch einmal von vorn: was möchten Sie bestellen?"
-# A surcharge without a `reason` on the menu (prompt rule, Codex PR #139).
-SAY_NO_REASON = "Der Aufpreis steht so in der Karte."
-_WHY_MORE = re.compile(
-    r"\b(?:warum|wieso|weshalb)\b.*\b(?:kostet|teurer|aufpreis)\b", re.IGNORECASE
-)
 # An allergy without its ingredient: the model asks (Maxi, 15.11.2026), with
 # the fixed question of an allergy turn (#798); the variant with the dish
 # while another one is open too (Codex PR #139, P1) is refused in such a turn
@@ -85,9 +80,6 @@ class CartItem:
     pending: list[dict[str, Any]] = field(default_factory=list)
     # Note for the kitchen ("ohne Karotten", an allergy), T-4.10.
     note: str | None = None
-    # Options chosen with a surcharge and their `reason` from the menu, for
-    # "Warum kostet das mehr?" (Codex PR #139); not sent to `draft_order`.
-    surcharges: list[tuple[str, str | None]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -259,19 +251,6 @@ class PickupScript:
             self.phase = "dishes"
             self._suggestions = []
             return _search(text, patch)
-        surcharge = next(
-            (i.surcharges[-1] for i in self.cart[::-1] if i.surcharges), None
-        )
-        if surcharge and _WHY_MORE.search(text):
-            # Searched, the question found no dish: the reason of the last
-            # surcharge comes from the menu, and the open question follows it.
-            option, reason = surcharge
-            lead = (
-                f"Der Aufpreis für {option}: {reason.rstrip('.')}."
-                if reason
-                else SAY_NO_REASON
-            )
-            return self._next(slots, patch, lead=lead)
         if self.phase == "option":
             return self._answer_option(text, slots, patch)
         if self.phase == "more":
@@ -580,16 +559,7 @@ class PickupScript:
         wish: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         pending = [
-            {
-                "group": g["group"],
-                "options": [o["name"] for o in g["options"]],
-                # Surcharge and reason of each option, for the why question.
-                "surcharges": {
-                    o["name"]: o.get("reason")
-                    for o in g["options"]
-                    if o.get("price_delta_cents", 0) > 0
-                },
-            }
+            {"group": g["group"], "options": [o["name"] for o in g["options"]]}
             for g in hit.get("option_groups", [])
             if g.get("required")
         ]
@@ -627,8 +597,6 @@ class PickupScript:
         if wish["kind"] == "option":
             item.options.append({"group": wish["group"], "name": wish["option"]})
             item.pending = [g for g in item.pending if g["group"] != wish["group"]]
-            if (wish.get("price_delta_cents") or 0) > 0:
-                item.surcharges.append((wish["option"], wish.get("reason")))
         elif wish["kind"] == "open" and wish.get("groups"):
             # The option stands in several groups: the question stays open
             # until the answer names one, none is chosen here.
@@ -756,9 +724,16 @@ class PickupScript:
         said = set(_words(text))
         named = [g for g in wish["groups"] if set(_words(g)) <= said]
         # "Warme Beilage" names "Beilage" too: the longer name is the one meant
-        # (Codex PR #178).
+        # (Codex PR #178), unless the shorter one is said outside it as well
+        # ("Beilage oder Warme Beilage?" leaves both open).
         named = [
-            g for g in named if not any(set(_words(g)) < set(_words(o)) for o in named)
+            g
+            for g in named
+            if not any(
+                set(_words(g)) < set(_words(o))
+                and not set(_words(g)) <= set(_cut(_words(text), _words(o)))
+                for o in named
+            )
         ]
         rejected = _rejects(text) or "nicht" in said
         chosen = len(named) == 1 and not rejected
@@ -797,8 +772,6 @@ class PickupScript:
                 understanding_failure="option",
             )
         item.options.append({"group": group["group"], "name": chosen[0]})
-        if chosen[0] in group["surcharges"]:
-            item.surcharges.append((chosen[0], group["surcharges"][chosen[0]]))
         item.pending.remove(group)
         return self._next(slots, patch)
 
@@ -1063,6 +1036,19 @@ def _words(text: str) -> list[str]:
     # Folded as in the number word parser: "fuenf" and "fünf" are one word
     # (Codex PR #133, P2).
     return re.findall(r"[^\W_]+", fold(text))
+
+
+def _cut(words: list[str], name: list[str]) -> list[str]:
+    """The words without each place where `name` is said word for word."""
+    rest: list[str] = []
+    at = 0
+    while at < len(words):
+        if name and words[at : at + len(name)] == name:
+            at += len(name)
+        else:
+            rest.append(words[at])
+            at += 1
+    return rest
 
 
 def _option_question(item: CartItem, group: dict[str, Any]) -> str:
