@@ -418,7 +418,9 @@ factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webau
   second factor in the last five minutes, the sign-in's or one given on `/step-up`, which takes a
   passkey or a TOTP code and never a recovery code; once the account has a passkey, only a
   passkey sign-in or step-up counts (`access.sign_in` leaves `stepped_up_at` empty after a code,
-  `access.step_up` raises `PasskeyNeeded` for one; Maxi, 23.11.2026). Wrong answers there
+  `access.step_up` raises `PasskeyNeeded` for one; Maxi, 23.11.2026). The step-up counts the
+  passkeys again once it holds the account's row, which a registration holds too, so a first
+  passkey committed meanwhile refuses the code as well (#966 d). Wrong answers there
   count and wait as at the sign-in, except that the account counts even when the browser brings
   its device cookie, so the cookie gives no second wait (#888 A3); every third wrong one in a row
   is pushed to `ops` (#888 A2). A stale request is sent to `/step-up` and back to a path of

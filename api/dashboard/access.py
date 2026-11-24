@@ -333,6 +333,11 @@ def step_up(
         else None
     )
     account = _locked(db, operator)
+    # Counted again under the row a registration holds too: a first passkey
+    # committed since the check above makes the code no fresh factor either.
+    if not passkey and passkeys.count(db, account.id):
+        db.rollback()
+        raise PasskeyNeeded()
     session = db.get(
         OperatorSession,
         operator.session_id,
