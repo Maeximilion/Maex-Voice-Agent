@@ -21,3 +21,5 @@ docs/HISTORY.md merge=union
 .claude/skills/ui-ux-pro-max/** linguist-vendored=true
 # Batch files run in cmd.exe, which misreads labels and goto in LF files.
 *.cmd text eol=crlf
+# The own Asterisk image (#775): Alpine patches and the Dockerfile are read on Linux.
+deploy/asterisk/image/** text eol=lf

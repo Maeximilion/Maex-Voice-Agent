@@ -30,9 +30,9 @@ BUCKETS = (
 )
 
 
-def requests(path: Path) -> list[tuple[datetime, dict[str, Any]]]:
-    """Requests of one transcript in time order, the last usage per message id."""
-    seen: dict[str, tuple[str, dict[str, Any]]] = {}
+def rows(path: Path) -> list[tuple[datetime, dict[str, Any], str]]:
+    """Requests of one transcript in time order: time, last usage, model per message id."""
+    seen: dict[str, tuple[str, dict[str, Any], str]] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         try:
             row = json.loads(line)
@@ -41,9 +41,16 @@ def requests(path: Path) -> list[tuple[datetime, dict[str, Any]]]:
         msg = row.get("message") or {}
         if row.get("type") != "assistant" or not msg.get("usage") or not msg.get("id"):
             continue
-        seen[msg["id"]] = (row["timestamp"], msg["usage"])
+        seen[msg["id"]] = (row["timestamp"], msg["usage"], msg.get("model") or "")
     ordered = sorted(seen.values(), key=lambda item: item[0])
-    return [(datetime.fromisoformat(t.replace("Z", "+00:00")), u) for t, u in ordered]
+    return [
+        (datetime.fromisoformat(t.replace("Z", "+00:00")), u, m) for t, u, m in ordered
+    ]
+
+
+def requests(path: Path) -> list[tuple[datetime, dict[str, Any]]]:
+    """Requests of one transcript in time order, the last usage per message id."""
+    return [(when, usage) for when, usage, _ in rows(path)]
 
 
 def cost(usage: dict[str, Any]) -> tuple[float, int, int]:

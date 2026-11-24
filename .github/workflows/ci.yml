@@ -28,6 +28,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       image: ${{ steps.diff.outputs.image }}
+      asterisk: ${{ steps.diff.outputs.asterisk }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -40,6 +41,9 @@ jobs:
             python3 scripts/ci_changes.py < "$RUNNER_TEMP/files" | tee -a "$GITHUB_OUTPUT"
           else
             echo "image=true" | tee -a "$GITHUB_OUTPUT"
+            # On main the Asterisk build follows the merge's own files too.
+            git diff --no-renames --name-only HEAD^1 HEAD | python3 scripts/ci_changes.py \
+              | grep '^asterisk=' | tee -a "$GITHUB_OUTPUT"
           fi
 
   # Guards, lint, types, the latency budget and the speech kit; the rest of the
@@ -340,3 +344,20 @@ jobs:
           docker run --rm --network none -v "$PWD:/app" -w /app maex-voice:ci \
             sh -c 'python -c "import faster_whisper, piper" &&
               python -m pytest -q -p no:cacheprovider api/tests/test_telephony_engine_loading.py'
+
+  # The own Asterisk image (deploy/asterisk/image/, #775): it compiles from the
+  # pinned source, boots, runs the modules of the product, and lives through
+  # failed media connections to `voice`, which crashed 22.11.0 (Asterisk issue
+  # #2121). Only when a file reaches it (scripts/ci_changes.py): the build
+  # takes minutes.
+  asterisk-image:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.asterisk != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build the Asterisk image
+        run: docker build --tag maex-asterisk:ci deploy/asterisk/image
+      - name: It boots and lives through failed media connections
+        run: sh scripts/asterisk_image_check.sh maex-asterisk:ci
