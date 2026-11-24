@@ -558,20 +558,24 @@ class CallHandler:
                 # the line kept what the card needs already, without it. Not
                 # into a farewell: no report would ever take the entry.
                 self._keep_named_phone(live)
-        as_a_turn = live.loop is not None and live.loop.heard_over(
+        if live.loop is not None and live.loop.heard_over(
             live.state, text, ending=ending
-        )
-        if live.state.recording == "on" and stops_recording(text):
-            recording.withdraw(live.session, live.state, self._now)
-            self._follow_recording(live, "on")
-            if ending:
-                return  # nothing is said behind the farewell or the transfer sentence
-            self._port.say(live.session_id, recording.SAY_RECORDING_STOPPED)
-            # The notice is the last sentence heard: an "Okay" answers it, not
-            # the read-back or the question it was said into (rule 3, L13).
-            note_said(live.state, recording.SAY_RECORDING_STOPPED)
-        if as_a_turn:
+        ):
+            # A turn like any other: the core takes a stop among the words
+            # itself, after the sentence they answer (`run_turn`), and the
+            # notice here would have become that sentence (#1003 review).
             self._turn(live, text)
+            return
+        if live.state.recording != "on" or not stops_recording(text):
+            return
+        recording.withdraw(live.session, live.state, self._now)
+        self._follow_recording(live, "on")
+        if ending:
+            return  # nothing is said behind the farewell or the transfer sentence
+        self._port.say(live.session_id, recording.SAY_RECORDING_STOPPED)
+        # The notice is the last sentence heard: an "Okay" answers it, not the
+        # read-back or the question it was said into (rule 3, L13).
+        note_said(live.state, recording.SAY_RECORDING_STOPPED)
 
     def _to_the_team(self, live: _LiveCall) -> bool:
         """The call ending is a handover to the team or an outage."""

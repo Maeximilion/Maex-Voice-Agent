@@ -2939,8 +2939,11 @@ def test_a_yes_and_an_allergy_in_one_breath_into_the_read_back_book_nothing(
     the order without the note is not placed."""
     port = FakeTelephony()
     handler = _order_read_back(session, tenant, port)
+    said = len(port.says("s-1"))
 
     handler.on_talked_over("s-1", "Ja, passt, ich habe eine Erdnussallergie.")
+    # The words made a turn: the guest hears what became of them.
+    assert len(port.says("s-1")) > said
     handler.on_call_ended("s-1")
 
     orders = session.scalars(
