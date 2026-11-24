@@ -189,5 +189,5 @@ def test_the_page_reloads_the_list_on_the_event():
         encoding="utf-8"
     )
 
-    assert 'strom.addEventListener("prices"' in script
+    assert 'stream.addEventListener("prices"' in script
     assert '"/gui/fragments/preise"' in script

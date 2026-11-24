@@ -52,9 +52,9 @@ def test_normalfall_report_und_fall():
     entries, errors = parse(HEADER + _row() + _row(intent="Reservierung", time="19.05"))
     assert errors == []
     text = report(entries)
-    assert "Anrufe: 2 an 1 Tagen" in text
-    assert "18 Uhr 1 · 19 Uhr 1" in text
-    assert "Do 2" in text  # 24.09.2026 ist ein Donnerstag
+    assert "Calls: 2 on 1 days" in text
+    assert "18h 1 · 19h 1" in text
+    assert "Thu 2" in text  # 24.09.2026 ist ein Donnerstag
     case = _case(entries[0])
     assert case is not None
     assert case["expected"] == {
@@ -72,7 +72,7 @@ def test_normalfall_report_und_fall():
 def test_telefonnummer_macht_datei_rot():
     _, errors = parse(HEADER + _row(phrases="rufen Sie mich an unter 0721 555 12 34"))
     assert len(errors) == 1
-    assert "Telefonnummer" in errors[0]
+    assert "phone number" in errors[0]
 
 
 def test_kartennummern_und_mengen_sind_keine_telefonnummer():
@@ -82,23 +82,23 @@ def test_kartennummern_und_mengen_sind_keine_telefonnummer():
 
 def test_email_macht_datei_rot():
     _, errors = parse(HEADER + _row(problems="schickt Bestaetigung an a@b.de"))
-    assert "E-Mail" in errors[0]
+    assert "email" in errors[0]
 
 
 def test_semikolon_im_text_wird_gemeldet_statt_still_verschoben():
     _, errors = parse(HEADER + _row(items="2x 23; 1x Rolle"))
-    assert "Semikolon" in errors[0]
+    assert "semicolon" in errors[0]
 
 
 def test_unbekanntes_anliegen_und_ergebnis():
     _, errors = parse(HEADER + _row(intent="catering") + _row(outcome="vielleicht"))
-    assert "Anliegen 'catering'" in errors[0]
-    assert "Ergebnis 'vielleicht'" in errors[1]
+    assert "intent 'catering'" in errors[0]
+    assert "outcome 'vielleicht'" in errors[1]
 
 
 def test_fehlende_spalte():
     _, errors = parse("date;time;intent\n24.09.2026;18:42;abholung\n")
-    assert errors[0].startswith("Spalten fehlen: duration_min")
+    assert errors[0].startswith("Columns missing: duration_min")
 
 
 def test_umlaute_und_bom():
@@ -141,7 +141,7 @@ def test_exit_codes(tmp_path, capsys):
     good = tmp_path / "good.csv"
     good.write_text(HEADER + _row(), encoding="utf-8")
     assert main([str(good), "--cases", str(tmp_path / "cases")]) == 0
-    assert "Eval-Entwuerfe: 1" in capsys.readouterr().out
+    assert "Eval drafts: 1" in capsys.readouterr().out
 
 
 def test_kuerzel_vom_druckbogen():
@@ -159,20 +159,20 @@ def test_telefonnummer_mit_punkten_oder_klammern():
     """Codex PR #135: 0176.123.45.67 und (0721) 12 34 56 rutschten durch."""
     for text in ("ruf an 0176.123.45.67", "Nummer (0721) 12 34 56"):
         _, errors = parse(HEADER + _row(phrases=text))
-        assert errors and "Telefonnummer" in errors[0], text
+        assert errors and "phone number" in errors[0], text
 
 
 def test_zweistelliges_jahr_wird_abgelehnt():
     """Codex PR #135: 24.09.26 wurde still zum Jahr 26."""
     _, errors = parse(HEADER + _row(date="24.09.26"))
-    assert "TT.MM.JJJJ" in errors[0]
+    assert "DD.MM.YYYY" in errors[0]
 
 
 def test_unsinnige_dauer_wird_abgelehnt():
     """Codex PR #135: nan, inf und negative Minuten verdarben den Mittelwert."""
     for value in ("nan", "inf", "-2", "1e999"):
         _, errors = parse(HEADER + _row(duration_min=value))
-        assert errors and "Dauer" in errors[0], value
+        assert errors and "duration" in errors[0], value
 
 
 def test_veraltete_entwuerfe_verschwinden(tmp_path):
@@ -240,8 +240,8 @@ def test_same_row_twice_in_one_hour_is_two_calls_and_named(tmp_path):
     assert errors == []
     assert len(entries) == 2
     text = report(entries)
-    assert "Anrufe: 2 an 1 Tagen" in text
-    assert "doppelt abgetippt? Dann eine loeschen: Zeilen 2, 3" in text
+    assert "Calls: 2 on 1 days" in text
+    assert "typed twice? Then delete one: lines 2, 3" in text
     assert write_cases(entries, tmp_path) == 2
 
 
@@ -257,8 +257,8 @@ def test_bestaetigter_fall_bekommt_erfundenen_namen_und_rufnummer():
         {"role": "customer", "text": "Auf den Namen Mueller."},
         {"role": "customer", "text": "Ja, das passt."},
     ]
-    assert any("erfunden" in hint for hint in case["review"])
-    assert any("vor diese" in hint for hint in case["review"])
+    assert any("made up" in hint for hint in case["review"])
+    assert any("before these" in hint for hint in case["review"])
 
 
 def test_abgelehnter_fall_bleibt_ohne_erfundene_daten():
@@ -278,7 +278,7 @@ def test_abgelehnter_fall_bleibt_ohne_erfundene_daten():
 )
 def test_ausgeschriebene_telefonnummer(text):
     _, errors = parse(HEADER + _row(phrases=text))
-    assert errors and "Telefonnummer" in errors[0], text
+    assert errors and "phone number" in errors[0], text
 
 
 @pytest.mark.parametrize(
@@ -286,7 +286,7 @@ def test_ausgeschriebene_telefonnummer(text):
 )
 def test_ausgeschriebene_email(text):
     _, errors = parse(HEADER + _row(phrases=text))
-    assert errors and "E-Mail" in errors[0], text
+    assert errors and "email" in errors[0], text
 
 
 @pytest.mark.parametrize(
@@ -294,7 +294,7 @@ def test_ausgeschriebene_email(text):
 )
 def test_adresse_macht_datei_rot(text):
     _, errors = parse(HEADER + _row(phrases=text))
-    assert errors and "Adresse" in errors[0], text
+    assert errors and "address" in errors[0], text
 
 
 @pytest.mark.parametrize(
@@ -315,7 +315,7 @@ def test_kein_fehlalarm(text):
 def test_zeilennummer_stimmt_nach_leerzeile():
     text = HEADER + _row() + "\n" + _row(phrases="ruf an 0721 5551234")
     _, errors = parse(text)
-    assert errors[0].startswith("Zeile 4:")
+    assert errors[0].startswith("Line 4:")
 
 
 def test_mehrzeilige_zelle_sind_mehrere_saetze():
@@ -361,9 +361,9 @@ def test_wochentag_je_tag_gemittelt():
     )
     entries, _ = parse(HEADER + rows)
     text = report(entries)
-    assert "Do 1,0" in text
-    assert "Mi 1,0" in text
-    assert "Mo 0,0" in text
+    assert "Thu 1.0" in text
+    assert "Wed 1.0" in text
+    assert "Mon 0.0" in text
 
 
 def test_entwurf_enthaelt_keinen_echten_kundensatz(tmp_path, eval_cases):
@@ -382,7 +382,7 @@ def test_entwurf_enthaelt_keinen_echten_kundensatz(tmp_path, eval_cases):
         "Ja, das passt.",
     ]
     assert case["source"] == "handcrafted"
-    assert any("nachstellen" in hint for hint in case["review"])
+    assert any("restate" in hint for hint in case["review"])
 
 
 @pytest.mark.parametrize(
@@ -396,7 +396,7 @@ def test_entwurf_enthaelt_keinen_echten_kundensatz(tmp_path, eval_cases):
 def test_allergie_mit_personenbezug_macht_datei_rot(text):
     """DSFA M8: Allergien nie als Merkmal einer Person, nur produktbezogen."""
     _, errors = parse(HEADER + _row(phrases=text))
-    assert errors and "Allergie" in errors[0], text
+    assert errors and "allergy" in errors[0], text
 
 
 @pytest.mark.parametrize(
@@ -445,7 +445,7 @@ def test_frist_zeigt_abgelaufene_ohne_zu_loeschen(tmp_path, capsys, monkeypatch)
     vorher = csv_file.read_text(encoding="utf-8")
     assert main([str(csv_file), "--frist-tage", "90"]) == 0
     out = capsys.readouterr().out
-    assert "1 Eintraege aelter als 90 Tage (vor 26.06.2026)" in out
+    assert "1 entries older than 90 days (before 26.06.2026)" in out
     assert csv_file.read_text(encoding="utf-8") == vorher
 
 
@@ -456,14 +456,14 @@ def test_loeschen_entfernt_nur_alte_zeilen(tmp_path, capsys, monkeypatch):
     entries, errors = parse(csv_file.read_text(encoding="utf-8-sig"))
     assert errors == []
     assert [e.day for e in entries] == [date(2026, 9, 20)]
-    assert "Anrufe: 1 an 1 Tagen" in capsys.readouterr().out
+    assert "Calls: 1 on 1 days" in capsys.readouterr().out
 
 
 def test_frist_aus_umgebung(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr(call_log, "_today", lambda: date(2026, 9, 24))
     monkeypatch.setenv("CALL_LOG_RETENTION_DAYS", "90")
     assert main([str(_alt_und_neu(tmp_path))]) == 0
-    assert "aelter als 90 Tage" in capsys.readouterr().out
+    assert "older than 90 days" in capsys.readouterr().out
 
 
 def test_loeschen_ohne_frist_ist_ein_fehler(tmp_path, capsys, monkeypatch):
@@ -472,7 +472,7 @@ def test_loeschen_ohne_frist_ist_ein_fehler(tmp_path, capsys, monkeypatch):
     csv_file = _alt_und_neu(tmp_path)
     vorher = csv_file.read_text(encoding="utf-8")
     assert main([str(csv_file), "--loeschen"]) == 2
-    assert "Frist" in capsys.readouterr().err
+    assert "period" in capsys.readouterr().err
     assert csv_file.read_text(encoding="utf-8") == vorher
 
 
@@ -502,7 +502,7 @@ def test_fehlerhafte_datei_wird_nicht_geloescht(tmp_path, monkeypatch):
 def test_adresse_ohne_bekannte_endung(text):
     """Codex PR #135: Adressen ohne Strassen-Endung rutschten durch."""
     _, errors = parse(HEADER + _row(phrases=text))
-    assert errors and "Adresse" in errors[0], text
+    assert errors and "address" in errors[0], text
 
 
 @pytest.mark.parametrize(
@@ -525,7 +525,7 @@ def test_adresse_kein_fehlalarm_bei_uhrzeit_und_menge(text):
 def test_email_mit_beliebiger_domain(text):
     """Codex PR #135: nur eine Domain-Stufe und feste Endungen wurden erkannt."""
     _, errors = parse(HEADER + _row(phrases=f"schickt es an {text}"))
-    assert errors and "E-Mail" in errors[0], text
+    assert errors and "email" in errors[0], text
 
 
 def test_korrektur_an_durchgesehenem_fall_wird_gemeldet(tmp_path, eval_cases, capsys):
@@ -565,7 +565,7 @@ def test_unveraenderter_durchgesehener_fall_bleibt_still(tmp_path, eval_cases, c
 def test_allergien_einer_person_im_plural(text):
     """Codex PR #135: der Plural zaehlte nie, auch nicht fuer eine Person."""
     _, errors = parse(HEADER + _row(phrases=text))
-    assert errors and "Allergie" in errors[0], text
+    assert errors and "allergy" in errors[0], text
 
 
 def test_korrektur_zu_frage_meldet_durchgesehenen_fall(tmp_path, eval_cases, capsys):
@@ -579,7 +579,7 @@ def test_korrektur_zu_frage_meldet_durchgesehenen_fall(tmp_path, eval_cases, cap
     assert write_cases(korrigiert, tmp_path / "entwuerfe") == 0
     err = capsys.readouterr().err
     assert name in err
-    assert "keinen Fall" in err
+    assert "no case" in err
 
 
 @pytest.mark.parametrize(
@@ -595,7 +595,7 @@ def test_korrektur_zu_frage_meldet_durchgesehenen_fall(tmp_path, eval_cases, cap
 def test_adresse_weitere_formen(text):
     """Codex PR #135: weitere Strassenformen und Hinweiswoerter."""
     _, errors = parse(HEADER + _row(phrases=text))
-    assert errors and "Adresse" in errors[0], text
+    assert errors and "address" in errors[0], text
 
 
 def test_lieferung_nach_minuten_ist_keine_adresse():
@@ -669,7 +669,7 @@ def test_korrektur_die_ein_feld_entfernt_wird_gemeldet(tmp_path, eval_cases, cap
 def test_adresse_mit_ausgeschriebener_hausnummer(text):
     """Codex PR #135: Zahlwoerter werden vor der Adresspruefung zu Ziffern."""
     _, errors = parse(HEADER + _row(phrases=text))
-    assert errors and "Adresse" in errors[0], text
+    assert errors and "address" in errors[0], text
 
 
 @pytest.mark.parametrize(
@@ -693,7 +693,7 @@ def test_frist_aus_env_datei(tmp_path, capsys, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".env").write_text("CALL_LOG_RETENTION_DAYS=90\n", encoding="utf-8")
     assert main([str(_alt_und_neu(tmp_path)), "--loeschen"]) == 0
-    assert "Geloescht: 1 Eintraege" in capsys.readouterr().out
+    assert "Deleted: 1 entries" in capsys.readouterr().out
 
 
 def test_verwaister_fall_in_derselben_minute_wird_gemeldet(
@@ -711,7 +711,7 @@ def test_verwaister_fall_in_derselben_minute_wird_gemeldet(
     write_cases(nur_zweiter, tmp_path / "entwuerfe")
     err = capsys.readouterr().err
     assert namen[1] in err
-    assert "keine Protokollzeile" in err
+    assert "no log row" in err
 
 
 def test_unbekannte_spalte_wird_abgelehnt():
@@ -778,14 +778,14 @@ def test_ueberlauf_in_sonst_leerer_zeile_wird_gemeldet():
     """Codex PR #135: eine Zeile mit acht leeren Feldern und einem neunten Wert
     galt als Leerzeile und wurde nie geprueft."""
     _, errors = parse(HEADER + ";;;;;;;;07215551234\n")
-    assert errors and "mehr Felder" in errors[0]
+    assert errors and "more fields" in errors[0]
 
 
 @pytest.mark.parametrize("value", ["1e308", "07215551234", "600"])
 def test_unplausible_dauer_wird_abgelehnt(value):
     """Codex PR #135: eine endliche, aber unsinnige Dauer verdarb die Baseline."""
     _, errors = parse(HEADER + _row(duration_min=value))
-    assert errors and "Dauer" in errors[0], value
+    assert errors and "duration" in errors[0], value
 
 
 def test_letzter_tag_weg_meldet_durchgesehenen_fall(tmp_path, eval_cases, capsys):
@@ -834,7 +834,7 @@ def test_adresse_mit_getrennten_zahlwoertern(text):
     """Codex PR #135: die Spracherkennung schreibt "ein und zwanzig" getrennt;
     die Zahlwoerter werden vor der Adresspruefung zusammengezogen."""
     _, errors = parse(HEADER + _row(phrases=text))
-    assert errors and "Adresse" in errors[0], text
+    assert errors and "address" in errors[0], text
 
 
 def test_getrennte_zahlwoerter_ohne_adresse_bleiben_erlaubt():
@@ -873,7 +873,7 @@ def test_eingefuegter_anruf_derselben_minute_wird_gemeldet(
     assert main([str(csv_file), "--cases", str(entw)]) == 0
     err = capsys.readouterr().err
     assert all(n in err for n in namen), err
-    assert "derselben Stunde" in err
+    assert "same hour" in err
 
 
 def test_unveraenderter_anruf_meldet_keine_verschiebung(tmp_path, eval_cases, capsys):
@@ -896,7 +896,7 @@ def test_kaputtes_id_verzeichnis_bleibt_erhalten(tmp_path, eval_cases, capsys):
     ids = tmp_path / ".call_log_ids.json"
     ids.write_text('{"abc": "2026-09-2', encoding="utf-8")
     assert main([str(csv_file), "--cases", str(tmp_path / "entwuerfe")]) == 2
-    assert "ID-Verzeichnis" in capsys.readouterr().err
+    assert "ID directory" in capsys.readouterr().err
     assert ids.read_text(encoding="utf-8") == '{"abc": "2026-09-2'
 
 
@@ -923,7 +923,7 @@ def test_adresse_mit_hausnummer_ab_tausend(text):
     """Codex PR #135: der Zahlenleser der Karte endet bei 999; Hausnummern
     koennen groesser sein."""
     _, errors = parse(HEADER + _row(phrases=text))
-    assert errors and "Adresse" in errors[0], text
+    assert errors and "address" in errors[0], text
 
 
 @pytest.mark.parametrize("inhalt", ["", "   \n", "kurz", "g" * 32])
@@ -935,7 +935,7 @@ def test_kaputtes_salz_bricht_ab(tmp_path, eval_cases, capsys, inhalt):
     (tmp_path / ".call_log_salt").write_text(inhalt, encoding="utf-8")
     entw = tmp_path / "entwuerfe"
     assert main([str(csv_file), "--cases", str(entw)]) == 2
-    assert "Salz" in capsys.readouterr().err
+    assert "Salt" in capsys.readouterr().err
     assert not entw.exists() or not any(entw.iterdir())
     assert (tmp_path / ".call_log_salt").read_text(encoding="utf-8") == inhalt
 
@@ -973,7 +973,7 @@ def test_loeschen_ersetzt_die_csv_erst_nach_vollstaendigem_schreiben(
 def test_adresse_mit_nr_vor_der_hausnummer(text):
     """Codex PR #135: "Nr." oder "Nummer" zwischen Strasse und Hausnummer."""
     _, errors = parse(HEADER + _row(phrases=text))
-    assert errors and "Adresse" in errors[0], text
+    assert errors and "address" in errors[0], text
 
 
 @pytest.mark.parametrize("text", ["die Nr. 23 bitte", "Nummer 12 zweimal"])
@@ -989,7 +989,7 @@ def test_salz_als_ordner_gibt_meldung_statt_absturz(tmp_path, eval_cases, capsys
     csv_file.write_text(HEADER + _row(), encoding="utf-8")
     (tmp_path / ".call_log_salt").mkdir()
     assert main([str(csv_file), "--cases", str(tmp_path / "entwuerfe")]) == 2
-    assert "Salz" in capsys.readouterr().err
+    assert "Salt" in capsys.readouterr().err
 
 
 def test_loeschen_raeumt_verzeichnis_auch_ohne_alte_zeilen(tmp_path, monkeypatch):
@@ -1019,7 +1019,7 @@ def test_durchgesehener_fall_mit_falschem_expected_wird_gemeldet(
     name = f"{case['id']}_abholung.json"
     (eval_cases / name).write_text(json.dumps(case), encoding="utf-8")
     write_cases(entries, tmp_path / "entwuerfe")
-    assert "Fall nicht lesbar" in capsys.readouterr().err
+    assert "Case not readable" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -1063,7 +1063,7 @@ def test_nummer_der_karte_nach_praeposition_ist_keine_adresse(text):
 
 def test_same_content_in_other_hours_is_not_named():
     entries, _ = parse(HEADER + _row() + _row(time="19") + _row(date="25.09.2026"))
-    assert "doppelt abgetippt" not in report(entries)
+    assert "typed twice" not in report(entries)
 
 
 @pytest.mark.parametrize("day", ["2026", "kein-datum", 20260924])
@@ -1077,7 +1077,7 @@ def test_id_verzeichnis_mit_falschem_datum_bleibt_erhalten(
     inhalt = json.dumps({"abc": {"day": day}})
     ids.write_text(inhalt, encoding="utf-8")
     assert main([str(csv_file), "--cases", str(tmp_path / "entwuerfe")]) == 2
-    assert "ID-Verzeichnis" in capsys.readouterr().err
+    assert "ID directory" in capsys.readouterr().err
     assert ids.read_text(encoding="utf-8") == inhalt
 
 
@@ -1125,7 +1125,7 @@ def test_time_is_read_as_the_hour(value, hour):
 def test_impossible_time_is_rejected(value):
     _, errors = parse(HEADER + _row(time=value))
     assert len(errors) == 1
-    assert "Uhrzeit" in errors[0]
+    assert "is no hour" in errors[0]
 
 
 def test_two_bare_calls_in_one_hour_count_twice():
@@ -1136,8 +1136,8 @@ def test_two_bare_calls_in_one_hour_count_twice():
     assert errors == []
     assert len(entries) == 2
     text = report(entries)
-    assert "Anrufe: 2 an 1 Tagen" in text
-    assert "doppelt abgetippt" not in text
+    assert "Calls: 2 on 1 days" in text
+    assert "typed twice" not in text
 
 
 def test_minute_is_cut_to_the_hour_in_the_csv(tmp_path, capsys):
@@ -1150,13 +1150,13 @@ def test_minute_is_cut_to_the_hour_in_the_csv(tmp_path, capsys):
     assert csv_file.read_text(encoding="utf-8-sig") == (
         HEADER + _row(time="18") + _row(time="9", intent="frage")
     )
-    assert "auf die Stunde gekuerzt: 2" in capsys.readouterr().out
+    assert "cut to the hour: 2" in capsys.readouterr().out
     # A plain run makes no salt: without one no case ID was ever handed out.
     assert not (tmp_path / ".call_log_salt").exists()
     before = csv_file.stat().st_mtime_ns
     assert main([str(csv_file)]) == 0
     assert csv_file.stat().st_mtime_ns == before
-    assert "gekuerzt" not in capsys.readouterr().out
+    assert "cut to the hour" not in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("with_known", [True, False])
@@ -1214,7 +1214,7 @@ def test_cut_still_reports_a_row_changed_since_review(tmp_path, eval_cases, caps
     assert main([str(csv_file), "--cases", str(tmp_path / "entwuerfe")]) == 0
     err = capsys.readouterr().err
     assert name in err
-    assert "geaendert" in err
+    assert "changed" in err
 
 
 def test_cut_keeps_two_calls_of_one_hour_with_the_same_content(
@@ -1244,7 +1244,7 @@ def test_broken_salt_stops_the_cut(tmp_path, capsys):
     csv_file.write_text(HEADER + _row(time="18:42"), encoding="utf-8")
     (tmp_path / ".call_log_salt").write_text("kaputt", encoding="utf-8")
     assert main([str(csv_file)]) == 2
-    assert "Salz" in capsys.readouterr().err
+    assert "Salt" in capsys.readouterr().err
     assert csv_file.read_text(encoding="utf-8") == HEADER + _row(time="18:42")
 
 
@@ -1260,6 +1260,8 @@ def test_cut_maps_the_second_call_of_a_minute(tmp_path, eval_cases, capsys):
     old = _minute_id("18:42", 1)
     case = _case(parse(HEADER + second)[0][0], SALT)
     del case["review"]
+    # Reviewed before the cut: its draft carried the minute ID, in name and field.
+    case["id"] = old
     (eval_cases / f"{old}_abholung.json").write_text(json.dumps(case), encoding="utf-8")
     assert main([str(csv_file), "--cases", str(entw)]) == 0
     assert capsys.readouterr().err == ""
@@ -1278,3 +1280,47 @@ def test_mapping_again_after_a_stopped_run_keeps_the_fingerprint(eval_cases):
     assert call_log._remap([entry], SALT, known) is True
     assert call_log._remap([entry], SALT, known) is False
     assert [v["fp"] for v in known.values()] == ["0" * 10]
+
+
+def test_a_reviewed_case_is_found_by_its_id_when_renamed_or_in_a_subfolder(
+    tmp_path, eval_cases
+):
+    """#983, point 3 of the review of PR #135: a reviewed case was told by its
+    file name, so a renamed one or one in a subfolder got its draft again."""
+    csv_file = tmp_path / "protokoll.csv"
+    entw = tmp_path / "entwuerfe"
+    csv_file.write_text(HEADER + _row(), encoding="utf-8")
+    assert main([str(csv_file), "--cases", str(entw)]) == 0
+    (draft,) = entw.glob("protokoll_*.json")
+    case = json.loads(draft.read_text(encoding="utf-8"))
+    del case["review"]
+    (eval_cases / "pickup").mkdir()
+    (eval_cases / "pickup" / "abholung_0099_from_the_log.json").write_text(
+        json.dumps(case), encoding="utf-8"
+    )
+    draft.unlink()
+    assert main([str(csv_file), "--cases", str(entw)]) == 0
+    assert list(entw.glob("protokoll_*.json")) == []
+
+
+def test_an_orphaned_case_is_reported_once(tmp_path, eval_cases, capsys):
+    """#983, point 4: the place check and the directory check both named a
+    reviewed case whose call dropped out."""
+    csv_file = tmp_path / "protokoll.csv"
+    entw = tmp_path / "entwuerfe"
+    first, second = _row(phrases="die 23 bitte"), _row(phrases="zweimal die 12")
+    csv_file.write_text(HEADER + first + second, encoding="utf-8")
+    assert main([str(csv_file), "--cases", str(entw)]) == 0
+    assert len(_durchsehen(entw, eval_cases)) == 2
+    capsys.readouterr()
+    csv_file.write_text(HEADER + first, encoding="utf-8")
+    assert main([str(csv_file), "--cases", str(entw)]) == 0
+    err = capsys.readouterr().err
+    assert err.count("no log row") == 1, err
+
+
+def test_english_option_names_work_like_the_german_ones(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(call_log, "_today", lambda: date(2026, 9, 24))
+    csv_file = _alt_und_neu(tmp_path)
+    assert main([str(csv_file), "--retention-days", "90", "--delete"]) == 0
+    assert "Deleted: 1 entries" in capsys.readouterr().out

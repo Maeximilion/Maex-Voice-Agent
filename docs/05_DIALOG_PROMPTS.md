@@ -132,7 +132,7 @@ sonst                      → PLZ → Straße (buchstabieren) → Hausnummer (T
 sofort → transfer_to_team
    niemand frei → create_callback mit Zusammenfassung → zusagen, wann zurückgerufen wird
 ```
-Exception (#678): a plain cancel ("Oh, so lange? Dann stornieren Sie das bitte.") while an order read back waits for its yes drops that draft with a fixed sentence and no team, since nothing was booked (`escalation.only_cancels`). A cancel with anything more (a "nicht", a question, one line, a table, an earlier order) goes to the team as above.
+Exception (#678): a plain cancel ("Oh, so lange? Dann stornieren Sie das bitte.") while an order read back waits for its yes drops that draft with a fixed sentence and no team, since nothing was booked (`escalation.only_cancels`). A cancel with anything more (a "nicht", a question, one line, a table, an earlier order) goes to the team as above. A plain decline without a cancel word ("Nein danke, dann lasse ich es", "Vergessen Sie es, tschüss", "Dann doch nicht") does the same, but only when the read-back was the last thing the guest heard (Maxi, 24.11.2026, #977, `escalation.only_declines`): to "Noch etwas?" or an allergy question the same words answer that question. Two forms count, each with its own closed list of words that may stand next to it: "lassen" or "vergessen" with the whole order ("es", "das", "die Bestellung"; "Lassen Sie, äh ..." is a correction cut off by a pause), and "dann doch nicht", "dann eben nicht" or "dann lieber nicht" with nothing but a no, a thanks or a goodbye (not "bis dann", not "bitte", not "äh"). The only question it may hold is disbelief at the time ("Oh, so lange?"); "Dauert das lange? Dann lasse ich es" asks first. A bare "Nein" may say the read-back is wrong and stays the model's; an assent ("Ja, lass machen"), a dish or a kind of order ("Nein, doch nicht Lieferung, Abholung"), a time turned round ("Doch nicht so lange, alles klar") or "Lassen Sie es so" keeps the order too, as does a question, also one whose mark the speech engine lost ("Lasse ich es dann").
 Kein Beschwichtigen, kein Ausfragen, keine Zusagen. Der Agent nimmt auf und gibt ab.
 
 **A complaint and the rule catalogue (D19, T-10.11).** With an empty catalogue, which is the state today, a complaint goes the way above and nothing else happens. A rule is a row of `complaint_rules` (docs/03): the words that select it, the remedy in cents, the two sentences the guest hears.
@@ -203,7 +203,9 @@ die Küche mit dem Gast klären" instead, and a card of a call whose guest
 spoke of their health carries that line too (`allergy_said`, ledger #764
 review): the core's cards, the one that waited for a callback number (judged
 again after the guest's answer), the table the team decides on, and the
-model's own `create_callback`, each with the line in front, where no cut to
+model's own `create_callback`, and the card of a team leg nobody answered
+(also after a voice failure mid-call, #956; in mode shadow, said into a protected
+sentence, or with only a health note of the call's rows left, #969, #970), each with the line in front, where no cut to
 the card's length or the call's bookings reaches it (#940). "Zöliakie" (or "Cöliakie") also
 arms the claim check above, since it names no allergen (#763, Maxi
 14.11.2026)
@@ -224,9 +226,10 @@ up (`guards.is_open`)
        team, with the dish on the card
    open, otherwise
      → only core sentences reach the guest: a read-back, the booking, a
-       tool's sentence of this turn, or one of three fixed sentences
+       tool's sentence of this turn, or one of four fixed sentences
        ("Ihren Hinweis gebe ich an die Küche weiter.", "Worauf genau soll
-       die Küche achten?", "Wenn ich für ein Gericht die Allergene
+       die Küche achten?", "Für welches Gericht soll die Küche darauf
+       achten?" (#929), "Wenn ich für ein Gericht die Allergene
        nachsehen soll, nennen Sie mir bitte seine Nummer."). Any other
        sentence of the model goes back once with a hint, a second one
        becomes the offer sentence, or the team when a question was left
@@ -241,13 +244,51 @@ up (`guards.is_open`)
        before it named. An unlicensed word, or "Allergene" or "Allergiker"
        in the model's own words, goes back once, then as above; in a call
        where the guest named an allergy the retry may say only core
-       sentences (`HINT_ALLERGY_CALL`)
+       sentences (`HINT_ALLERGY_CALL`). Where the guest named an allergy
+       (`guards.allergy_named`, not the turn after a table sentence alone)
+       a sentence of the model about a dish of the call is held to core
+       sentences from the start (#928, Maxi 24.11.2026, option B): "Bei
+       Ihrer Allergie ist die 13 kein Problem" names no allergen. A dish is
+       named by its card number (also as a number word, without leading
+       zeros), its whole name (also without a count in brackets), or a
+       search's sentence the model repeats before a pronoun; prices and
+       times name none (`guards.about_a_dish`). With an order step in the
+       turn (a `cart` written, a draft) the sentence stays the model's
+       unless its own words speak of the allergy. It goes back once
+       (`HINT_ALLERGY_DISH`: the `cart` for a dish the guest takes, the
+       price from `search_menu` for a price question, a tool's own sentence
+       word for word, `get_item_details` for what is in a dish, else the
+       noted sentence). The retry is judged like a first answer (Maxi
+       24.11.2026, R1): held again when it names a dish or its own words
+       speak of the allergy, else `unlicensed` checks it, so a recap that
+       drops the dish ("Auf welchen Namen darf ich bestellen?") goes
+       through, and so does "Ja, die ist für Sie kein Problem", the
+       accepted residual (`docs/24`). A retry after a sentence refused for
+       an allergen word stays strict (#860). A
+       refused sentence that states a price (an amount in euro or cent) of
+       a dish this turn's search found, and no search of the turn with a
+       wish, gets the core's sentence at once, with no retry: its price
+       from the database ("Die 13, Pho Bo, kostet 11 Euro 90.", the base
+       price) or that it is out today (Maxi 24.11.2026, option B2,
+       `guards.price_says`). A second refusal ends as above, except that it
+       says the turn's tool sentences that tell the guest something (a
+       sold-out dish, the candidates of an unclear search or of an unclear
+       part of one) instead of the offer; never a search's echo of a clear
+       hit, which after "Kann ich die 13 essen?" sounds like a yes.
+       Not in an open turn: a price is no answer to an allergen question.
+       Accepted cost (docs/24): a question or recap about a dish without an
+       order step in its turn ("Möchten Sie die 47 mit Ente oder mit
+       Huhn?") ends in the noted sentence or the offer, and a price asked
+       for a dish with an option ("die 47 mit Huhn") ends in the offer
    An open turn that ends in a core sentence with the guest's allergy not
    noted, or an allergen nothing explained, leaves the question open for
    one turn: after the offer sentence a dish the guest names next is its
-   answer (`allergen_question_open`); the letters nothing explained are
+   answer (`allergen_question_open`), also after the offer that ends a
+   refused sentence of a turn that was not open (#928); the letters nothing explained are
    kept (`allergen_question_codes`), except after "Worauf genau soll die
-   Küche achten?", whose answer comes next. A second turn in a row goes to
+   Küche achten?", whose answer comes next. "Für welches Gericht soll die
+   Küche darauf achten?" clears none: its answer names a dish, not an
+   allergen, and is not kept for the safety net. A second turn in a row goes to
    the team when it ends in the offer again or leaves one of those letters
    unexplained again, whatever core sentence it ends in (`guards.left_twice`);
    decided by where the words come from, never by telling a question from a
@@ -343,9 +384,46 @@ eine Sesamallergie") (Maxi, 15.11.2026, #736, #763)
      without, the core writes "WICHTIG !!! Gast sagte: <Worte>" on the note
      of the order or the table and lets it go (`guards.unnoted_allergy`,
      `guards.with_the_guests_words`); when the cut to the field would drop
-     what a kept sentence names, the team takes the call instead. A note that promises a dish free of
+     what a kept sentence names, the team takes the call instead. Every
+     allergen a kept sentence names as what someone reacts to must be on
+     such a note (#929, Maxi 24.11.2026), compared by letter
+     (`allergens_named`, coeliac disease as gluten), an ingredient without a
+     letter ("Kiwi") by its word. A kept sentence counts with all it names
+     ("Meine Frau hat eine Allergie. Sesam.", "Gegen Sesam."), what a part
+     only denies and plain names of dishes the call found aside; the core
+     does not tell a wish from an allergy (AGENTS.md, #798), so "Ich habe
+     eine Erdnussallergie, bitte extra Sesam" asks for the sesame too, and
+     the guest's own words, which the hint asks for, cover it; an ingredient
+     word counts at the start of a note's word only ("Erbsen" is not in
+     "Kichererbsen"). A note counts what it asks for ("kein Sesam"), not
+     an allergy it denies. So a second
+     allergy said after the read-back ("Ach, und meine Frau verträgt keinen
+     Sesam.") does not pass on the first one's note. The draft goes back
+     once with only the sentences no note covers; the hint asks for the
+     guest's words, never a reading of them, as "WICHTIG !!! <words>" on
+     the dish named right before or on the order, or, unclear for which
+     dish, for "Für welches Gericht soll die Küche darauf achten?"; a table
+     gets them on its note. After that question the hint counts as given:
+     a draft without the allergy in the answer turn gets the guest's words
+     from the core at once. Sent again without, the core's "Gast sagte"
+     block holds every kept sentence; a block a redraft carries from before
+     (in any case or spacing) is replaced, never written twice, and what the
+     model wrote behind it stays ("Bitte getrennt verpacken."). Residual: a
+     wish beside an allergy and a coeliac denial ("Ich habe keine
+     Zöliakie.") cost one more round before the guest's words carry them. A wish on a health note
+     counts as noted ("Erdnussallergie, extra Sesam" covers a later sesame
+     allergy), and an allergy the guest takes back without a question stays
+     asked for. A note that promises a dish free of
      something ("nussfrei", "keine Spuren") goes back too
-     (`guards.claims_in_a_note`)
+     (`guards.claims_in_a_note`, run on the model's call before the core
+     replaces the note). Residual (Maxi's rule of 15.11.2026, "words, never a
+     reading of them"; #930, option A): the core's own "Gast sagte" note is
+     not run through that check, so a guest's free-from assumption in it
+     ("die Frühlingsrollen sind doch nussfrei, oder?") is read back as said,
+     attributed to the guest, and printed on the slip; the agent itself
+     promises nothing. Reopened by a kitchen complaint about such a slip or by
+     Maxi choosing option B (check the core's note too and hand the call to the
+     team); `docs/24_OPEN_REVIEW_POINTS.md`
    → the menu search still splits an allergy said behind a dish off as its
      `wish` (`kind: allergy`, text "WICHTIG !!! Allergie: <Zutat>"), and the
      dish is found as before
@@ -424,7 +502,7 @@ the old draft whichever of them drives the call.
 **Read back means spoken, and a question is no yes (#251, 12.10.2026).** Both are held by the core, not by the prompt:
 
 - A draft counts as read back when the last thing the guest heard was its `readback` and the question for the yes, and nothing else (`guards.note_said`, `consent.read_out`). Three parts, on the words alone, case and punctuation do not count: the words of the draft in order and without a gap (a read-back that leaves the name out or says another number is not the draft); behind them the closing question, the draft's own ("Passt das so?") or one of a few fixed forms ("Ist das so richtig?", "Stimmt das?"; not "Ist es sicher?", not "Ist es richtig sicher?", not "Möchten Sie noch einen Hochstuhl?", and not nothing at all, except after an order's read-back, which closes with the expected time instead of a question: "Es dauert so ungefähr 30 Minuten.", for a delivery "Das Ganze dauert so ungefähr 50 Minuten." (Maxi, #678, 23.11.2026)); in front of them nothing, polite words ("Gerne, ...") and at most one whole lead-in phrase ("Ich wiederhole: ...", "Zur Kontrolle: ..."), never a single word of one ("Noch ein Tisch ..." is another table) and never a sentence of its own ("Das ist falsch: ..."). Only the last thing said counts: after a side question the model answered, the draft has to be read out again, on its own. Until it is heard `confirm` is refused, and while the draft waits the state the model gets carries the sentence as `readback`, because a model keeps nothing between turns; once heard, and once booked, it is not sent again. A new draft has to be read out again.
-- The answer to the stated time (#678): a yes, or an acknowledgement ("Okay", "Alles klar", "Gut", "Ist gut", "In Ordnung", "Na gut", with filler and closing words only: "Alles klar, tschüss", "Okay, bis gleich") is the yes, and only to that read-back heard last (`consent.answers_the_read_back`, `consent.acknowledges`); also when the model put one of the fixed confirmation questions behind the time. A thanks or a goodbye alone ("Danke", "Tschüss") is none, and "Alles klar" to a table's "Passt das so?" or after other talk books nothing. "So lange? Dann hole ich es ab" drafts the order again as a pickup (no fee, no address, the pickup wait) and reads it back with its own time. A plain "Dann stornieren Sie das" while an order waits for its yes drops the draft with a fixed sentence (`loop.SAY_ORDER_DROPPED`), no handover; nothing was booked. A cancel without such a draft, or with anything more in the sentence, goes to the team as before.
+- The answer to the stated time (#678): a yes, or an acknowledgement ("Okay", "Alles klar", "Gut", "Ist gut", "In Ordnung", "Na gut", with filler and closing words only: "Alles klar, tschüss", "Okay, bis gleich") is the yes, and only to that read-back heard last (`consent.answers_the_read_back`, `consent.acknowledges`); also when the model put one of the fixed confirmation questions behind the time. A thanks or a goodbye alone ("Danke", "Tschüss") is none (Maxi, 23.11.2026, #953: its `confirm` is refused, `guards.HINT_CONFIRM`), and "Alles klar" to a table's "Passt das so?" or after other talk books nothing. "So lange? Dann hole ich es ab" drafts the order again as a pickup (no fee, no address, the pickup wait) and reads it back with its own time. A plain "Dann stornieren Sie das" while an order waits for its yes drops the draft with a fixed sentence (`loop.SAY_ORDER_DROPPED`), no handover; nothing was booked. The same dishes ordered again later are a new draft with the time and the checks of then, never the dropped one replayed (#952); so is an order drafted again after a side question or a correction took it out of the read-back, and its hours and dishes are checked at that moment. A call that ends while an order drafted for this call waits for its yes leaves a callback card (`loop.SUMMARY_READBACK_UNANSWERED` with the open order, `loop.offer_unanswered`, #953): nothing is booked, and the guest may expect the food. Not for a table, whose read-back asks "Passt das so?" (`reservierung_0032`), and not when an outage or a failed line takes the call to the team. A plain decline of the order heard last ("Nein danke, dann lasse ich es", #977) drops the draft the same way, so its hang-up writes no card. A cancel without such a draft, or with anything more in the sentence, goes to the team as before.
 - `is_yes` (`agent/consent.py`) refuses a sentence with a question mark and the word order of a question without one: "Ist das richtig", "Stimmt das so", "Passt das", "Ist alles richtig". Speech recognition often drops the mark. The verb has to open its clause for that: after an assent or a thanks ("Ja, ist das richtig") it still does, behind any other word it comes second and the sentence is a statement ("Natürlich ist das richtig", "Das ist es"). "Das stimmt so", "Passt." and "Ja, passt alles." stay a yes. "Alles richtig" has no verb and "Ist so richtig" no subject: each is a question as often as an answer, and a yes only next to a word that cannot ask ("Ja, alles richtig", "Ja, ist okay").
 - After a refused yes the core reads the draft out itself (12.10.2026, finding on PR #258). A `confirm` on a yes for a draft that is not what the guest heard last is refused, and the turn ends right there with the draft's sentence (`guards.reread_on_yes`, `agent/loop.py`); the yes to it books. The model is not asked again: the stand-in handed such a call to the team, and a model that answers "gebucht" or asks in its own words would keep the guest in refused yeses. Nothing that stands next to that `confirm` is taken (a `cart`, a state patch, a report to the understanding ladder): the guest said yes and nothing else, and each of them could drop the draft or end the call before the question is put. The call's time limit is still checked first. On any other sentence than a yes the refusal goes back to the model as before ("Was soll ich ändern?"). The eval recorder knows the case by the same rule: such a `confirm` is a refused attempt, and the guest's next sentence shows that the draft was read out; a result that comes back for it instead is judged as usual. Eval cases `reservierung_0032` and `reservierung_0033`.
 - The eval recorder (`evals/recorder.py`) measures with the same two functions: a `confirm` after a draft that was not read out last is a hard violation when it went through and a refused attempt when the core stopped it.

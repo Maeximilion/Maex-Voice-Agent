@@ -7,21 +7,30 @@ The yes to that one books. Every loop test runs for a table and for an order,
 on the database, the audit log and the outbox.
 """
 
+import copy
 import json
 import uuid
 from dataclasses import dataclass
 from typing import Any
 
 import pytest
-from sqlalchemy import create_engine, func, select, update
+from sqlalchemy import create_engine, func, select, text, update
 from sqlalchemy.orm import Session
 
 from api.agent.dispatch import ToolResult
 from api.agent.guards import HINT_CONFIRM, begin_turn, note_said, reread_on_yes
 from api.agent.ladder import UnderstandingLadder
 from api.agent.llm import LLMTurn, ToolCall
-from api.agent.loop import SAY_ORDER_DROPPED, SAY_TIMEOUT, ConversationLoop
+from api.agent.loop import (
+    SAY_ORDER_DROPPED,
+    SAY_TIMEOUT,
+    SUMMARY_NOTE_TO_CLEAR,
+    SUMMARY_OPEN_ORDER,
+    SUMMARY_READBACK_UNANSWERED,
+    ConversationLoop,
+)
 from api.agent.state import ConversationState, apply_tool_result
+from api.domain.callbacks import create_callback, transfer
 from api.events.types import ORDER_CONFIRMED, RESERVATION_CONFIRMED
 from api.models import (
     AuditLog,
@@ -33,6 +42,8 @@ from api.models import (
     Reservation,
     ServiceConfig,
 )
+from api.models.calls import CALLBACK_REASONS
+from api.schemas.callbacks import CreateCallbackRequest
 from api.tests.test_domain_draft_order import NOW, _call, _tenant
 
 CALLER = "+497215551234"
@@ -495,6 +506,30 @@ def test_a_cancel_after_the_stated_time_drops_the_draft_without_the_team(
     assert status(session, order, draft_id) == "draft"
 
 
+def test_the_same_order_after_a_cancel_is_drafted_anew(session, state, order):
+    """#952: the dropped draft stays the call's latest row under the key of
+    the same dishes. Replayed, it kept its old pickup time and skipped the
+    checks of hours and sold-out dishes; the order is drafted anew instead,
+    and that draft's own retry replays it."""
+    read_to_the_guest(session, state, order)
+    dropped = order.draft_id(state)
+    turn(session, state, "Dann stornieren Sie das bitte.", Model(say="x"))
+
+    read_to_the_guest(session, state, order)
+    again = order.draft_id(state)
+    turn(session, state, "Wie bitte?", Model(order.calls[-1]))
+
+    assert again is not None and again != dropped
+    assert order.draft_id(state) == again
+    assert (status(session, order, dropped), status(session, order, again)) == (
+        "draft",
+        "draft",
+    )
+    turn(session, state, "Okay", Model(order.confirm(again), say="Danke."))
+    assert status(session, order, again) == "confirmed"
+    assert status(session, order, dropped) == "draft"
+
+
 @pytest.mark.parametrize(
     "answer",
     [
@@ -565,3 +600,392 @@ def test_a_cancel_of_a_table_keeps_the_order_that_waits(session, state, order):
 
     assert said != [SAY_ORDER_DROPPED]
     assert state.order_id == draft_id
+
+
+# --- #953: a call that ends while a read-back waits for its yes -----------------
+
+
+def cards(session, state) -> list[Callback]:
+    session.expire_all()
+    return list(
+        session.scalars(select(Callback).where(Callback.call_id == state.call_id))
+    )
+
+
+def test_a_call_that_ends_on_the_read_back_leaves_a_card(session, state, order):
+    """#953 (b): "Danke" alone is no yes (Maxi, 23.11.2026), and the caller
+    hangs up. Nothing is booked, and the guest expects the food: the team
+    calls back, with what was read out on the card. Once, however often the
+    end comes."""
+    read_to_the_guest(session, state, order)
+    draft_id = order.draft_id(state)
+    turn(session, state, "Danke", Model(order.confirm(draft_id), say="Gerne."))
+    assert status(session, order, draft_id) == "draft"
+    loop = ConversationLoop(session, Model(), "system", now=NOW, clock=lambda: 0)
+
+    loop.offer_unanswered(state)
+    loop.offer_unanswered(state)
+
+    card = cards(session, state)
+    assert len(card) == 1
+    # Its own reason (#977, Maxi 24.11.2026): "Bestellung offen" on the
+    # tablet, not "Nicht verstanden".
+    assert card[0].reason == "order_open"
+    assert card[0].summary.startswith(SUMMARY_READBACK_UNANSWERED)
+    assert SUMMARY_OPEN_ORDER in card[0].summary
+    assert card[0].phone == CALLER
+    assert status(session, order, draft_id) == "draft"
+    assert state.stage == "callback"
+
+
+def test_an_unanswered_order_joins_the_open_card_of_the_call(session, state, order):
+    """#993 (Maxi, 24.11.2026, option A): the model wrote a card earlier in
+    the call, then the guest ordered and hung up on the read-back. One card
+    per call stays, and the open order is on it where the team looks; its
+    reason stays the older one. Once, however often the end comes."""
+    old = create_callback(
+        session,
+        CreateCallbackRequest(
+            call_id=state.call_id,
+            tenant_id=state.tenant_id,
+            phone=CALLER,
+            reason="human_requested",
+            summary="Gast möchte mit einem Mitarbeiter sprechen.",
+        ),
+        now=NOW,
+    )
+    read_to_the_guest(session, state, order)
+    # A second closer of the same call that read the state before the first
+    # wrote: its call reaches `create_callback` (the first's stage would not).
+    other = copy.deepcopy(state)
+    loop = ConversationLoop(session, Model(), "system", now=NOW, clock=lambda: 0)
+
+    loop.offer_unanswered(state)
+    loop.offer_unanswered(other)
+
+    (card,) = cards(session, state)
+    assert card.id == old.callback_id
+    assert card.reason == "human_requested"
+    assert card.summary.startswith("Gast möchte mit einem Mitarbeiter sprechen.")
+    assert card.summary.count(SUMMARY_READBACK_UNANSWERED) == 1
+    assert card.summary.count(SUMMARY_OPEN_ORDER) == 1
+    assert state.stage == other.stage == "callback"
+
+
+def test_a_model_card_after_the_read_back_carries_the_open_order(session, state, order):
+    """#998 no. 2: the order is read back, the guest asks for a callback
+    instead, and the model writes `human_requested`. The stage is
+    `callback` then, and the hang-up still brings the open order onto that
+    card, once; nothing is booked."""
+    read_to_the_guest(session, state, order)
+    draft_id = order.draft_id(state)
+    callback = ToolCall(
+        "create_callback",
+        {
+            "phone": CALLER,
+            "reason": "human_requested",
+            "summary": "Gast möchte lieber zurückgerufen werden.",
+        },
+    )
+    turn(session, state, "Rufen Sie mich lieber zurück.", Model(callback, say="Gut."))
+    assert state.stage == "callback"
+    loop = ConversationLoop(session, Model(), "system", now=NOW, clock=lambda: 0)
+
+    loop.offer_unanswered(state)
+    loop.offer_unanswered(state)
+
+    (card,) = cards(session, state)
+    assert card.reason == "human_requested"
+    assert card.summary.startswith("Gast möchte lieber zurückgerufen werden.")
+    assert card.summary.count(SUMMARY_OPEN_ORDER) == 1
+    assert status(session, order, draft_id) == "draft"
+
+
+def test_a_model_card_gets_the_order_also_when_the_call_goes_to_the_team(
+    session, state, order
+):
+    """#998 review: the model wrote its card after the read-back, then the
+    line failed and the call went to the team. The team leg's card names no
+    order and meets the model's card unchanged: the order joins that card
+    when the call closes."""
+    read_to_the_guest(session, state, order)
+    callback = ToolCall(
+        "create_callback",
+        {"phone": CALLER, "reason": "human_requested", "summary": "Rückruf bitte."},
+    )
+    turn(session, state, "Rufen Sie mich lieber zurück.", Model(callback, say="Gut."))
+    loop = ConversationLoop(session, Model(), "system", now=NOW, clock=lambda: 0)
+
+    loop.offer_unanswered(state, with_the_team=True)
+
+    (card,) = cards(session, state)
+    assert card.summary.startswith("Rückruf bitte.")
+    assert card.summary.count(SUMMARY_OPEN_ORDER) == 1
+
+
+def test_a_handoff_past_an_open_card_brings_the_order_onto_it(
+    session, state, order, monkeypatch
+):
+    """#998 no. 1: the model wrote a card earlier in the call; the time limit
+    ends the call on an order read back. The open card gets the order, and
+    the hang-up after the handoff adds it no second time. Outside the hours
+    nobody is rung, and the core writes the card itself."""
+    monkeypatch.setattr(transfer, "_team_reachable", lambda *a: False)
+    old = create_callback(
+        session,
+        CreateCallbackRequest(
+            call_id=state.call_id,
+            tenant_id=state.tenant_id,
+            phone=CALLER,
+            reason="human_requested",
+            summary="Gast möchte mit einem Mitarbeiter sprechen.",
+        ),
+        now=NOW,
+    )
+    read_to_the_guest(session, state, order)
+    state.slots["phone"] = CALLER
+    times = iter([0.0, 10_000.0])
+    loop = ConversationLoop(
+        session,
+        Model(say="x"),
+        "system",
+        now=NOW,
+        clock=lambda: next(times, 10_000.0),
+        max_call_seconds=60,
+    )
+
+    loop.run_turn(state, "Moment, ich überlege noch.")
+    loop.offer_unanswered(state)
+
+    assert state.stage == "callback"
+    (card,) = cards(session, state)
+    assert card.id == old.callback_id
+    assert card.summary.startswith("Gast möchte mit einem Mitarbeiter sprechen.")
+    assert card.summary.count(SUMMARY_OPEN_ORDER) == 1
+
+
+def test_a_cart_begun_after_a_booking_is_no_order_read_back(session, state, order):
+    """#998 review: the yes keeps the booked order's id and drops the
+    read-back. A cart the model begins after it was never read back: a model
+    card and the hang-up write nothing that claims a read-back."""
+    read_to_the_guest(session, state, order)
+    turn(session, state, "Okay", Model(order.confirm(order.draft_id(state)), say="x"))
+    state.cart = copy.deepcopy(state.booked_cart)
+    state.stage = "callback"
+    loop = ConversationLoop(session, Model(), "system", now=NOW, clock=lambda: 0)
+
+    loop.offer_unanswered(state)
+
+    assert state.order_id is not None and state.readback is None
+    assert cards(session, state) == []
+
+
+def _reasons_allowed(session, reasons) -> None:
+    quoted = ", ".join(f"'{reason}'" for reason in reasons)
+    session.execute(
+        text(
+            "ALTER TABLE callbacks DROP CONSTRAINT ck_callbacks_reason, ADD CONSTRAINT"
+            f" ck_callbacks_reason CHECK (reason IN ({quoted}))"
+        )
+    )
+    session.commit()
+
+
+def test_a_database_before_migration_045_still_gets_the_card(session, state, order):
+    """Code ahead of its database (a pull before `make migrate`): the check
+    of revision 044 refuses `order_open`, and the card goes out as before
+    #977 instead of not at all (rule 5)."""
+    read_to_the_guest(session, state, order)
+    _reasons_allowed(session, [r for r in CALLBACK_REASONS if r != "order_open"])
+    try:
+        ConversationLoop(
+            session, Model(), "system", now=NOW, clock=lambda: 0
+        ).offer_unanswered(state)
+
+        (card,) = cards(session, state)
+        assert card.reason == "not_understood"
+        assert card.summary.startswith(SUMMARY_READBACK_UNANSWERED)
+        assert state.stage == "callback"
+    finally:
+        session.rollback()
+        _reasons_allowed(session, CALLBACK_REASONS)
+
+
+def test_a_table_or_a_call_with_the_team_leaves_no_card(session, state, flow):
+    """A table's read-back asks "Passt das so?": unanswered, the guest knows
+    nothing is booked (`reservierung_0032`). An outage or a failed line takes
+    the call to the team, whose own card waits if nobody answers."""
+    read_to_the_guest(session, state, flow)
+    loop = ConversationLoop(session, Model(), "system", now=NOW, clock=lambda: 0)
+
+    loop.offer_unanswered(state, with_the_team=True)
+    if flow.entity == "reservation":
+        loop.offer_unanswered(state)
+
+    assert cards(session, state) == []
+    assert state.stage == "readback_pending"
+
+
+def test_a_booked_order_leaves_no_card(session, state, order):
+    loop = ConversationLoop(session, Model(), "system", now=NOW, clock=lambda: 0)
+    read_to_the_guest(session, state, order)
+
+    turn(session, state, "Okay", Model(order.confirm(order.draft_id(state)), say="x"))
+    loop.offer_unanswered(state)
+    assert cards(session, state) == []
+
+
+def test_a_read_back_without_a_number_leaves_no_card(session, tenant_id, order):
+    """A withheld number nobody named: there is nobody to call back, and the
+    call ends as before."""
+    state = ConversationState(call_id=_call(session, tenant_id), tenant_id=tenant_id)
+    state.slots["phone"] = CALLER
+    read_to_the_guest(session, state, order)
+    state.slots.pop("phone")
+    loop = ConversationLoop(session, Model(), "system", now=NOW, clock=lambda: 0)
+
+    loop.offer_unanswered(state)
+
+    assert cards(session, state) == []
+    assert state.stage == "readback_pending"
+
+
+def test_the_card_of_an_unanswered_order_leads_with_the_kitchen_marker(
+    session, state, order
+):
+    """The guest spoke of an allergy in the call (#940): the card leads with
+    the marker and never names the allergy (L13)."""
+    read_to_the_guest(session, state, order)
+    state.allergy_said = True
+    loop = ConversationLoop(session, Model(), "system", now=NOW, clock=lambda: 0)
+
+    loop.offer_unanswered(state)
+
+    (card,) = cards(session, state)
+    assert card.summary.startswith(SUMMARY_NOTE_TO_CLEAR)
+    assert SUMMARY_READBACK_UNANSWERED in card.summary
+
+
+# --- #977: a plain decline after the stated time is a cancel ---------------------
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Nein danke, dann lasse ich es.",
+        "Vergessen Sie es, tschüss.",
+        "Oh, so lange? Dann lassen wir das lieber.",
+        "Nee, dann doch nicht.",
+        "Lassen Sie es bitte, danke. Auf Wiederhören.",
+        "Ach, vergessen Sie das einfach.",
+    ],
+)
+def test_a_plain_decline_after_the_stated_time_drops_the_draft(
+    session, state, order, answer
+):
+    """Maxi, 24.11.2026 (#977): a decline without a cancel word drops the
+    order that waits as "stornieren" does, and the hang-up after it writes no
+    card: the team would call back a guest who said no."""
+    read_to_the_guest(session, state, order)
+    draft_id = order.draft_id(state)
+
+    said = turn(session, state, answer, Model(say="Nicht gesprochen."))
+    loop = ConversationLoop(session, Model(), "system", now=NOW, clock=lambda: 0)
+    loop.offer_unanswered(state)
+
+    assert said == [SAY_ORDER_DROPPED]
+    assert (state.order_id, state.readback, state.stage) == (None, None, "collecting")
+    assert (state.cart, state.order_note) == ([], None)
+    assert status(session, order, draft_id) == "draft"
+    assert cards(session, state) == []
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        # A bare no may say the read-back is wrong: the model asks what.
+        "Nein",
+        "Nein danke",
+        "Nein, das stimmt doch nicht",
+        "Lassen Sie die Zwiebeln weg",
+        "Vergessen Sie die Cola",
+        "Ich habe etwas vergessen",
+        "Lassen Sie es mich kurz überlegen",
+        "Vergessen Sie es nicht",
+        "Lasse ich es?",
+        "Dann doch nicht so scharf",
+        # "Leave it as it is" keeps the order.
+        "Lassen Sie es so, danke",
+        "Ja, lassen wir das so",
+        "Ach so, lassen Sie es so",
+        "Den Tisch lassen wir, die Bestellung nehme ich",
+    ],
+)
+def test_a_no_or_a_change_after_the_stated_time_keeps_the_order(
+    session, state, order, answer
+):
+    """Only a decline and nothing else drops the order: a bare no, a question,
+    one line or a dish left out is the model's to answer, and the order that
+    waits stays for its yes or for the team's card."""
+    read_to_the_guest(session, state, order)
+    draft_id = order.draft_id(state)
+
+    said = turn(session, state, answer, Model(say="Was darf ich ändern?"))
+
+    assert said != [SAY_ORDER_DROPPED]
+    assert state.cart, "the open order stays"
+    assert status(session, order, draft_id) == "draft"
+
+
+@pytest.mark.parametrize(
+    "question", ["Darf es sonst noch etwas sein?", "Hat jemand eine Allergie?"]
+)
+def test_a_decline_to_another_question_keeps_the_order(session, state, order, question):
+    """ "Nein danke, dann lasse ich es" to a question the model asked after
+    the read-back ("Noch etwas?", an allergy question) answers that question,
+    not the order, which stays."""
+    read_to_the_guest(session, state, order)
+    draft_id = order.draft_id(state)
+    turn(session, state, "Moment, noch eine Frage", Model(say=question))
+    assert state.order_id == draft_id and not state.readback_heard
+
+    said = turn(session, state, "Nein danke, dann lasse ich es.", Model(say="Gut."))
+
+    assert said != [SAY_ORDER_DROPPED]
+    # After the allergy question the answer is noted for the kitchen and the
+    # order is drafted anew with it (#798): taken back, not dropped.
+    assert state.cart, "the order stays"
+
+
+def test_a_decline_of_a_table_is_left_to_the_model(session, state, tenant_id, flow):
+    """A table's read-back asks "Passt das so?"; a guest who declines it
+    knows nothing is booked, and the model answers as before (#977 covers the
+    order that waits after its time)."""
+    if flow.entity != "reservation":
+        pytest.skip("the order is the case above")
+    read_to_the_guest(session, state, flow)
+    draft_id = flow.draft_id(state)
+
+    said = turn(session, state, "Nein danke, dann lasse ich es.", Model(say="Gut."))
+
+    assert said == ["Gut."]
+    assert state.reservation_id == draft_id
+
+
+def test_a_decline_past_the_call_limit_ends_with_the_team(session, state, order):
+    """As a cancel: past its limit the call goes to the team, the order kept."""
+    read_to_the_guest(session, state, order)
+    times = iter([0.0, 10_000.0])
+    loop = ConversationLoop(
+        session,
+        Model(say="x"),
+        "system",
+        now=NOW,
+        clock=lambda: next(times, 10_000.0),
+        max_call_seconds=60,
+    )
+
+    said = loop.run_turn(state, "Nein danke, dann lasse ich es.").say
+
+    assert SAY_TIMEOUT in said and SAY_ORDER_DROPPED not in said
+    assert state.order_id is not None

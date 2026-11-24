@@ -41,6 +41,7 @@ REASONS = {
     "not_understood": "Nicht verstanden",
     "human_requested": "Will Mitarbeiter sprechen",
     "out_of_scope": "Anderes Anliegen",
+    "order_open": "Bestellung offen",
 }
 WITHHELD = "unterdrückt"
 # Shown of a number, as in the mockup: enough to tell callers apart, not the

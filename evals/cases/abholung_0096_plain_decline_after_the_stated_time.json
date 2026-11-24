@@ -1,0 +1,43 @@
+{
+  "id": "abholung_0096",
+  "name": "A plain decline without a cancel word after the stated time drops the draft, nothing booked, no card (#977)",
+  "tags": [
+    "abholung",
+    "readback",
+    "storno",
+    "level-1"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo, ich moechte etwas zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Zweimal die 23."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Schmidt."
+    },
+    {
+      "role": "customer",
+      "text": "Nein danke, dann lasse ich es."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "confirmed": false,
+    "escalated": false,
+    "readback": "Es dauert so ungefähr",
+    "said": [
+      "die Bestellung storniert"
+    ]
+  }
+}

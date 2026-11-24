@@ -196,12 +196,27 @@ pg_resolve_client() {
     if [ -n "${BACKUP_DOCKER_NETWORK:-}" ]; then
         # Production: Postgres has no published port, only the Compose network reaches it.
         DOCKER_ARGS=(--network "$BACKUP_DOCKER_NETWORK")
-    elif [ "$PGHOST" = localhost ] || [ "$PGHOST" = 127.0.0.1 ]; then
-        # The host's localhost, seen from inside the client container.
-        CONTAINER_PGHOST=host.docker.internal
-        DOCKER_ARGS=(--add-host host.docker.internal:host-gateway)
+    elif [ "$PGHOST" = localhost ] || [ "$PGHOST" = 127.0.0.1 ] || [ "$PGHOST" = ::1 ]; then
+        if pg_native_linux_engine; then
+            # A native engine reaches the host only through the bridge, and the dev
+            # stack publishes Postgres on 127.0.0.1 alone (#984): share the host's
+            # network, where its loopback is the container's.
+            DOCKER_ARGS=(--network host)
+        else
+            # Docker Desktop forwards this name to the host's localhost.
+            CONTAINER_PGHOST=host.docker.internal
+            DOCKER_ARGS=(--add-host host.docker.internal:host-gateway)
+        fi
     fi
     pg_refuse_files_in_container
+}
+
+# A Linux machine whose Docker engine runs on it, not in Docker Desktop's VM (also
+# used from WSL): there `--network host` is this machine's network.
+pg_native_linux_engine() {
+    [ "$(uname -s)" = Linux ] || return 1
+    command -v docker >/dev/null || return 1
+    [ "$(docker info --format '{{.OperatingSystem}}' 2>/dev/null)" != "Docker Desktop" ]
 }
 
 pg_major() { # first number of a version line: "pg_dump (PostgreSQL) 16.4" -> 16
@@ -295,7 +310,7 @@ alter default privileges in schema public grant usage, select on sequences to "$
 SQL
 }
 
-CONNECT_HINT="check DATABASE_URL; a host like 'db' only resolves inside the Compose network, and on Linux a client container does not reach the loopback port of the dev stack (BACKUP_DOCKER_NETWORK for both)"
+CONNECT_HINT="check DATABASE_URL; a host like 'db' only resolves inside the Compose network (BACKUP_DOCKER_NETWORK)"
 
 require_passphrase() {
     env_default BACKUP_PASSPHRASE_FILE

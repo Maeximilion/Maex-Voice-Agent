@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from api.schemas.common import ToolRequest
 
 CallbackReason = Literal[
-    "complaint", "not_understood", "human_requested", "out_of_scope"
+    "complaint", "not_understood", "human_requested", "out_of_scope", "order_open"
 ]
 CallbackStatus = Literal["open", "done"]
 

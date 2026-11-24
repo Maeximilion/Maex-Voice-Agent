@@ -413,11 +413,9 @@ class CallSession:
         self._unheard = 0
         if heard.ended_at <= self._protected_until:
             # Said into a sentence that may not be interrupted. No turn, but
-            # a withdrawal holds however it is said (L2).
-            if self._tape is not None:
-                self._turn(
-                    lambda: self._events.on_talked_over(self.session_id, heard.text)
-                )
+            # a withdrawal holds however it is said (L2), and an allergy
+            # marks the card of a leg nobody takes (#970).
+            self._turn(lambda: self._events.on_talked_over(self.session_id, heard.text))
             self._wait_for_the_caller(at)
             return
         if self._playing_since is not None and heard.ended_at >= self._playing_since:

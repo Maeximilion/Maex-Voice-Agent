@@ -1,0 +1,30 @@
+{
+  "id": "allergie_0036",
+  "name": "A price asked in a call about an allergy comes from the core, from the database",
+  "tags": [
+    "allergie",
+    "allergie_herkunft",
+    "level-2"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich habe eine Erdnussallergie."
+    },
+    {
+      "role": "customer",
+      "text": "Was kostet die 13?"
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": false,
+    "said": [
+      "Die 13, Pho Bo, kostet 11 Euro 90."
+    ],
+    "never_said": [
+      "11,90 Euro"
+    ]
+  }
+}
