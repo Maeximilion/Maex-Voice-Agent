@@ -21,6 +21,7 @@ from api.agent.guards import (
     SAY_ALLERGENS_OFFER,
     SAY_ALLERGY_NOTED,
     SAY_ASK_ALLERGY,
+    about_a_dish,
     allergen_claim,
     begin_allergen_turn,
     begin_turn,
@@ -33,7 +34,9 @@ from api.agent.guards import (
     note_said,
     note_tool,
     order_changed,
+    price_says,
     refusal,
+    states_a_price,
     sticky,
     table_says,
     take_cart,
@@ -2137,3 +2140,151 @@ def test_alles_klar_confirms_only_a_timed_read_back_heard_before_the_turn():
 
     note_said(state, "Wir haben bis 22 Uhr geöffnet.")
     assert refusal(state, begin_turn(state), "Alles klar", confirm(draft_id))
+
+
+# --- #928, deep review: the dishes a model sentence names, and their price
+
+
+def _dish_seen(state, number, name):
+    item_id = str(uuid.uuid4())
+    state.seen_items[item_id] = {
+        "number": number,
+        "name": name,
+        "sold_out": False,
+        "required": [],
+        "optional": [],
+    }
+    return item_id
+
+
+def _hit_found(
+    turn, item_id, number, name, cents, *, say=None, sold_out=False, wish=None
+):
+    data = {
+        "match_type": "exact_number",
+        "results": [
+            {
+                "menu_item_id": item_id,
+                "number": number,
+                "name": name,
+                "price_cents": cents,
+                "sold_out": sold_out,
+                "option_groups": [],
+            }
+        ],
+    }
+    if wish is not None:
+        data["wish"] = wish
+    result = ToolResult(ok=True, data=data, say=say)
+    note_tool(turn, "search_menu", result, {"query": number})
+
+
+@pytest.mark.parametrize(
+    ("say", "about"),
+    [
+        ("Die Dreizehn ist für Sie kein Problem.", True),
+        # Stored with leading zeros, said without.
+        ("Die Nummer 7 ist für Sie kein Problem.", True),
+        # The whole name without its count.
+        ("Die Frühlingsrollen sind für Sie kein Problem.", True),
+        ("Die Sommerrollen sind für Sie kein Problem.", False),
+        # A time and a price name no card number.
+        ("Gern, um 13:30 Uhr ist sie fertig.", False),
+        ("Das sind dann 11,90 Euro.", False),
+    ],
+)
+def test_a_model_sentence_names_a_dish_as_a_guest_would(say, about):
+    """Deep review of #928: a number word, a card number without its leading
+    zeros and a name without its count name the dish; prices and times name
+    none."""
+    state = new_state()
+    _dish_seen(state, "13", "Pho Bo")
+    _dish_seen(state, "007", "Reis")
+    _dish_seen(state, "11", "Wan-Tan-Suppe")
+    _dish_seen(state, "23", "Frühlingsrollen (4 Stück)")
+    turn = begin_allergen_turn(state, "Und?", kept=False)
+
+    assert about_a_dish(turn, state, say, changed=False) is about
+
+
+def test_the_searchs_sentence_names_the_dish_a_promise_after_it_speaks_of():
+    """Deep review of #928: "Nummer 13, sehr gern. Ja, die können Sie gut
+    essen." names the dish in the core's part only."""
+    state = new_state()
+    pho = _dish_seen(state, "13", "Pho Bo")
+    turn = begin_allergen_turn(state, "Kann ich die 13 essen?", kept=False)
+    echo = "Nummer 13, sehr gern."
+    _hit_found(turn, pho, "13", "Pho Bo", 1190, say=echo)
+
+    assert about_a_dish(
+        turn, state, f"{echo} Ja, die können Sie gut essen.", changed=False
+    )
+    assert not about_a_dish(turn, state, echo, changed=False)
+
+
+def test_an_order_step_holds_a_dish_sentence_only_with_words_of_the_allergy():
+    """Deep review of #928: the model writes `cart` for every dish a search
+    found clearly, so an order step alone frees no promise."""
+    state = new_state()
+    _dish_seen(state, "13", "Pho Bo")
+    turn = begin_allergen_turn(state, "Dann die 13.", kept=False)
+
+    assert about_a_dish(
+        turn, state, "Bei Ihrer Allergie ist die 13 kein Problem.", changed=True
+    )
+    assert not about_a_dish(turn, state, "Die 13 ist notiert.", changed=True)
+
+
+def test_the_core_says_the_price_of_a_dish_this_turn_found():
+    """#928 (Maxi, B2): the price from the hit, which is the database; a lone
+    euro is "einen Euro" after "kostet"."""
+    state = new_state()
+    reis = _dish_seen(state, "5", "Reis")
+    turn = begin_allergen_turn(state, "Was kostet der Reis?", kept=False)
+    _hit_found(turn, reis, "5", "Reis", 150)
+
+    assert states_a_price(turn, state, "Die 5 kostet 1,50 Euro.")
+    assert price_says(turn, state, "Die 5 kostet 1,50 Euro.") == [
+        "Die 5, Reis, kostet einen Euro 50."
+    ]
+
+
+def test_a_sold_out_dish_gets_its_sold_out_sentence_for_a_price():
+    state = new_state()
+    reis = _dish_seen(state, "5", "Reis")
+    turn = begin_allergen_turn(state, "Was kostet der Reis?", kept=False)
+    _hit_found(
+        turn, reis, "5", "Reis", 150, sold_out=True, say="Reis ist heute leider aus."
+    )
+
+    assert price_says(turn, state, "Die 5 kostet 1,50 Euro.") == [
+        "Die 5, Reis, ist heute leider aus."
+    ]
+    # The search's own sentence is an answer, the echo of a clear hit is none.
+    assert turn.answers == ["Reis ist heute leider aus."]
+
+
+def test_a_dish_searched_with_a_wish_gets_no_base_price():
+    """Deep review of #928: "die 47 mit Huhn" costs other than the card's
+    price; its hit gives no price sentence."""
+    state = new_state()
+    ente = _dish_seen(state, "47", "Ente knusprig")
+    turn = begin_allergen_turn(state, "Was kostet die 47 mit Huhn?", kept=False)
+    wish = {"kind": "option", "text": "mit Huhn"}
+    _hit_found(
+        turn, ente, "47", "Ente knusprig", 1550, say="Gern, Nummer 47.", wish=wish
+    )
+
+    assert price_says(turn, state, "Die 47 mit Huhn kostet 14,50 Euro.") == []
+    assert turn.answers == []
+
+
+def test_a_suitability_promise_states_no_price():
+    """Deep review of #928: only a sentence with an amount gets the core's
+    price; "kein Problem" is no price question."""
+    state = new_state()
+    pho = _dish_seen(state, "13", "Pho Bo")
+    turn = begin_allergen_turn(state, "Kann ich die 13 essen?", kept=False)
+    _hit_found(turn, pho, "13", "Pho Bo", 1190)
+
+    assert not states_a_price(turn, state, "Die 13 ist für Sie kein Problem.")

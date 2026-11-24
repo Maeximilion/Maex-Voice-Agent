@@ -564,6 +564,9 @@ class ConversationLoop:
         allergen_says: list[str] = []
         # The model's sentence went back once for its allergen words.
         allergen_back = False
+        # ... for a sentence about a dish of the call (#928), and with no
+        # allergen word in it.
+        dish_back = dish_only = False
         zone = self._local_now(state).tzinfo
         assert zone is not None  # `to_local` gives an aware time
         for _ in range(MAX_TOOL_HOPS):
@@ -718,11 +721,19 @@ class ConversationLoop:
                 about_a_dish = (
                     in_allergy_call
                     and not open_turn
-                    and not changed
-                    and guards.names_a_dish(aturn, state, say)
+                    and guards.about_a_dish(aturn, state, say, changed=changed)
                 )
+                # A retry after a refusal only for naming a dish that takes the
+                # order step the hint asks for is judged as an order step is
+                # (deep review of #928).
                 strict = (
-                    open_turn or (allergen_back and in_allergy_call) or about_a_dish
+                    open_turn
+                    or about_a_dish
+                    or (
+                        allergen_back
+                        and in_allergy_call
+                        and not (dish_only and changed)
+                    )
                 )
                 if (
                     not table
@@ -745,27 +756,42 @@ class ConversationLoop:
                     log_refused(
                         self._session, state.call_id, state.tenant_id, SAY, refused
                     )
-                    if not allergen_back:
+                    prices = (
+                        guards.price_says(aturn, state, say)
+                        if about_a_dish and guards.states_a_price(aturn, state, say)
+                        else []
+                    )
+                    if prices:
+                        # A price the model stated for a dish this turn's
+                        # search found: the core says it, from the database
+                        # (#928, Maxi: B2). A retry could say only a core
+                        # sentence, none better than this one.
+                        say = " ".join(prices)
+                    elif not allergen_back:
                         # Rows 3 and 6: back to the model once.
                         allergen_back = True
+                        dish_back = refused is guards.ALLERGY_DISH
+                        # Refused only for the dish it names, no allergen word.
+                        dish_only = dish_back and not guards.unlicensed(
+                            aturn, state, say
+                        )
                         called.append(SAY)
                         pending_input = _tool_result_as_input(SAY, refused, zone)
                         continue
                     # Rows 4 and 6, a second time: the table where a dish was
                     # looked up, the team for a question left open before
                     # (rule 5), else the offer.
-                    if aturn.looked_up and not changed:
+                    elif aturn.looked_up and not changed:
                         table = True
                     elif aturn.pending:
                         return self._allergens_to_team(
                             state, lead=SAY_ALLERGENS_BEYOND, table=open_table
                         )
-                    elif about_a_dish and (
-                        prices := guards.price_says(aturn, state, say)
-                    ):
-                        # The price of a dish this turn's search found, from
-                        # the database, not the offer (#928, Maxi: B2).
-                        say = " ".join(prices)
+                    elif dish_back and aturn.answers:
+                        # After a sentence about a dish, the tools' own
+                        # sentences of this turn: a sold-out dish, the
+                        # candidates of an unclear search (deep review of #928).
+                        say = " ".join(dict.fromkeys(aturn.answers))
                     else:
                         say = guards.SAY_ALLERGENS_OFFER
                 if table:
