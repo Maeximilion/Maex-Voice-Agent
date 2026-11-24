@@ -11,6 +11,7 @@ import os
 import shutil
 import subprocess
 import time
+import uuid
 from pathlib import Path
 
 import pytest
@@ -379,6 +380,114 @@ def test_restore_replace_recreates_a_database_that_is_gone(
     assert _databases_like(f"{name}_") == []
 
 
+@pytest.fixture
+def probe_role(db):
+    """A second role of the cluster (#984): it owns the probe table and another
+    one may read it. Roles outlive databases, so the teardown takes back what the
+    role holds in every copy before it drops the role."""
+    role = f"restore_probe_{uuid.uuid4().hex[:8]}"
+    reader = f"{role}_reader"
+    for name in (role, reader):
+        _sql(_admin_url("postgres"), f'create role "{name}" nologin')
+    _sql(db, f'alter table backup_probe owner to "{role}"')
+    _sql(db, f'grant select on backup_probe to "{reader}"')
+    yield role, reader
+    database = make_url(db).database
+    for name in [database, *_databases_like(f"{database}_")]:
+        with contextlib.suppress(Exception):
+            for held in (role, reader):
+                _sql(_admin_url(name), f'reassign owned by "{held}" to current_user')
+                _sql(_admin_url(name), f'drop owned by "{held}"')
+    for name in (role, reader):
+        _sql(_admin_url("postgres"), f'drop role if exists "{name}"')
+
+
+def _owner_and_reader(url: str) -> tuple[str, list[str]]:
+    owner = _sql(
+        url, "select tableowner from pg_tables where tablename = 'backup_probe'"
+    )
+    readers = _sql(
+        url,
+        "select grantee from information_schema.role_table_grants "
+        "where table_name = 'backup_probe' and privilege_type = 'SELECT'",
+    )
+    return owner[0][0], sorted(row[0] for row in readers)
+
+
+def test_restore_replace_keeps_owners_grants_and_database_settings(
+    db, probe_role, backup_dir, passphrase_file
+):
+    role, reader = probe_role
+    name = make_url(db).database
+    _sql(_admin_url("postgres"), f"alter database \"{name}\" set work_mem = '7MB'")
+    dump = _backup(db, backup_dir, passphrase_file)
+
+    done = _run(
+        "restore.sh",
+        dump.as_posix(),
+        "--replace",
+        name,
+        db_url=db,
+        backup_dir=backup_dir,
+        passphrase_file=passphrase_file,
+    )
+
+    assert done.returncode == 0, done.stderr
+    owner, readers = _owner_and_reader(db)
+    assert owner == role
+    assert reader in readers
+    settings_rows = _sql(
+        _admin_url("postgres"),
+        "select array_to_string(setconfig, ',') from pg_db_role_setting s "
+        f"join pg_database d on d.oid = s.setdatabase where d.datname = '{name}' "
+        "and s.setrole = 0",
+    )
+    assert settings_rows and "work_mem=7MB" in settings_rows[0][0]
+
+
+def test_a_role_the_server_does_not_know_stops_the_restore_unless_told(
+    db, probe_role, backup_dir, passphrase_file
+):
+    # A fresh server without the roles of the dump: the restore names the way out
+    # instead of handing everything to the user who restores without a word.
+    _role, reader = probe_role
+    dump = _backup(db, backup_dir, passphrase_file)
+    _sql(db, f'revoke select on backup_probe from "{reader}"')
+    _sql(_admin_url("postgres"), f'drop role "{reader}"')
+    name = make_url(db).database
+    _sql(db, "update backup_probe set note = 'after'")
+
+    refused = _run(
+        "restore.sh",
+        dump.as_posix(),
+        "--replace",
+        name,
+        db_url=db,
+        backup_dir=backup_dir,
+        passphrase_file=passphrase_file,
+    )
+
+    assert refused.returncode == 1
+    assert "--without-owners" in refused.stderr
+    assert _note(db) == "after"
+
+    done = _run(
+        "restore.sh",
+        dump.as_posix(),
+        "--replace",
+        name,
+        "--without-owners",
+        db_url=db,
+        backup_dir=backup_dir,
+        passphrase_file=passphrase_file,
+    )
+
+    assert done.returncode == 0, done.stderr
+    assert _note(db) == "before"
+    connected = _sql(db, "select current_user")[0][0]
+    assert _owner_and_reader(db)[0] == connected
+
+
 # Security audit of 15.10.2026, #252 finding 10: whoever reads the passphrase
 # reads every dump. Windows has no such modes; the check is skipped there.
 @pytest.mark.skipif(os.name == "nt", reason="no POSIX file modes on Windows")
@@ -711,6 +820,59 @@ def test_the_compose_network_always_takes_the_client_from_the_image():
     )
 
     assert done.stdout.strip() == "docker --network maex_backend"
+
+
+def _fake_tools(tmp_path, os_name: str, engine: str) -> str:
+    """`uname` and `docker` stand-ins on PATH: which machine and which engine."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for tool, answer in (("uname", os_name), ("docker", engine)):
+        path = bin_dir / tool
+        path.write_text(f"#!/usr/bin/env bash\necho '{answer}'\n", encoding="utf-8")
+        path.chmod(0o755)
+    return bin_dir.as_posix()
+
+
+CLIENT_PROBE = (
+    'PATH="$1:$PATH"; pg_target_from_url "$2"; pg_resolve_client; '
+    'echo "$CONTAINER_PGHOST ${DOCKER_ARGS[*]}"'
+)
+
+
+@pytest.mark.parametrize("host", ["localhost", "127.0.0.1"])
+def test_a_client_container_on_linux_reaches_a_loopback_only_port(tmp_path, host):
+    # #984: the dev stack publishes Postgres on 127.0.0.1 only, and a native
+    # Linux engine reaches the host through the bridge, not through loopback.
+    bin_dir = _fake_tools(tmp_path, "Linux", "Ubuntu 24.04.1 LTS")
+
+    done = _lib(
+        CLIENT_PROBE,
+        bin_dir,
+        f"postgresql://maex@{host}:5432/maex_agent",
+        BACKUP_PG_CLIENT="docker",
+    )
+
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == f"{host} --network host"
+
+
+def test_docker_desktop_keeps_the_host_gateway(tmp_path):
+    # Docker Desktop (Windows, macOS, WSL) has no host network of the machine;
+    # it forwards host.docker.internal to the host's loopback.
+    bin_dir = _fake_tools(tmp_path, "Linux", "Docker Desktop")
+
+    done = _lib(
+        CLIENT_PROBE,
+        bin_dir,
+        "postgresql://maex@localhost:5432/maex_agent",
+        BACKUP_PG_CLIENT="docker",
+    )
+
+    assert done.returncode == 0, done.stderr
+    assert (
+        done.stdout.strip()
+        == "host.docker.internal --add-host host.docker.internal:host-gateway"
+    )
 
 
 @pytest.mark.parametrize(
