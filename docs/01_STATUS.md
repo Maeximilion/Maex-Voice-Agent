@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.54
+> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.56
 
 ---
 
@@ -185,6 +185,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.56 · 24.11.2026:** chain: a finisher takes the next item instead of being archived, the coordinator archives finished side sessions, never stops for its own context and keeps the chain state in notes and memory, Dependabot PRs go to the ship lane
 - **v2.69.54 · 24.11.2026:** #984: restore.sh keeps owners, grants and database settings (`--without-owners` for a server without the roles), backup and restore reach a 127.0.0.1-only Postgres from a client container on Linux
 - **v2.69.53 · 24.11.2026:** #982: one helper for the forms of a number in deploy/asterisk/render.sh, no behaviour change
 - **v2.69.51 · 24.11.2026:** #979: English identifiers in the older GUI code (route functions of `api/gui/router.py`, names in `app.ts`), no behaviour change
