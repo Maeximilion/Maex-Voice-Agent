@@ -242,24 +242,42 @@ up (`guards.is_open`)
        before it named. An unlicensed word, or "Allergene" or "Allergiker"
        in the model's own words, goes back once, then as above; in a call
        where the guest named an allergy the retry may say only core
-       sentences (`HINT_ALLERGY_CALL`). In that call a sentence of the
-       model that names a dish of the call (card number or whole name) is
-       held to core sentences from the start when the turn took no order
-       step (#928, Maxi 24.11.2026, option B): "Bei Ihrer Allergie ist die
-       13 kein Problem" names no allergen. It goes back once
-       (`HINT_ALLERGY_DISH`, which asks for the dish's number only when
-       the guest asked a price). A second refusal ends as above, except
-       that a dish this turn's search found gets the core's price sentence
-       from the database ("Die 13, Pho Bo, kostet 11 Euro 90.", base price,
-       none for a sold-out dish) instead of the offer (Maxi 24.11.2026,
-       option B2, `guards.price_says`). Not in an open turn: a price is no
-       answer to an allergen question. Accepted cost: a question about a
-       dish's options before it is in the order ("Möchten Sie die 13 mit
-       Reis?") ends in the offer sentence
+       sentences (`HINT_ALLERGY_CALL`). Where the guest named an allergy
+       (`guards.allergy_named`, not the turn after a table sentence alone)
+       a sentence of the model about a dish of the call is held to core
+       sentences from the start (#928, Maxi 24.11.2026, option B): "Bei
+       Ihrer Allergie ist die 13 kein Problem" names no allergen. A dish is
+       named by its card number (also as a number word, without leading
+       zeros), its whole name (also without a count in brackets), or a
+       search's sentence the model repeats before a pronoun; prices and
+       times name none (`guards.about_a_dish`). With an order step in the
+       turn (a `cart` written, a draft) the sentence stays the model's
+       unless its own words speak of the allergy. It goes back once
+       (`HINT_ALLERGY_DISH`: the `cart` for a dish the guest takes, the
+       price from `search_menu` for a price question, a tool's own sentence
+       word for word, `get_item_details` for what is in a dish, else the
+       noted sentence). A retry that writes the dish into the `cart` is
+       judged as an order step; one without an order step stays held, so
+       "Ja, die ist für Sie kein Problem" after the refusal is not heard. A
+       refused sentence that states a price (an amount in euro or cent) of
+       a dish this turn's search found without a wish gets the core's
+       sentence at once, with no retry: its price from the database ("Die
+       13, Pho Bo, kostet 11 Euro 90.", the base price) or that it is out
+       today (Maxi 24.11.2026, option B2, `guards.price_says`). A second
+       refusal ends as above, except that it says the turn's tool sentences
+       that tell the guest something (a sold-out dish, the candidates of an
+       unclear search) instead of the offer; never a search's echo of a
+       clear hit, which after "Kann ich die 13 essen?" sounds like a yes.
+       Not in an open turn: a price is no answer to an allergen question.
+       Accepted cost (docs/24): a question or recap about a dish without an
+       order step in its turn ("Möchten Sie die 47 mit Ente oder mit
+       Huhn?") ends in the noted sentence or the offer, and a price asked
+       for a dish with an option ("die 47 mit Huhn") ends in the offer
    An open turn that ends in a core sentence with the guest's allergy not
    noted, or an allergen nothing explained, leaves the question open for
    one turn: after the offer sentence a dish the guest names next is its
-   answer (`allergen_question_open`); the letters nothing explained are
+   answer (`allergen_question_open`), also after the offer that ends a
+   refused sentence of a turn that was not open (#928); the letters nothing explained are
    kept (`allergen_question_codes`), except after "Worauf genau soll die
    Küche achten?", whose answer comes next. A second turn in a row goes to
    the team when it ends in the offer again or leaves one of those letters
