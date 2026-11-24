@@ -1066,12 +1066,6 @@ def test_a_note_counts_what_it_asks_not_what_it_denies(note, passes):
         "Ich habe keine Sesamallergie, aber eine Erdnussallergie.",
         # A dish name of the call is no allergen the guest named.
         "Die Nudeln mit Garnelen, ich habe eine Erdnussallergie.",
-        # Nor a wish before the part about health: no cheese allergy.
-        "Die 13 mit extra Käse, ich habe eine Erdnussallergie.",
-        # Nor a wish, a question or an allowance behind it (deep review).
-        "Ich habe eine Erdnussallergie, bitte extra Sesam.",
-        "Ich habe eine Erdnussallergie, ist Sesam in der 13?",
-        "Ich habe eine Erdnussallergie, Sesam ist kein Problem.",
     ],
 )
 def test_letters_the_guest_did_not_name_as_theirs_ask_for_no_note(said):
@@ -1115,6 +1109,27 @@ def test_a_denial_takes_back_only_the_same_persons_allergy(said):
     assert "Erdnussallergie" in (refused.hint or "")
 
 
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Die 13 mit extra Käse, ich habe eine Erdnussallergie.",
+        "Ich habe eine Erdnussallergie, bitte extra Sesam.",
+        "Ich habe eine Erdnussallergie, ist Sesam in der 13?",
+        "Meine Frau ist allergisch, ich nehme die Garnelen.",
+    ],
+)
+def test_a_wish_beside_an_allergy_is_covered_by_the_guests_words(said):
+    """No reading of which word is a wish (AGENTS.md, #798; Codex review of
+    #1002, P1): the letter goes back once, and the guest's own words, which
+    the hint asks for, cover it without an allergy the guest never named."""
+    state = _named()
+    state.allergy_said = [said]
+
+    assert guards.unnoted_allergy(state, _two((PEANUT_NOTE, None))) is not None
+    words = _two((f"WICHTIG !!! {said}", None))
+    assert guards.unnoted_allergy(state, words) is None
+
+
 def test_the_hint_asks_for_the_guests_words():
     """A wish in the quoted sentence must not become an allergy: the model
     writes the guest's words, never its reading of them (deep review)."""
@@ -1134,6 +1149,26 @@ def test_a_table_gets_no_question_about_a_dish():
     assert refused is not None
     assert guards.SAY_ASK_ALLERGY_DISH not in (refused.hint or "")
     assert "an den Tisch" in (refused.hint or "")
+
+
+def test_the_models_words_behind_an_earlier_block_stay():
+    """Codex review of #1002 (P2): the model's request behind the core's
+    earlier block survives the redraft; only the block is replaced."""
+    state = _named()
+    state.allergy_said = ["Ich habe eine Erdnussallergie.", LATER_SESAME]
+    earlier = (
+        "WICHTIG !!! Gast sagte: Ich habe eine Erdnussallergie. "
+        "Bitte getrennt verpacken."
+    )
+    call = ToolCall("draft_order", {"items": [], "note": earlier})
+
+    noted = guards.with_the_guests_words(state, call)
+
+    assert noted is not None
+    assert noted.args["note"] == (
+        "Bitte getrennt verpacken. WICHTIG !!! Gast sagte: Ich habe eine "
+        "Erdnussallergie. Ach, und meine Frau verträgt keinen Sesam"
+    )
 
 
 @pytest.mark.parametrize(

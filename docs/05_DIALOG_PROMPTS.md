@@ -387,13 +387,12 @@ eine Sesamallergie") (Maxi, 15.11.2026, #736, #763)
      allergen a kept sentence names as what someone reacts to must be on
      such a note (#929, Maxi 24.11.2026), compared by letter
      (`allergens_named`, coeliac disease as gluten), an ingredient without a
-     letter ("Kiwi") by its word. A sentence with a health word is read in
-     its parts that speak of health ("Ich habe eine Erdnussallergie, bitte
-     extra Sesam" or "..., Sesam ist kein Problem" asks for no sesame), and
-     in all it says when those parts name nothing ("Ich habe eine Allergie,
-     gegen Erdnüsse.", "Meine Frau hat eine Allergie. Sesam."); an answer
-     without one ("Gegen Sesam.") with all it names; what a part only
-     denies and plain names of dishes the call found aside; an ingredient
+     letter ("Kiwi") by its word. A kept sentence counts with all it names
+     ("Meine Frau hat eine Allergie. Sesam.", "Gegen Sesam."), what a part
+     only denies and plain names of dishes the call found aside; the core
+     does not tell a wish from an allergy (AGENTS.md, #798), so "Ich habe
+     eine Erdnussallergie, bitte extra Sesam" asks for the sesame too, and
+     the guest's own words, which the hint asks for, cover it; an ingredient
      word counts at the start of a note's word only ("Erbsen" is not in
      "Kichererbsen"). A note counts what it asks for ("kein Sesam"), not
      an allergy it denies. So a second
@@ -407,11 +406,10 @@ eine Sesamallergie") (Maxi, 15.11.2026, #736, #763)
      a draft without the allergy in the answer turn gets the guest's words
      from the core at once. Sent again without, the core's "Gast sagte"
      block holds every kept sentence; a block a redraft carries from before
-     (in any case or spacing) is replaced, never written twice. Residual: a
-     wish in the same part as the health word or behind one that names
-     nothing ("Meine Frau ist allergisch, ich nehme die Garnelen") asks for
-     its letter too, and so does a coeliac denial ("Ich habe keine
-     Zöliakie."); the guest's words then carry it. A wish on a health note
+     (in any case or spacing) is replaced, never written twice, and what the
+     model wrote behind it stays ("Bitte getrennt verpacken."). Residual: a
+     wish beside an allergy and a coeliac denial ("Ich habe keine
+     Zöliakie.") cost one more round before the guest's words carry them. A wish on a health note
      counts as noted ("Erdnussallergie, extra Sesam" covers a later sesame
      allergy), and an allergy the guest takes back without a question stays
      asked for. A note that promises a dish free of

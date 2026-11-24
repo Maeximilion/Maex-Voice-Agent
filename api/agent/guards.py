@@ -1482,34 +1482,18 @@ def _letters(text: str) -> set[str]:
 
 
 def _named_as_theirs(state: ConversationState, said: str) -> set[str]:
-    """What a kept sentence names as what someone reacts to, without the plain
-    names of dishes the call found: allergen letters (`_letters`) and the
-    casefolded word of an ingredient without one ("kiwi", `reacts_to`). Read
-    from the parts that speak of health, so "Ich habe eine Erdnussallergie,
-    bitte extra Sesam" or "..., Sesam ist kein Problem" asks for no sesame;
-    from all it says but what it only denies when those parts name nothing
-    ("Ich habe eine Allergie, gegen Erdnüsse.", "Meine Frau hat eine
-    Allergie. Sesam."), and so does an answer to the question about the
-    allergy ("Gegen Erdnüsse."), which has no health word.
-    shortcut: there a wish names its letter too ("Meine Frau ist allergisch,
-    ich nehme die Garnelen"), and so does one in the same part as the health
-    word ("die 13 mit Käse ich habe eine Erdnussallergie" without a comma);
-    the hint asks for the guest's words, so the note says what they said."""
+    """What a kept sentence names: its allergen letters (`_letters`) without
+    what it only denies (`_guest_words`) and without the plain names of
+    dishes the call found, and the casefolded word of an ingredient without
+    a letter ("kiwi", `reacts_to`). No reading of which word is a wish and
+    which an allergy (AGENTS.md, #798; Codex review of #1002, P1): "Ich habe
+    eine Erdnussallergie, bitte extra Sesam" asks for the sesame too, and the
+    hint asks for the guest's words, which name it, so the note says what
+    the guest said and never an allergy the model read into it."""
     text = _without_dish_names(state, said, plain_only=True)
-    every = _letters(_guest_words(text))
-    if not speaks_of_health(said):
-        return every
-    health = " ".join(
-        part
-        for sentence in SENTENCE.split(text)
-        for clause in sentence.split(",")
-        for part in _not_denied(clause)
-        if speaks_of_health(part)
-    )
-    found = reacts_to(text)
-    return (_letters(health) or every) | {
+    return _letters(_guest_words(text)) | {
         word
-        for word in found - allergens_named(text) - {"zöliakie"}
+        for word in reacts_to(text) - allergens_named(text) - {"zöliakie"}
         if not allergens_named(word)
     }
 
@@ -1528,11 +1512,7 @@ def with_the_guests_words(state: ConversationState, call: ToolCall) -> ToolCall 
     limit = NOTE_MAX_FOR[call.name]
     before = call.args.get("note")
     if isinstance(before, str):
-        # A redraft carries the core's earlier block; the new one holds all
-        # it said, so it takes its place: no sentence noted twice (#929).
-        # shortcut: what the model wrote behind that block goes with it; the
-        # core always puts the block last.
-        before = _EARLIER_BLOCK.split(before, maxsplit=1)[0].rstrip(" .")
+        before = _without_earlier_block(state, before)
     note = (
         f"{before.strip()}. {added}"
         if isinstance(before, str) and before.strip()
@@ -1548,6 +1528,25 @@ def with_the_guests_words(state: ConversationState, call: ToolCall) -> ToolCall 
 
 # What a cut may take from the end of a sentence without taking anything said.
 _END_MARKS = " .!?…"
+
+
+def _without_earlier_block(state: ConversationState, note: str) -> str:
+    """`note` without the core's earlier block a redraft carries: the new
+    block holds all it said, so no sentence is noted twice (#929). What the
+    model wrote behind it stays ("... Bitte getrennt verpacken.", Codex
+    review of #1002, P2): the block's sentences are the kept ones, taken off
+    one by one from its start.
+    shortcut: a sentence the old block held that is no longer kept (taken
+    back) stays as the model's text."""
+    head, *rest = _EARLIER_BLOCK.split(note, maxsplit=1)
+    tail = rest[0].strip() if rest else ""
+    # An empty one would match forever.
+    kept = [k for k in (s.strip().rstrip(" .") for s in state.allergy_said) if k]
+    while hit := next((s for s in kept if tail.lower().startswith(s.lower())), None):
+        tail = tail[len(hit) :].lstrip(" .")
+    return ". ".join(
+        part.strip().rstrip(" .") for part in (head, tail) if part.strip(" .")
+    )
 
 
 def _each_survives(state: ConversationState, room: int) -> bool:
