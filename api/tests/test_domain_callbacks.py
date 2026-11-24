@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from api.core.errors import InvalidInput, NotFound
 from api.domain.callbacks import create_callback
 from api.domain.callbacks.create import _lock_call
-from api.models import AuditLog, Call, Callback, OutboxEvent
+from api.models import AuditLog, Call, Callback, OutboxEvent, Reservation
 from api.schemas.callbacks import CallbackTask, CreateCallbackRequest
 from scripts.seed import seed
 
@@ -114,6 +114,160 @@ def test_zweiter_aufruf_im_selben_anruf_liefert_denselben_rueckruf(
     assert zweiter.summary == erster.summary
     assert session.scalar(select(func.count()).select_from(Callback)) == 1
     assert session.scalar(select(func.count()).select_from(OutboxEvent)) == 1
+
+
+ORDER_TEXT = (
+    "Anruf endete vor dem Ja zur vorgelesenen Bestellung. "
+    "Offene Bestellung, nicht aufgegeben: 2x 23 Pizza Margherita."
+)
+
+
+def test_an_open_order_joins_the_open_card_of_its_call(session, tenant_id, call_id):
+    """#993, option A: the order read back and never answered goes onto the
+    card the call has open, which keeps its reason and number. The push names
+    the order (the card's own push named only its reason); once, however
+    often the call ends, with its own audit entry."""
+    first = create_callback(
+        session, request(tenant_id, call_id, reason="human_requested"), now=NOW
+    )
+    joined = request(
+        tenant_id,
+        call_id,
+        reason="order_open",
+        phone="0721 555-9999",
+        summary=ORDER_TEXT,
+    )
+
+    task = create_callback(session, joined, now=NOW)
+    again = create_callback(session, joined, now=NOW)
+
+    assert task.callback_id == again.callback_id == first.callback_id
+    assert (task.reason, task.phone) == ("human_requested", "+497215551234")
+    assert task.summary == f"{first.summary} {ORDER_TEXT}"
+    assert again.summary == task.summary
+    assert session.scalar(select(func.count()).select_from(Callback)) == 1
+    pushes = session.scalars(select(OutboxEvent).order_by(OutboxEvent.created_at)).all()
+    assert [(e.event_type, e.payload["reason"]) for e in pushes] == [
+        ("callback.created", "human_requested"),
+        ("callback.created", "order_open"),
+    ]
+    assert pushes[1].payload["callback_id"] == str(first.callback_id)
+    assert pushes[1].payload["phone"] == "+497215551234"
+    added = session.scalars(
+        select(AuditLog).where(AuditLog.action == "callback.order_added")
+    ).all()
+    assert [(a.entity_id, a.payload["reason"]) for a in added] == [
+        (first.callback_id, "order_open")
+    ]
+
+
+def test_words_that_only_read_like_bookings_stay_on_the_card(
+    session, tenant_id, call_id
+):
+    """Only the bookings `booked` wrote are read again: the model's own words
+    after "Bereits gebucht:" are not cut away."""
+    own = "Gast sagt: Bereits gebucht: Tisch. Gast braucht einen Kinderstuhl."
+    create_callback(session, request(tenant_id, call_id, summary=own), now=NOW)
+
+    task = create_callback(
+        session,
+        request(tenant_id, call_id, reason="order_open", summary=ORDER_TEXT),
+        now=NOW,
+    )
+
+    assert task.summary == f"{own} {ORDER_TEXT}"
+
+
+def _table(session, tenant_id, call_id, name):
+    session.add(
+        Reservation(
+            tenant_id=tenant_id,
+            call_id=call_id,
+            status="confirmed",
+            guest_name=name,
+            phone="+497215551234",
+            party_size=4,
+            reserved_for=datetime(2026, 9, 20, 17, 30, tzinfo=UTC),
+            idempotency_key=uuid.uuid4().hex,
+        )
+    )
+    session.commit()
+
+
+def test_the_card_text_gives_way_and_its_bookings_are_read_again(
+    session, tenant_id, call_id
+):
+    """A long card: its own text is cut, never the order, and the bookings
+    stand at its end as the database holds them now, a table booked since
+    the card was written too; nothing is named twice."""
+    _table(session, tenant_id, call_id, "Mueller")
+    first = create_callback(
+        session, request(tenant_id, call_id, summary="x" * 1000), now=NOW
+    )
+    _table(session, tenant_id, call_id, "Schmidt")
+
+    task = create_callback(
+        session,
+        request(tenant_id, call_id, reason="order_open", summary=ORDER_TEXT),
+        now=NOW,
+    )
+
+    table = "Reservierung, 4 Personen, 20.09.2026 19:30 Uhr, Name"
+    assert first.summary.endswith(f"Bereits gebucht: {table} Mueller.")
+    assert task.summary.endswith(
+        f"x {ORDER_TEXT} Bereits gebucht: {table} Mueller; {table} Schmidt."
+    )
+    assert task.summary.count("Bereits gebucht") == 1
+    assert len(task.summary) == 1000
+
+
+def test_an_order_waits_for_erledigt_and_then_gets_its_own_card(migrated_db_url):
+    """#993 review: "Erledigt" locks the card's row, not the call. An order
+    that joins meanwhile waits for it and then writes its own card, never
+    onto the card that is done, where nobody would read it."""
+    engine = create_engine(migrated_db_url, isolation_level="READ COMMITTED")
+    with Session(engine) as s:
+        tenant = uuid.UUID(
+            seed(s, tenant_name="Testbetrieb", timezone="Europe/Berlin").tenant_id
+        )
+        call_id = make_call(s, tenant)
+        old = create_callback(s, request(tenant, call_id), now=NOW)
+
+    result: list[CallbackTask | Exception] = []
+
+    def order_joins() -> None:
+        try:
+            with Session(engine) as own:
+                order = request(
+                    tenant, call_id, reason="order_open", summary=ORDER_TEXT
+                )
+                result.append(create_callback(own, order, now=NOW))
+        except Exception as exc:  # noqa: BLE001 - any error must show in the test
+            result.append(exc)
+
+    with Session(engine) as tablet:
+        # `mark_done` between its row lock and its commit.
+        card = tablet.scalars(
+            select(Callback).where(Callback.id == old.callback_id).with_for_update()
+        ).one()
+        card.status = "done"
+        tablet.flush()
+        joining = threading.Thread(target=order_joins)
+        joining.start()
+        joining.join(timeout=1.0)
+        assert joining.is_alive(), "the order should wait for the row lock"
+        tablet.commit()
+
+    joining.join(timeout=30)
+    assert not joining.is_alive()
+    (task,) = result
+    assert not isinstance(task, Exception), task
+    assert task.callback_id != old.callback_id
+    assert (task.reason, task.summary) == ("order_open", ORDER_TEXT)
+    with Session(engine) as s:
+        done = s.get_one(Callback, old.callback_id)
+        assert (done.status, done.summary) == ("done", old.summary)
+    engine.dispose()
 
 
 def test_erledigter_rueckruf_blockiert_einen_neuen_nicht(session, tenant_id, call_id):

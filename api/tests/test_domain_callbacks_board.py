@@ -181,6 +181,24 @@ def test_token_changes_when_the_deletion_job_empties_a_card(session, tenant_id):
     assert open_change_token(session, tenant_id) == after
 
 
+def test_token_changes_when_an_open_order_joins_a_card(session, tenant_id):
+    """#993: an open order joins the call's open card, whose id stays. The
+    tablet must reload it, or the team never reads the order."""
+    cb_id = rueckruf(session, tenant_id)
+    before = open_change_token(session, tenant_id)
+
+    session.execute(
+        text(
+            "UPDATE callbacks SET summary = summary || ' Offene Bestellung'"
+            " WHERE id = :id"
+        ),
+        {"id": cb_id},
+    )
+    session.commit()
+
+    assert open_change_token(session, tenant_id) != before
+
+
 # --- History and reopen (T-3.15, #516) ---
 
 WINDOW = timedelta(days=HISTORY_DAYS)
