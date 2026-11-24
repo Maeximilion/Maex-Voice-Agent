@@ -16,7 +16,7 @@ from api.domain.callbacks import (
     open_change_token,
     reopen,
 )
-from api.domain.callbacks.board import HISTORY_DAYS, card_version
+from api.domain.callbacks.board import CALL_HAS_AN_OPEN_CARD, HISTORY_DAYS, card_version
 from api.jobs.retention import purge
 from api.models import AuditLog, Call, Callback
 from scripts.seed import seed
@@ -347,3 +347,29 @@ def test_an_emptied_card_closes_without_a_version(session, tenant_id, seen):
 
     assert [c.version for c in list_open(session, tenant_id)] == [""]
     assert mark_done(session, tenant_id, cb_id, seen=seen).status == "done"
+
+
+def test_reopen_refuses_while_the_call_has_another_open_card(session, tenant_id):
+    """One open card per call (#981, migration 047): a done card whose call
+    got a newer open card stays done, and the team is told why."""
+    done_id = erledigt(session, tenant_id, NOW - timedelta(hours=1))
+    call_id = session.get(Callback, done_id).call_id
+    newer = Callback(
+        tenant_id=tenant_id,
+        call_id=call_id,
+        phone="+4972215551234",
+        reason="not_understood",
+        summary="Die neuere Karte.",
+        created_at=NOW,
+    )
+    session.add(newer)
+    session.commit()
+
+    with pytest.raises(Conflict) as refused:
+        reopen(session, tenant_id, done_id, now=NOW)
+
+    assert refused.value.say == CALL_HAS_AN_OPEN_CARD
+    session.rollback()
+    assert session.get(Callback, done_id).status == "done"
+    assert [c.callback_id for c in list_open(session, tenant_id)] == [newer.id]
+    assert reopened_entries(session) == []

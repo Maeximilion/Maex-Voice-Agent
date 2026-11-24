@@ -9,6 +9,7 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
 from api.core.errors import InvalidInput, NotFound
+from api.domain.callbacks import create as create_module
 from api.domain.callbacks import create_callback
 from api.domain.callbacks.create import _lock_call
 from api.models import AuditLog, Call, Callback, OutboxEvent, Reservation
@@ -641,3 +642,64 @@ def test_the_kitchen_marker_survives_a_join_that_fills_the_card(
     assert task.summary.count(MARKER) == 1
     assert "Bereits gebucht: Reservierung" in task.summary
     assert len(task.summary) <= 1000
+
+
+def test_a_conflict_on_the_open_card_is_a_replay(
+    session, tenant_id, call_id, monkeypatch
+):
+    """The partial unique index is the barrier behind the call's lock (#981):
+    a writer that found no open card but meets one at the insert gets that
+    card back, as a retry does (docs/04), and writes nothing else."""
+    first = create_callback(session, request(tenant_id, call_id), now=NOW)
+    created = session.scalar(select(func.count()).select_from(OutboxEvent))
+    # The race: the check ran before the other writer's commit.
+    monkeypatch.setattr("api.domain.callbacks.create._lock_call", lambda *a: None)
+    real = create_module._open_for_call
+    looked = []
+
+    def first_finds_nothing(s, r):
+        looked.append(r)
+        return None if len(looked) == 1 else real(s, r)
+
+    monkeypatch.setattr(create_module, "_open_for_call", first_finds_nothing)
+
+    again = create_callback(
+        session, request(tenant_id, call_id, summary="Noch einmal."), now=NOW
+    )
+
+    assert again.callback_id == first.callback_id
+    assert session.scalar(select(func.count()).select_from(Callback)) == 1
+    assert session.scalar(select(func.count()).select_from(OutboxEvent)) == created
+    assert session.get(Callback, first.callback_id).summary == first.summary
+    assert len(looked) == 2
+
+
+def test_an_open_order_at_the_conflict_joins_once_with_its_bookings(
+    session, tenant_id, call_id, monkeypatch
+):
+    """The conflict replay gets the text as said, not the one with the
+    bookings added for the new card: they stand once at the end (#981 review)."""
+    _table(session, tenant_id, call_id, "Mueller")
+    first = create_callback(session, request(tenant_id, call_id), now=NOW)
+    monkeypatch.setattr("api.domain.callbacks.create._lock_call", lambda *a: None)
+    real = create_module._open_for_call
+    looked = []
+
+    def first_finds_nothing(s, r):
+        looked.append(r)
+        return None if len(looked) == 1 else real(s, r)
+
+    monkeypatch.setattr(create_module, "_open_for_call", first_finds_nothing)
+
+    task = create_callback(
+        session,
+        request(tenant_id, call_id, reason="order_open", summary=ORDER_TEXT),
+        now=NOW,
+    )
+
+    table = "Reservierung, 4 Personen, 20.09.2026 19:30 Uhr, Name Mueller"
+    assert task.callback_id == first.callback_id
+    assert ORDER_TEXT in task.summary
+    assert task.summary.endswith(f"Bereits gebucht: {table}.")
+    assert task.summary.count("Bereits gebucht") == 1
+    assert session.scalar(select(func.count()).select_from(Callback)) == 1

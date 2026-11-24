@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from api.core.time import utcnow
 from api.db import get_db
-from api.domain.callbacks.board import HISTORY_DAYS
+from api.domain.callbacks.board import CALL_HAS_AN_OPEN_CARD, HISTORY_DAYS
 from api.main import app
 from api.models import AuditLog, Call, Callback
 from scripts.seed import seed
@@ -204,3 +204,34 @@ def test_an_unknown_callback_is_no_error(client, tenant_id):
 def test_reopening_needs_the_operations_view(client, engine, tenant_id):
     cb_id = done_callback(engine, tenant_id)
     assert client.post(f"/gui/rueckrufe/{cb_id}/wieder-offen").status_code == 403
+
+
+def test_reopening_next_to_an_open_card_of_its_call_says_why(client, engine, tenant_id):
+    """One open card per call (#981): the done card stays in the history and
+    the sheet says where the open one is, at the refused card. The sheet covers
+    the board, so a board note would not be seen (#981 review)."""
+    cb_id = done_callback(engine, tenant_id)
+    with Session(engine) as s:
+        done = s.get(Callback, cb_id)
+        assert done is not None
+        s.add(
+            Callback(
+                tenant_id=tenant_id,
+                call_id=done.call_id,
+                phone=PHONE,
+                reason="not_understood",
+                summary="Die neuere Karte.",
+            )
+        )
+        s.commit()
+
+    response = client.post(f"/gui/rueckrufe/{cb_id}/wieder-offen", headers=HX)
+
+    assert response.status_code == 200
+    assert "HX-Trigger" not in response.headers
+    card = response.text.split(f'data-id="{cb_id}"', 1)[1].split("</li>", 1)[0]
+    assert f'<p class="banner warn" role="alert">{CALL_HAS_AN_OPEN_CARD}</p>' in card
+    assert "schon eine Karte offen" in CALL_HAS_AN_OPEN_CARD
+    with Session(engine) as s:
+        kept = s.get(Callback, cb_id)
+        assert kept is not None and kept.status == "done"

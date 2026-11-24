@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from api.core.errors import Conflict, NotFound
 from api.core.time import utcnow
+from api.domain.callbacks.create import _lock_call
 from api.domain.status.config import ACTOR_TABLET
 from api.models import AuditLog, Call, Callback
 
@@ -30,6 +31,10 @@ NUMBER_WITHHELD = "withheld"
 # A tap on a card drawn before its text changed (an open order joined it,
 # #993): nothing is closed, and the tablet says why (#998).
 CARD_CHANGED = "Die Karte hat sich gerade geändert. Bitte noch einmal prüfen."
+# Reopen of a card whose call has a newer open one (#981).
+CALL_HAS_AN_OPEN_CARD = (
+    "Zu diesem Anruf ist schon eine Karte offen. Sie steht in der Spalte Rückrufe."
+)
 
 
 def card_version(summary: str) -> str:
@@ -232,7 +237,9 @@ def reopen(
 
     Only one the history shows: a mark older than HISTORY_DAYS or a card that
     is open already changes nothing, so a stale sheet or a second tablet
-    cannot reopen it twice. Clearing done_at hands the deletion period back to
+    cannot reopen it twice. A done card whose call has another open card
+    stays done and raises Conflict with say=CALL_HAS_AN_OPEN_CARD (one open
+    card per call, #981); the caller shows that text. Clearing done_at hands the deletion period back to
     the creation date (jobs/retention.py): a card created more than
     RETENTION_CALLBACK_DAYS ago loses its number on the next run, as any open
     card of that age does.
@@ -250,6 +257,22 @@ def reopen(
         raise NotFound(f"Callback {callback_id} not found")
     cutoff = (now or utcnow()) - timedelta(days=HISTORY_DAYS)
     if callback.status == DONE and callback.done_at and callback.done_at >= cutoff:
+        # One open card per call (#981, migration 047): a newer card of the
+        # same call stands in the column, and its writer holds this lock.
+        _lock_call(session, tenant_id, callback.call_id)
+        sibling = session.scalar(
+            select(Callback.id).where(
+                Callback.tenant_id == tenant_id,
+                Callback.call_id == callback.call_id,
+                Callback.status == OPEN,
+                Callback.deleted_at.is_(None),
+            )
+        )
+        if sibling is not None:
+            raise Conflict(
+                f"Callback {callback_id}: call has the open card {sibling}",
+                say=CALL_HAS_AN_OPEN_CARD,
+            )
         session.add(
             AuditLog(
                 tenant_id=tenant_id,
