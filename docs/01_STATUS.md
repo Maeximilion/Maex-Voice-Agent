@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.56
+> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.60
 
 ---
 
@@ -148,6 +148,7 @@ Settled assumptions: `docs/HISTORY.md` sections "Made Assumptions (archive)" and
 | Date | What |
 |---|---|
 | 24.11.2026 | **#74 (T-9.4): uptime check of `/health` from another machine.** `scripts/uptime_check.py` runs one pass a minute from cron (`deploy/uptime.cron`), standard library only, no account: after 3 failed passes in a row one push "Server not answering" to `ops`, one "Server answering again" on recovery, a failed push is tried again on the next pass. Checked end to end against the push server 2.37.2. Open for Maxi (docs/13 §5): which machine checks the server once it exists, and which push server the phone reads while the server is down. |
+| 24.11.2026 | **#980: an index for the tickets of one order.** Migration 046 adds the partial index `ix_outbox_tenant_order` on (tenant, `payload->>'order_id'`) where the key is set. `send_ticket`, `last_reason` and the newest revision on every claim and ack of the print bridge read it instead of every outbox row of the tenant (0.07 ms instead of 7.9 ms at 60,000 rows). Up and down tested, no row changes. **Workbench:** backup, `make migrate`, restart `api` and `dispatcher` (docs/13 §4). | Done |
 | 24.11.2026 | **#984: restore keeps owners and grants, and the client container reaches a loopback-only port.** `scripts/restore.sh` restores a dump with its owners and grants and carries the settings of the replaced database over; on a server without the roles of the dump it stops with nothing changed and names `db_role.sh` and the new `--without-owners`. `pg_resolve_client` (`scripts/lib_pg.sh`) puts the client container on the host network on Linux with a native Docker engine, so the dev stack's 127.0.0.1-only Postgres is reachable without `BACKUP_DOCKER_NETWORK`; Docker Desktop keeps `host.docker.internal`. Both docs/24 rows closed. | Done |
 | 24.11.2026 | **#982: one helper for the forms of a number.** `deploy/asterisk/render.sh` turns a number into its bare international digits in `digits` (`+` and `00` dropped, a leading `0` becomes `49`), and `same` compares those; `e164` is gone. No behaviour change, the render tests unchanged and green. | Done |
 | 24.11.2026 | **#979: English identifiers in the older GUI code.** The route functions of `api/gui/router.py` and the names in `api/gui/ts/app.ts` are English now; URLs, query keys (`tag`, `ergebnis`, `anliegen` through `Query` aliases), element ids, template names and tablet text are unchanged. | Done |
@@ -186,7 +187,11 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.56 · 24.11.2026:** #74 (T-9.4): uptime check of /health from another machine, scripts/uptime_check.py from cron, one push on down and one on recovery
+- **v2.69.60 · 24.11.2026:** #74 (T-9.4): uptime check of /health from another machine, scripts/uptime_check.py from cron, one push on down and one on recovery
+- **v2.69.59 · 24.11.2026:** #980: migration 046, a partial index on the outbox by tenant and order id for the tickets of one order
+- **v2.69.58 · 24.11.2026:** chain: a finisher takes the next item instead of being archived, the coordinator archives finished side sessions, never stops for its own context and keeps the chain state in notes and memory, Dependabot PRs go to the ship lane
+- **v2.69.57 · 24.11.2026:** deps: fastapi 0.165.0, pydantic 2.14.4, pyyaml 6.0.4, ruff 0.17.6, sqlalchemy 2.1.9 (Dependabot #976, python-minor-patch group); no code change
+- **v2.69.56 · 24.11.2026:** deps: dependency-review-action v5.0.1 and action-semantic-pull-request v6.1.3 (Dependabot #975, actions group); no code change
 - **v2.69.55 · 24.11.2026:** deps: ntfy v2.38.1 and n8n 2.48.7 in the compose files (Dependabot #974, compose-images group); no code change
 - **v2.69.54 · 24.11.2026:** #984: restore.sh keeps owners, grants and database settings (`--without-owners` for a server without the roles), backup and restore reach a 127.0.0.1-only Postgres from a client container on Linux
 - **v2.69.53 · 24.11.2026:** #982: one helper for the forms of a number in deploy/asterisk/render.sh, no behaviour change

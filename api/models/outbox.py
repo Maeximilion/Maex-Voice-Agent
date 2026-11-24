@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Index, Integer, Text, func
+from sqlalchemy import DateTime, Index, Integer, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,6 +31,13 @@ class OutboxEvent(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
         _in("event_type", EVENT_TYPES, "ck_outbox_event_type"),
         _in("status", OUTBOX_STATUSES, "ck_outbox_status"),
         Index("ix_outbox_status_next_attempt", "status", "next_attempt_at"),
+        # The tickets of one order (#980, migration 046).
+        Index(
+            "ix_outbox_tenant_order",
+            "tenant_id",
+            text("(payload ->> 'order_id')"),
+            postgresql_where=text("(payload ->> 'order_id') IS NOT NULL"),
+        ),
     )
 
     event_type: Mapped[str] = mapped_column(Text, nullable=False)
