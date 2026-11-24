@@ -351,7 +351,7 @@ def run_case(
     if succeeded:
         diffs.append(f"tools: kein erfolgreicher Aufruf {succeeded}")
     if rejected:
-        diffs.append(f"tools: keine Ablehnung mit diesem Code {rejected}")
+        diffs.append(f"tools: no rejection with this code of this call {rejected}")
     result.turns = len(turns)
     _count_usage(result, llm)
     result.diffs = diffs

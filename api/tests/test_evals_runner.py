@@ -1513,13 +1513,71 @@ def test_expected_rejection_needs_exactly_that_rejection():
     """Codex PR #162: "nothing booked" alone does not prove a zone check."""
     from evals.judge import missing_tools
 
-    want = [{"tool": "check_delivery", "error": "out_of_zone"}]
+    code = {"postal_code": "54321"}
+    want = [{"tool": "check_delivery", "error": "out_of_zone", "args": code}]
     assert missing_tools(want, []) == want
     # A successful check is the opposite of the expected rejection.
     assert missing_tools(want, [("check_delivery", {"zone": "A"})]) == want
-    assert missing_tools(want, [], [("check_delivery", "invalid_input")]) == want
-    assert missing_tools(want, [], [("draft_order", "out_of_zone")]) == want
-    assert missing_tools(want, [], [("check_delivery", "out_of_zone")]) == []
+    assert missing_tools(want, [], [("check_delivery", "invalid_input", code)]) == want
+    assert missing_tools(want, [], [("draft_order", "out_of_zone", code)]) == want
+    assert missing_tools(want, [], [("check_delivery", "out_of_zone", code)]) == []
+
+
+def test_expected_rejection_needs_the_call_it_names():
+    """docs/24 (Codex PR #162): a rejection of another call of the same tool, a
+    second postal code or a pickup draft, does not prove the expected one."""
+    from evals.judge import missing_tools
+
+    want = [
+        {
+            "tool": "draft_order",
+            "error": "below_minimum",
+            "args": {"type": "delivery", "customer.address.postal_code": "12345"},
+        }
+    ]
+    other = {"type": "delivery", "customer": {"address": {"postal_code": "12346"}}}
+    pickup = {"type": "pickup", "customer": {"name": "Lang"}}
+    assert missing_tools(want, [], [("draft_order", "below_minimum", other)]) == want
+    assert missing_tools(want, [], [("draft_order", "below_minimum", pickup)]) == want
+    # A rejection the recorder could not pair with its call carries no arguments.
+    assert missing_tools(want, [], [("draft_order", "below_minimum", {})]) == want
+    # Values compare like addresses: spaces and case do not matter.
+    hit = {"type": "Delivery", "customer": {"address": {"postal_code": "12 345"}}}
+    assert (
+        missing_tools(
+            want,
+            [],
+            [
+                ("draft_order", "below_minimum", other),
+                ("draft_order", "below_minimum", hit),
+            ],
+        )
+        == []
+    )
+
+
+def test_case_check_wants_the_arguments_of_an_expected_rejection(tmp_path):
+    from evals.judge import _valid_tool
+
+    assert _valid_tool(
+        {"tool": "check_delivery", "error": "out_of_zone", "args": {"postal_code": "1"}}
+    )
+    # Without arguments any rejection of that tool would pass (docs/24).
+    assert not _valid_tool({"tool": "check_delivery", "error": "out_of_zone"})
+    assert not _valid_tool(
+        {"tool": "check_delivery", "error": "out_of_zone", "args": {}}
+    )
+    assert not _valid_tool(
+        {"tool": "check_delivery", "error": "out_of_zone", "args": {"postal_code": ""}}
+    )
+    assert not _valid_tool(
+        {"tool": "check_delivery", "error": "out_of_zone", "args": {"postal_code": 1}}
+    )
+    assert not _valid_tool(
+        {"tool": "check_delivery", "error": "out_of_zone", "args": ["postal_code"]}
+    )
+    # `args` only names the call of a rejection.
+    assert not _valid_tool({"tool": "check_delivery", "args": {"postal_code": "1"}})
 
 
 def test_zone_check_has_to_cover_the_final_address():
@@ -1599,8 +1657,40 @@ def test_recorder_keeps_rejected_results_with_their_code():
         ),
     )
     llm.next_turn("", {}, json.dumps({"tool": "search_menu", "ok": False}))
-    assert llm.recording.error_results == [("check_delivery", "out_of_zone")]
+    # No call was open: the rejection has no arguments to match.
+    assert llm.recording.error_results == [("check_delivery", "out_of_zone", {})]
     assert llm.recording.ok_results == []
+
+
+def test_recorder_keeps_the_arguments_of_a_rejected_call():
+    args = {"postal_code": "54321"}
+    llm = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall(name="check_delivery", args=args)),
+                LLMTurn(tool_call=ToolCall(name="search_menu", args={"q": "x"})),
+                LLMTurn(say="done"),
+            ]
+        )
+    )
+    llm.next_turn("", {}, "nach 54321")
+    llm.next_turn(
+        "",
+        {},
+        json.dumps(
+            {"tool": "check_delivery", "ok": False, "error_code": "out_of_zone"}
+        ),
+    )
+    # A result of another tool than the open call is not that call's result.
+    llm.next_turn(
+        "",
+        {},
+        json.dumps({"tool": "cart", "ok": False, "error_code": "invalid_input"}),
+    )
+    assert llm.recording.error_results == [
+        ("check_delivery", "out_of_zone", args),
+        ("cart", "invalid_input", {}),
+    ]
 
 
 def test_recorder_merkt_nur_erfolgreiche_ergebnisse():
