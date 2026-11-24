@@ -120,9 +120,9 @@ CASES = [
         "mit x" + "\t" * LENGTH + "ohne y",
     ),
     (
-        "classify_wish, tabs behind a joining word before an addition",
+        "classify_wish, a chain of joining words before an addition",
         lambda text: classify_wish(text, []),
-        "ohne x und" + "\t" * LENGTH + "mit y",
+        "ohne x" + " und" * (CHAIN_LENGTH // 4) + " mit y",
     ),
 ]
 
@@ -218,14 +218,9 @@ REFERENCE = {
         lambda text: wishes._cut_tail(wishes._PLEASE_AT_END, text),
         ["bitte", "Bitte", "und", "?", "Ab"],
     ),
-    # Without IGNORECASE, as it was: "Und" at the end stays. The word boundary
-    # here and above is newer than the CodeQL fix: "Hund" keeps its "und"
-    # (docs/24).
-    "joining word before the next part": (
-        lambda text: re.sub(r"[\s,]*\b(?:dafür|dafuer|aber|und)[\s,]*$", "", text),
-        lambda text: wishes._cut_tail(wishes._JOINER_AT_END, text),
-        ["dafür", "dafuer", "aber", "und", "Und", "Aber", "Hund"],
-    ),
+    # The word boundary in front of "bitte" is newer than the CodeQL fix:
+    # "Abbitte" stays (docs/HISTORY.md). The joining word in front of the next
+    # part of a wish is cut by `_drop_trailing_glue` now, compared above.
     "quantities": (
         _old_drop_quantity,
         wishes._drop_quantity,

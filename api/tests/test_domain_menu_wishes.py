@@ -484,7 +484,8 @@ def test_weglassen_und_unbekannte_zugabe():
     ],
 )
 def test_a_word_that_only_ends_in_a_joiner_stays_whole(said):
-    """docs/24: "und" at the end of "Hund" is no joining word; the note kept "ohne H"."""
+    """ "und" at the end of "Hund" is no joining word; the note kept "ohne H"
+    (docs/24 row, now in docs/HISTORY.md)."""
     wish = wish_of(said, BEILAGE)
     assert (wish.kind, wish.option, wish.note) == ("option", "Nudeln", "ohne Hund")
 
@@ -505,11 +506,34 @@ def test_a_word_that_only_ends_in_a_joiner_stays_whole_before_a_removal():
         ("ohne Zwiebeln und, dafür mit Nudeln", "ohne Zwiebeln"),
         ("ohne Zwiebeln aber mit Nudeln", "ohne Zwiebeln"),
         ("ohne Zwiebeln, und dafür mit Nudeln", "ohne Zwiebeln"),
+        # Own review: a hesitation, "bitte", "dann", a second joining word or
+        # a capital after a full stop stayed in the kitchen note.
+        ("ohne Zwiebeln und... dafür mit Nudeln", "ohne Zwiebeln"),
+        ("ohne Zwiebeln bitte, dafür mit Nudeln", "ohne Zwiebeln"),
+        ("ohne Zwiebeln, aber bitte mit Nudeln", "ohne Zwiebeln"),
+        ("ohne Zwiebeln und dann mit Nudeln", "ohne Zwiebeln"),
+        ("Ohne Zwiebeln. Aber mit Nudeln.", "Ohne Zwiebeln"),
     ],
 )
 def test_a_joining_word_of_its_own_is_still_cut(said, note):
     wish = wish_of(said, BEILAGE)
     assert (wish.kind, wish.option, wish.note) == ("option", "Nudeln", note)
+
+
+def test_joining_words_in_front_of_a_removal_are_not_asked_back():
+    """Own review: "mit Pommes und dann" was the text the agent asked about."""
+    wish = wish_of("mit Pommes und dann ohne Zwiebeln", BEILAGE)
+    assert (wish.kind, wish.text, wish.note) == (
+        "unknown",
+        "mit Pommes",
+        "ohne Zwiebeln",
+    )
+
+
+def test_bitte_with_a_comma_behind_it_is_cut():
+    """Own review: "bitte," stayed in the note."""
+    wish = wish_of("ohne Zwiebeln, bitte,", BEILAGE)
+    assert (wish.kind, wish.text) == ("note", "ohne Zwiebeln")
 
 
 @pytest.mark.parametrize(
