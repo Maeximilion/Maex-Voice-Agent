@@ -688,9 +688,12 @@ class ConversationLoop:
                 # In that call a sentence about a dish of the call is held to
                 # core sentences too when the turn took no order step: "Bei
                 # Ihrer Allergie ist die 13 kein Problem" names no allergen
-                # (#928, Maxi: option B).
+                # (#928, Maxi: option B). An open turn is strict already and
+                # keeps its own ending: a price is no answer to an allergen
+                # question.
                 about_a_dish = (
                     in_allergy_call
+                    and not open_turn
                     and not changed
                     and guards.names_a_dish(aturn, state, say)
                 )
@@ -733,6 +736,12 @@ class ConversationLoop:
                         return self._allergens_to_team(
                             state, lead=SAY_ALLERGENS_BEYOND, table=open_table
                         )
+                    elif about_a_dish and (
+                        prices := guards.price_says(aturn, state, say)
+                    ):
+                        # The price of a dish this turn's search found, from
+                        # the database, not the offer (#928, Maxi: B2).
+                        say = " ".join(prices)
                     else:
                         say = guards.SAY_ALLERGENS_OFFER
                 if table:

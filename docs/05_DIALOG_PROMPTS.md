@@ -247,9 +247,15 @@ up (`guards.is_open`)
        held to core sentences from the start when the turn took no order
        step (#928, Maxi 24.11.2026, option B): "Bei Ihrer Allergie ist die
        13 kein Problem" names no allergen. It goes back once
-       (`HINT_ALLERGY_DISH`), then as above; the price of a dish asked
-       without an order step ends in the offer sentence too, the accepted
-       cost
+       (`HINT_ALLERGY_DISH`, which asks for the dish's number only when
+       the guest asked a price). A second refusal ends as above, except
+       that a dish this turn's search found gets the core's price sentence
+       from the database ("Die 13, Pho Bo, kostet 11 Euro 90.", base price,
+       none for a sold-out dish) instead of the offer (Maxi 24.11.2026,
+       option B2, `guards.price_says`). Not in an open turn: a price is no
+       answer to an allergen question. Accepted cost: a question about a
+       dish's options before it is in the order ("Möchten Sie die 13 mit
+       Reis?") ends in the offer sentence
    An open turn that ends in a core sentence with the guest's allergy not
    noted, or an allergen nothing explained, leaves the question open for
    one turn: after the offer sentence a dish the guest names next is its

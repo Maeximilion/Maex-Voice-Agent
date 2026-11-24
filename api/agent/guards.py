@@ -74,6 +74,7 @@ from api.domain.menu.wishes import (
     names_coeliac,
     speaks_of_health,
 )
+from api.domain.ordering.readback import spoken_euro
 from api.schemas.orders import NOTE_MAX
 from api.schemas.reservations import RESERVATION_NOTE_MAX
 
@@ -671,7 +672,8 @@ HINT_ALLERGY_DISH = (
     "Satz spricht von einem Gericht: deinen eigenen Satz hört er jetzt nicht. "
     "Was in einem Gericht ist und ob es für den Gast passt, sagt nur der Kern: "
     "lies es mit get_item_details. Nimmt der Gast ein Gericht, schreib es in den "
-    "`cart`. Sonst sag nur „" + SAY_ALLERGY_NOTED + "“"
+    "`cart`. Fragt er nach dem Preis, nenn nur die Nummer des Gerichts: den "
+    "Preis sagt dann der Kern. Sonst sag nur „" + SAY_ALLERGY_NOTED + "“"
 )
 ALLERGY_TURN = ToolResult(ok=False, error_code="invalid_input", hint=HINT_ALLERGY_TURN)
 ALLERGY_DISH = ToolResult(ok=False, error_code="invalid_input", hint=HINT_ALLERGY_DISH)
@@ -732,6 +734,9 @@ class AllergenTurn:
     tool_says: list[str] = field(default_factory=list)
     # Every dish a lookup that worked delivered in this turn, by its id.
     looked_up: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Every hit this turn's searches delivered, by its id: the database's
+    # price for `price_says` (#928).
+    found: dict[str, dict[str, Any]] = field(default_factory=dict)
     # A draft of this turn noted the guest's health.
     noted_in_draft: bool = False
     # A search hit or a lookup in this turn.
@@ -816,6 +821,7 @@ def note_tool(
         for part in parts or []:
             for hit in part.get("results") or []:
                 turn.dish_touched = True
+                turn.found[str(hit.get("menu_item_id"))] = hit
                 _menu_text(turn, hit, _codes(hit.get("name"), *_option_names(hit)))
     elif name == "get_item_details":
         turn.dish_touched = True
@@ -1028,6 +1034,29 @@ def names_a_dish(turn: AllergenTurn, state: ConversationState, say: str) -> bool
     Uhr") counts as that dish named; the sentence goes back, nothing false
     is said."""
     return bool(_dishes_named(state, _without_core(turn, state, say)))
+
+
+def price_says(turn: AllergenTurn, state: ConversationState, say: str) -> list[str]:
+    """The core's price sentence of each dish `say` names that this turn's
+    search found, its price from the hit, which is the database (rule 1):
+    what the guest hears when the strict retry of `names_a_dish` failed
+    (#928, Maxi: option B2). Empty when it names none.
+    shortcut: the base price without options, as the card prints it; a
+    sold-out dish gets none (its search sentence said so), the offer then."""
+    named = _dishes_named(state, _without_core(turn, state, say))
+    return [
+        _price_say(hit)
+        for item_id, hit in turn.found.items()
+        if item_id in named
+        and not hit.get("sold_out")
+        and isinstance(hit.get("price_cents"), int)
+    ]
+
+
+def _price_say(hit: dict[str, Any]) -> str:
+    name, number = hit.get("name"), hit.get("number")
+    dish = f"Die {number}, {name}," if number else str(name)
+    return f"{dish} kostet {spoken_euro(hit['price_cents'])}."
 
 
 def unlicensed(turn: AllergenTurn, state: ConversationState, say: str) -> set[str]:

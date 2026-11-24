@@ -165,6 +165,10 @@ _HOUSE_AGAIN = re.compile(r"\bnein\W+(\d+\s?[a-z]?)\b")
 _CITY = re.compile(r"\b(?:in|nach)\s+([A-ZÄÖÜ][\wäöüß-]+)")
 # An objection to recognition goes to the team, by the prompt's rule.
 _OBJECTION = re.compile(r"widersprech|widerspruch|wiedererkannt", re.IGNORECASE)
+# A price question for one card number ("Was kostet die 13?", #928).
+_PRICE_QUESTION = re.compile(
+    r"\b(?:was\s+kostet|wie\s+teuer\s+ist)\b\D*?\b(\d{1,3}[a-z]?)\b", re.IGNORECASE
+)
 # Above this many digits a bare number is a phone number, no part of an address.
 _MAX_ADDRESS_DIGITS = 6
 _DELIVERY_WORDS = re.compile(
@@ -217,6 +221,8 @@ class ScriptedLLM:
         # The call spoke of allergies: a question for safety gets the fixed
         # sentence of the prompt.
         self._allergy_talk = False
+        # The card number of this turn's price question, until it is answered.
+        self._price_for: str | None = None
 
     def next_turn(
         self,
@@ -250,6 +256,12 @@ class ScriptedLLM:
         if _OBJECTION.search(text):
             return LLMTurn(
                 tool_call=ToolCall("transfer_to_team", {"reason": "out_of_scope"})
+            )
+        price = _PRICE_QUESTION.search(text)
+        self._price_for = price.group(1) if price else None
+        if self._price_for:
+            return LLMTurn(
+                tool_call=ToolCall("search_menu", {"query": self._price_for})
             )
         patch = self._extract(text, state.get("slots", {}))
         slots = {**state.get("slots", {}), **patch}
@@ -447,6 +459,18 @@ class ScriptedLLM:
         data = result.get("data") or {}
         say = result.get("say")
         slots = state.get("slots", {})
+
+        if self._price_for:
+            # A model reads the price off the hit; told by the core's hint,
+            # it names only the number and the core says the price (#928).
+            number, self._price_for = self._price_for, None
+            hits = data.get("results") or []
+            if name == "search_menu" and hits and "price_cents" in hits[0]:
+                self._price_for = number
+                euros, cents = divmod(hits[0]["price_cents"], 100)
+                return LLMTurn(say=f"Die {number} kostet {euros},{cents:02d} Euro.")
+            if result.get("hint") == HINT_ALLERGY_DISH:
+                return LLMTurn(say=f"Die {number}.")
 
         if name == "search_menu" and self._opening_allergy:
             request, self._opening_allergy = self._opening_allergy, None
