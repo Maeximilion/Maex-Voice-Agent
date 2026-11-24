@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.55
+> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.56
 
 ---
 
@@ -186,7 +186,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.55 · 24.11.2026:** #74 (T-9.4): uptime check of /health from another machine, scripts/uptime_check.py from cron, one push on down and one on recovery
+- **v2.69.56 · 24.11.2026:** #74 (T-9.4): uptime check of /health from another machine, scripts/uptime_check.py from cron, one push on down and one on recovery
+- **v2.69.55 · 24.11.2026:** deps: ntfy v2.38.1 and n8n 2.48.7 in the compose files (Dependabot #974, compose-images group); no code change
 - **v2.69.54 · 24.11.2026:** #984: restore.sh keeps owners, grants and database settings (`--without-owners` for a server without the roles), backup and restore reach a 127.0.0.1-only Postgres from a client container on Linux
 - **v2.69.53 · 24.11.2026:** #982: one helper for the forms of a number in deploy/asterisk/render.sh, no behaviour change
 - **v2.69.51 · 24.11.2026:** #979: English identifiers in the older GUI code (route functions of `api/gui/router.py`, names in `app.ts`), no behaviour change
