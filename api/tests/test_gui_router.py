@@ -883,6 +883,25 @@ def test_spalte_rueckrufe_zeigt_karte(client, engine, tenant_id):
     assert 'data-reason="complaint"' in body and ">complaint<" not in body
 
 
+def test_an_open_order_card_reads_bestellung_offen(client, engine, tenant_id):
+    """#977: the card of an order read back and never answered has its own
+    label, not "Nicht verstanden"."""
+    rueckruf(engine, tenant_id, reason="order_open", summary="Anruf endete.")
+
+    body = client.get("/gui/").text
+
+    assert "Bestellung offen" in body and "Nicht verstanden" not in body
+    assert 'data-reason="order_open"' in body
+
+
+def test_every_callback_reason_has_a_label_on_the_tablet():
+    """A reason without one reads "Rückruf" and loses what the card is about."""
+    from api.gui.router import CALLBACK_LABELS
+    from api.models.calls import CALLBACK_REASONS
+
+    assert set(CALLBACK_LABELS) == set(CALLBACK_REASONS)
+
+
 @pytest.mark.parametrize(
     "number",
     ["+499001234567", "+491371234567", "+8821234567", "+979123456789", "+80812345678"],
