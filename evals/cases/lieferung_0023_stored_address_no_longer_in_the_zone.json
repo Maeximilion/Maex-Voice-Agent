@@ -50,7 +50,10 @@
     "tools": [
       {
         "tool": "draft_order",
-        "error": "out_of_zone"
+        "error": "out_of_zone",
+        "args": {
+          "type": "delivery"
+        }
       }
     ]
   }

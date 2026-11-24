@@ -61,9 +61,11 @@ class Recording:
     # Erfolgreiche Tool-Ergebnisse (Name, Daten): `expected.tools` zaehlt nur,
     # was wirklich geliefert hat, nicht jeden Versuch (Codex PR #145, P1).
     ok_results: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
-    # Rejected tool results (name, error_code): a delivery outside the zone is
-    # only handled correctly when the check rejected it (Codex PR #162).
-    error_results: list[tuple[str, str]] = field(default_factory=list)
+    # Rejected tool results (name, error_code, arguments of the call): a
+    # delivery outside the zone is only handled correctly when the check of that
+    # address rejected it (Codex PR #162). Empty arguments when the result
+    # belongs to no open call of that tool.
+    error_results: list[tuple[str, str, dict[str, Any]]] = field(default_factory=list)
     # Arguments of every call that succeeded (name, args): a zone check only
     # counts for the address it was actually asked about (Codex PR #162).
     ok_calls: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
@@ -209,9 +211,9 @@ class RecordingLLM:
             if call is not None and call[0] == result.get("tool"):
                 self.recording.ok_calls.append(call)
         elif result.get("error_code"):
-            self.recording.error_results.append(
-                (str(result.get("tool")), str(result["error_code"]))
-            )
+            tool = str(result.get("tool"))
+            args = call[1] if call is not None and call[0] == tool else {}
+            self.recording.error_results.append((tool, str(result["error_code"]), args))
         if result.get("tool") in DRAFT_TOOLS and result.get("ok"):
             # A new draft is a new sentence, and nobody heard it yet.
             self.recording.readback = (result.get("data") or {}).get("readback")
