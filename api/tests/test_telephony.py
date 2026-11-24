@@ -33,6 +33,7 @@ from api.agent.loop import (
     SAY_TABLE_BOOKED,
     SUMMARY_ALLERGENS,
     SUMMARY_READBACK_UNANSWERED,
+    ConversationLoop,
 )
 from api.agent.state import ConversationState
 from api.config import settings
@@ -2740,7 +2741,7 @@ def test_a_failed_order_card_still_closes_the_call_log(session, tenant, monkeypa
     def broken(self, state, *, with_the_team=False):
         raise OperationalError("insert", {}, Exception("lock timeout"))
 
-    monkeypatch.setattr(handler_module.ConversationLoop, "offer_unanswered", broken)
+    monkeypatch.setattr(ConversationLoop, "offer_unanswered", broken)
     port = FakeTelephony()
     sid = port.play({"transcript": ORDER_READ_BACK}, handler_for(session, tenant, port))
 
