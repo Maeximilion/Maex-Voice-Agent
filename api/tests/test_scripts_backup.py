@@ -392,12 +392,12 @@ def probe_role(db):
     _sql(db, f'alter table backup_probe owner to "{role}"')
     _sql(db, f'grant select on backup_probe to "{reader}"')
     yield role, reader
-    database = make_url(db).database
-    for name in [database, *_databases_like(f"{database}_")]:
+    database = str(make_url(db).database)
+    for copy in [database, *_databases_like(f"{database}_")]:
         with contextlib.suppress(Exception):
             for held in (role, reader):
-                _sql(_admin_url(name), f'reassign owned by "{held}" to current_user')
-                _sql(_admin_url(name), f'drop owned by "{held}"')
+                _sql(_admin_url(copy), f'reassign owned by "{held}" to current_user')
+                _sql(_admin_url(copy), f'drop owned by "{held}"')
     for name in (role, reader):
         _sql(_admin_url("postgres"), f'drop role if exists "{name}"')
 
