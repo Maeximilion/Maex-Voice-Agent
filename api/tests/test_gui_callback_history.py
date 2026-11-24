@@ -1,6 +1,5 @@
 """GUI: the history sheet of done callbacks and "Wieder öffnen" (T-3.15, #516)."""
 
-import json
 import re
 import uuid
 from datetime import date, timedelta
@@ -209,7 +208,8 @@ def test_reopening_needs_the_operations_view(client, engine, tenant_id):
 
 def test_reopening_next_to_an_open_card_of_its_call_says_why(client, engine, tenant_id):
     """One open card per call (#981): the done card stays in the history and
-    the board says where the open one is."""
+    the sheet says where the open one is, at the refused card. The sheet covers
+    the board, so a board note would not be seen (#981 review)."""
     cb_id = done_callback(engine, tenant_id)
     with Session(engine) as s:
         done = s.get(Callback, cb_id)
@@ -228,9 +228,10 @@ def test_reopening_next_to_an_open_card_of_its_call_says_why(client, engine, ten
     response = client.post(f"/gui/rueckrufe/{cb_id}/wieder-offen", headers=HX)
 
     assert response.status_code == 200
-    notice = json.loads(response.headers["HX-Trigger"])["callback-notice"]
-    assert notice == CALL_HAS_AN_OPEN_CARD
-    assert "schon eine Karte offen" in notice
+    assert "HX-Trigger" not in response.headers
+    card = response.text.split(f'data-id="{cb_id}"', 1)[1].split("</li>", 1)[0]
+    assert f'<p class="banner warn" role="alert">{CALL_HAS_AN_OPEN_CARD}</p>' in card
+    assert "schon eine Karte offen" in CALL_HAS_AN_OPEN_CARD
     with Session(engine) as s:
         kept = s.get(Callback, cb_id)
         assert kept is not None and kept.status == "done"

@@ -31,6 +31,7 @@
         {% else %}
         <div class="muted">Nummer nach der L&ouml;schfrist entfernt</div>
         {% endif %}
+        {% if refused and refused[0] == c.id and refused[1] %}<p class="banner warn" role="alert">{{ refused[1] }}</p>{% endif %}
         <div class="cb-actions">
           {% if c.phone and not c.costly %}<a class="button" href="tel:{{ c.phone }}">Anrufen</a>{% endif %}
           <button type="button" class="primary" hx-post="/gui/rueckrufe/{{ c.id }}/wieder-offen"

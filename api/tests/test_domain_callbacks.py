@@ -672,3 +672,34 @@ def test_a_conflict_on_the_open_card_is_a_replay(
     assert session.scalar(select(func.count()).select_from(OutboxEvent)) == created
     assert session.get(Callback, first.callback_id).summary == first.summary
     assert len(looked) == 2
+
+
+def test_an_open_order_at_the_conflict_joins_once_with_its_bookings(
+    session, tenant_id, call_id, monkeypatch
+):
+    """The conflict replay gets the text as said, not the one with the
+    bookings added for the new card: they stand once at the end (#981 review)."""
+    _table(session, tenant_id, call_id, "Mueller")
+    first = create_callback(session, request(tenant_id, call_id), now=NOW)
+    monkeypatch.setattr("api.domain.callbacks.create._lock_call", lambda *a: None)
+    real = create_module._open_for_call
+    looked = []
+
+    def first_finds_nothing(s, r):
+        looked.append(r)
+        return None if len(looked) == 1 else real(s, r)
+
+    monkeypatch.setattr(create_module, "_open_for_call", first_finds_nothing)
+
+    task = create_callback(
+        session,
+        request(tenant_id, call_id, reason="order_open", summary=ORDER_TEXT),
+        now=NOW,
+    )
+
+    table = "Reservierung, 4 Personen, 20.09.2026 19:30 Uhr, Name Mueller"
+    assert task.callback_id == first.callback_id
+    assert ORDER_TEXT in task.summary
+    assert task.summary.endswith(f"Bereits gebucht: {table}.")
+    assert task.summary.count("Bereits gebucht") == 1
+    assert session.scalar(select(func.count()).select_from(Callback)) == 1

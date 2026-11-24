@@ -11,8 +11,10 @@ make a second open card before.
 Old data: two open cards of one call may exist (a card reopened next to a
 newer one). The upgrade keeps the oldest open, the card `create_callback`
 reads, and closes the others as done by `migration:047`, at the time of the
-migration; they stay in the history sheet. The downgrade opens exactly those
-again. The table is locked against writes for the few statements, so no new
+migration; they stay in the history sheet. Like a team's "Erledigt", that
+mark starts their deletion period again (`jobs/retention.py` counts from
+`done_at`): kept visible for the team beats a shorter period for a duplicate.
+The downgrade opens exactly those again. The table is locked against writes for the few statements, so no new
 card slips in between the cleanup and the index. On a database a restaurant
 signs in to, take a backup first with
 `bash scripts/backup.sh --label before_migration_047` (CLAUDE.md §8, docs/13

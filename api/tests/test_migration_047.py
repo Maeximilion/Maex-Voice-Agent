@@ -97,6 +97,7 @@ def test_up_keeps_the_oldest_open_card_and_down_opens_the_others(
 
     command.downgrade(_config(scratch_db_url), "046")
     with engine.connect() as conn:
+        assert _state(conn, oldest) == ("open", None)
         assert _state(conn, later) == ("open", None)
         assert _state(conn, done) == ("done", "gui:tablet")
         assert not conn.scalar(

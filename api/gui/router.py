@@ -667,7 +667,12 @@ def callback_done(
 # --- History of done callbacks (T-3.15, #516) ------------------------------------
 
 
-def _history_sheet(request: Request, session: Session, tenant: Tenant) -> HTMLResponse:
+def _history_sheet(
+    request: Request,
+    session: Session,
+    tenant: Tenant,
+    refused: tuple[str, str | None] | None = None,
+) -> HTMLResponse:
     rows = [
         {
             **_callback_row(cb, tenant.timezone),
@@ -678,7 +683,7 @@ def _history_sheet(request: Request, session: Session, tenant: Tenant) -> HTMLRe
     return templates.TemplateResponse(
         request,
         "fragments/rueckruf_verlauf.html",
-        {"callbacks": rows, "days": HISTORY_DAYS},
+        {"callbacks": rows, "days": HISTORY_DAYS, "refused": refused},
     )
 
 
@@ -723,12 +728,10 @@ def callback_reopen(
         session.rollback()
         logger.info("Rueckruf nicht wieder geoeffnet: %s", exc.message)
         if exc.code == "conflict":
-            # The call has another open card (#981): say so on the board.
+            # The call has another open card (#981): said at the refused card,
+            # since the sheet covers the board and a board note there.
             notice = exc.say
-    response = _history_sheet(request, session, tenant)
-    if notice:
-        response.headers["HX-Trigger"] = json.dumps({"callback-notice": notice})
-    return response
+    return _history_sheet(request, session, tenant, (str(callback_id), notice))
 
 
 # --- Holiday suggestions (T-9.5) -----------------------------------------------------
