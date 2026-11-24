@@ -265,7 +265,7 @@ def test_an_order_waits_for_erledigt_and_then_gets_its_own_card(migrated_db_url)
     assert task.callback_id != old.callback_id
     assert (task.reason, task.summary) == ("order_open", ORDER_TEXT)
     with Session(engine) as s:
-        done = s.get(Callback, old.callback_id)
+        done = s.get_one(Callback, old.callback_id)
         assert (done.status, done.summary) == ("done", old.summary)
     engine.dispose()
 
