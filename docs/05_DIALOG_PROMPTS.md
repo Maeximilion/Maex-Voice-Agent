@@ -393,9 +393,10 @@ eine Sesamallergie") (Maxi, 15.11.2026, #736, #763)
      in all it says when those parts name nothing ("Ich habe eine Allergie,
      gegen Erdnüsse.", "Meine Frau hat eine Allergie. Sesam."); an answer
      without one ("Gegen Sesam.") with all it names; what a part only
-     denies, plain names of dishes the call found and what a later sentence
-     takes back ("Nein, doch keine Erdnussallergie.") aside. A note counts
-     what it asks for ("kein Sesam"), not an allergy it denies. So a second
+     denies and plain names of dishes the call found aside; an ingredient
+     word counts at the start of a note's word only ("Erbsen" is not in
+     "Kichererbsen"). A note counts what it asks for ("kein Sesam"), not
+     an allergy it denies. So a second
      allergy said after the read-back ("Ach, und meine Frau verträgt keinen
      Sesam.") does not pass on the first one's note. The draft goes back
      once with only the sentences no note covers; the hint asks for the
@@ -409,7 +410,11 @@ eine Sesamallergie") (Maxi, 15.11.2026, #736, #763)
      (in any case or spacing) is replaced, never written twice. Residual: a
      wish in the same part as the health word or behind one that names
      nothing ("Meine Frau ist allergisch, ich nehme die Garnelen") asks for
-     its letter too; the guest's words then carry it. A note that promises a dish free of
+     its letter too, and so does a coeliac denial ("Ich habe keine
+     Zöliakie."); the guest's words then carry it. A wish on a health note
+     counts as noted ("Erdnussallergie, extra Sesam" covers a later sesame
+     allergy), and an allergy the guest takes back without a question stays
+     asked for. A note that promises a dish free of
      something ("nussfrei", "keine Spuren") goes back too
      (`guards.claims_in_a_note`)
    → the menu search still splits an allergy said behind a dish off as its

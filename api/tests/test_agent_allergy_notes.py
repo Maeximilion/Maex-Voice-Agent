@@ -1025,6 +1025,19 @@ def test_coeliac_disease_and_an_ingredient_pass_on_a_note_that_names_them(later,
     assert guards.unnoted_allergy(state, call) is None
 
 
+def test_an_ingredient_counts_only_as_a_word_of_its_own():
+    """ "Erbsen" is not on a note that names "Kichererbsen" (gap sweep)."""
+    state = _named()
+    state.allergy_said = [
+        "Ich habe eine Kichererbsenallergie.",
+        "Meine Frau ist allergisch gegen Erbsen.",
+    ]
+
+    call = _two(("WICHTIG !!! Kichererbsenallergie", None))
+
+    assert guards.unnoted_allergy(state, call) is not None
+
+
 def test_a_note_without_a_health_word_does_not_count_for_the_letters():
     """ "ohne Sesam" is no health note: the retention job would keep it (L13),
     and the kitchen reads it as a wish."""
@@ -1069,15 +1082,37 @@ def test_letters_the_guest_did_not_name_as_theirs_ask_for_no_note(said):
     assert guards.unnoted_allergy(state, _two((PEANUT_NOTE, None))) is None
 
 
-def test_an_allergy_taken_back_later_is_not_asked_for():
-    """ "Nein, doch keine Erdnussallergie." after the peanut: a sesame note
-    alone passes, and no hint asks for the peanut (deep review)."""
+@pytest.mark.parametrize(
+    "said",
+    [
+        # Another person's denial takes back none of the caller's allergy.
+        [
+            "Die 13, ich habe eine Erdnussallergie.",
+            "Meine Frau verträgt keinen Sesam.",
+            "Meine Frau hat aber keine Erdnussallergie.",
+        ],
+        [
+            "Die 13, ich habe eine Erdnussallergie.",
+            "Meine Frau hat keine Erdnussallergie, aber sie verträgt keinen Sesam.",
+        ],
+        # Nor does the caller's denial take back another person's allergy.
+        [
+            "Mein Sohn hat eine Erdnussallergie.",
+            "Meine Frau verträgt keinen Sesam.",
+            "Ich habe keine Erdnussallergie.",
+        ],
+    ],
+)
+def test_a_denial_takes_back_only_the_same_persons_allergy(said):
+    """Verify pass of the deep review: the peanut must still reach a note."""
     state = _named()
-    state.allergy_said = [PEANUT, LATER_SESAME, "Nein, doch keine Erdnussallergie."]
+    state.allergy_said = said
 
-    call = _two(("WICHTIG !!! Allergie (Frau): Sesam", None))
+    call = _two(("WICHTIG !!! Frau verträgt keinen Sesam", None))
 
-    assert guards.unnoted_allergy(state, call) is None
+    refused = guards.unnoted_allergy(state, call)
+    assert refused is not None
+    assert "Erdnussallergie" in (refused.hint or "")
 
 
 def test_the_hint_asks_for_the_guests_words():
@@ -1103,7 +1138,12 @@ def test_a_table_gets_no_question_about_a_dish():
 
 @pytest.mark.parametrize(
     "block",
-    ["WICHTIG !!! Gast sagte:", "Wichtig!!! Gast sagte:", "WICHTIG !!! gast sagte :"],
+    [
+        "WICHTIG !!! Gast sagte:",
+        "Wichtig!!! Gast sagte:",
+        "WICHTIG !!! gast sagte :",
+        "WICHTIG !!! Der Gast sagte:",
+    ],
 )
 def test_the_guests_words_replace_their_earlier_block_never_twice(block):
     """A redraft carries the core's earlier "Gast sagte" block, also as a

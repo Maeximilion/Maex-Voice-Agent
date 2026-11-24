@@ -161,13 +161,13 @@ _HINT_UNNOTED_SAID = (
 # the quoted sentence ("..., bitte extra Sesam") must not become an allergy.
 HINT_UNNOTED_LATER = "Abgelehnt: kein `note` nennt die Allergie aus „{said}“."
 _HINT_LATER_ORDER = (
-    " Schreib die Worte des Gastes als „WICHTIG !!! <seine Worte>“ an das "
+    " Schreib „WICHTIG !!! “ und dahinter die Worte des Gastes an das "
     "Gericht, das er direkt davor genannt hat, wenn sie dafür gelten, sonst an "
     "die Bestellung, und ruf denselben Schritt noch einmal auf. Ist unklar, für "
     "welches Gericht, sag nur „{ask}“"
 )
 _HINT_LATER_TABLE = (
-    " Schreib die Worte des Gastes als „WICHTIG !!! <seine Worte>“ an den Tisch "
+    " Schreib „WICHTIG !!! “ und dahinter die Worte des Gastes an den Tisch "
     "und ruf denselben Schritt noch einmal auf."
 )
 HINT_NOTE_CLAIM = (
@@ -1410,7 +1410,9 @@ NOTE_CLAIM = ToolResult(ok=False, error_code="invalid_input", hint=HINT_NOTE_CLA
 # words (`with_the_guests_words`).
 NOTED_FOR_THE_GUEST = "WICHTIG !!! Gast sagte: {said}"
 # The core's block as a model may copy it, in any case and spacing.
-_EARLIER_BLOCK = re.compile(r"wichtig\s*!!!\s*gast\s+sagte\s*:", re.IGNORECASE)
+_EARLIER_BLOCK = re.compile(
+    r"wichtig\s*!!!\s*(?:der\s+)?gast\s+sagte\s*:", re.IGNORECASE
+)
 # A note that only repeats the example of a hint names nothing.
 _TEMPLATE = ("…", "<", "WICHTIG-Hinweis")
 
@@ -1428,11 +1430,12 @@ def unnoted_allergy(state: ConversationState, call: ToolCall) -> ToolResult | No
     a note, compared by letter whatever the wording, coeliac disease as
     gluten, an ingredient without a letter ("Kiwi") by its word: a second
     allergy said after the read-back ("Ach, und meine Frau verträgt keinen
-    Sesam.") must not pass on the first one's note (#929). One a later
-    sentence takes back ("Doch keine Erdnussallergie.") is not asked for. The
-    hint quotes only the sentences no note covers and asks for the guest's
-    words, for an order on the dish named right before or after the fixed
-    question about the dish."""
+    Sesam.") must not pass on the first one's note (#929). What a kept
+    sentence names stays asked for: a bare retraction is not kept, and
+    `loop._taken_back` clears what a denial answering a question takes back.
+    The hint quotes only the sentences no note covers and asks for the
+    guest's words, for an order on the dish named right before or after the
+    fixed question about the dish."""
     if not state.allergy_said or call.name not in NOTED:
         return None
     health = [
@@ -1443,17 +1446,16 @@ def unnoted_allergy(state: ConversationState, call: ToolCall) -> ToolResult | No
     if not health:
         hint = HINT_UNNOTED_ALLERGY + _HINT_UNNOTED_SAID.format(said=_said(state))
         return ToolResult(ok=False, error_code="invalid_input", hint=hint)
-    # What a note only denies ("kein Sesam") notes nothing.
+    # An allergy a note denies ("keine Sesamallergie") notes nothing; "kein
+    # Sesam" is what the kitchen must do and counts.
     noted_text = " ".join(_guest_words(note) for note in health)
     noted = _letters(noted_text)
-    words = noted_text.casefold()
-    said = list(state.allergy_said)
     unnoted = [
         sentence
-        for i, sentence in enumerate(said)
+        for sentence in state.allergy_said
         if any(
-            mark not in noted and mark not in words
-            for mark in _named_as_theirs(state, sentence) - _denied_later(said[i + 1 :])
+            mark not in noted and not _word_in(mark, noted_text)
+            for mark in _named_as_theirs(state, sentence)
         )
     ]
     if not unnoted:
@@ -1466,6 +1468,12 @@ def unnoted_allergy(state: ConversationState, call: ToolCall) -> ToolResult | No
     )
     hint = HINT_UNNOTED_LATER.format(said=quoted) + where
     return ToolResult(ok=False, error_code="invalid_input", hint=hint)
+
+
+def _word_in(word: str, text: str) -> bool:
+    """Does `text` hold `word` at the start of one of its words ("Kiwi" in
+    "Kiwiallergie"), never inside one ("Erbsen" in "Kichererbsen")?"""
+    return re.search(rf"(?<!\w){re.escape(word)}", text.casefold()) is not None
 
 
 def _letters(text: str) -> set[str]:
@@ -1503,16 +1511,6 @@ def _named_as_theirs(state: ConversationState, said: str) -> set[str]:
         word
         for word in found - allergens_named(text) - {"zöliakie"}
         if not allergens_named(word)
-    }
-
-
-def _denied_later(later: list[str]) -> set[str]:
-    """What the later kept sentences only deny ("Nein, doch keine
-    Erdnussallergie."): an earlier sentence is not asked for it."""
-    return {
-        mark
-        for sentence in later
-        for mark in reacts_to(sentence, denied=True) - reacts_to(sentence)
     }
 
 
