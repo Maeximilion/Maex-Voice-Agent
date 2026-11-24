@@ -392,6 +392,48 @@ def only_cancels(text: str) -> bool:
     )
 
 
+# A decline of the order read back that holds no cancel word (Maxi, #977,
+# 24.11.2026): "Nein danke, dann lasse ich es", "Vergessen Sie es, tschüss",
+# "Dann doch nicht". "nicht" stands only in "doch nicht": anywhere else it turns
+# the sentence round ("Vergessen Sie es nicht").
+_DECLINE = re.compile(r"\b(?:lass(?:e|en|t)?|vergess(?:e|en)?|vergiss|doch nicht)\b")
+# "so" only in "so lange" and "ach so": "Lassen Sie es so" keeps the order.
+_SO_LONG = re.compile(r"\bach so\b|\bso(?= lange?\b)")
+# The words a decline may stand with: those of a plain cancel without "so",
+# the "wir" of "Lassen wir das" and a goodbye. Any other word may name one dish
+# ("Lassen Sie die Zwiebeln weg") or ask for more ("Lassen Sie es liefern").
+# shortcut: closed lists like `_PLAIN_CANCEL`, add a form when the call log
+# shows a plain decline they miss.
+_PLAIN_DECLINE = (_PLAIN_CANCEL - {"so"}) | {"wir", "auf", "bis"} | {
+    "tschüss",
+    "tschüs",
+    "tschuess",
+    "ciao",
+    "wiederhören",
+    "wiederhoeren",
+    "wiedersehen",
+}
+
+
+def only_declines(text: str) -> bool:
+    """Does the sentence decline the order and say nothing else? A word of
+    `_DECLINE` and the words of `_PLAIN_DECLINE`, nothing more, and the
+    sentence that holds it no question ("Lasse ich es?"). Whether the read-back
+    was what the guest heard last is the caller's to check: to "Noch etwas?"
+    the same words answer that question."""
+    folded = _SO_LONG.sub(" ", _folded(text))
+    found = _DECLINE.search(folded)
+    rest = _WORDS.findall(_DECLINE.sub(" ", folded))
+    return (
+        found is not None
+        and all(word in _PLAIN_DECLINE for word in rest)
+        and not any(
+            sentence.rstrip().endswith("?") and _DECLINE.search(sentence)
+            for sentence in SENTENCE.split(folded)
+        )
+    )
+
+
 def check(text: str) -> EscalationReason | None:
     """Erster treffende Auslöser aus docs/05 §4, oder `None`. Wird auf jedem
     rohen Kundenzug geprüft, bevor `loop.py` das Modell überhaupt aufruft."""
