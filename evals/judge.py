@@ -254,20 +254,50 @@ def _valid_tool(entry: Any) -> bool:
     return (
         isinstance(entry, dict)
         and isinstance(entry.get("tool"), str)
-        and set(entry) <= {"tool", "number", "error"}
+        and set(entry) <= {"tool", "number", "error", "args"}
         and not {"number", "error"} <= set(entry)
         and isinstance(entry.get("number", ""), str)
         and (
             "error" not in entry
-            or (isinstance(entry["error"], str) and bool(entry["error"].strip()))
+            or (
+                isinstance(entry["error"], str)
+                and bool(entry["error"].strip())
+                and _valid_call_args(entry.get("args"))
+            )
+        )
+        and ("args" not in entry or "error" in entry)
+    )
+
+
+def _valid_call_args(args: Any) -> bool:
+    """The arguments that name the expected rejected call: at least one, each a
+    dotted path into the call's arguments with a non-empty text value."""
+    return (
+        isinstance(args, dict)
+        and bool(args)
+        and all(
+            isinstance(k, str) and k.strip() and isinstance(v, str) and v.strip()
+            for k, v in args.items()
         )
     )
+
+
+def _called_with(args: dict[str, Any], want: dict[str, str]) -> bool:
+    """Every named path of `want` holds its value in `args`, compared like an
+    address: "customer.address.postal_code" reaches into the nested customer."""
+    for path, value in want.items():
+        got: Any = args
+        for key in path.split("."):
+            got = got.get(key) if isinstance(got, dict) else None
+        if got is None or _norm_address(got) != _norm_address(value):
+            return False
+    return True
 
 
 def missing_tools(
     wanted: list[Any],
     ok_results: list[tuple[str, dict[str, Any]]],
-    error_results: Sequence[tuple[str, str]] = (),
+    error_results: Sequence[tuple[str, str, dict[str, Any]]] = (),
 ) -> list[Any]:
     """Erwartete Tool-Aufrufe ohne erfolgreiches Ergebnis. Mit `number` nur,
     wenn das Ergebnis genau dieses Gericht betrifft: Allergene der 24 beantworten
@@ -275,11 +305,17 @@ def missing_tools(
 
     With `error` the tool has to have rejected with exactly that code
     (`check_delivery` with `out_of_zone`): "nothing booked" alone does not prove
-    that the rule was applied (Codex PR #162)."""
+    that the rule was applied (Codex PR #162). And it has to be the call that
+    `args` names: a rejected check of another postal code is not that check."""
     missing = []
     for entry in wanted:
         if isinstance(entry, dict) and "error" in entry:
-            if (entry["tool"], entry["error"]) not in error_results:
+            if not any(
+                tool == entry["tool"]
+                and code == entry["error"]
+                and _called_with(args, entry["args"])
+                for tool, code, args in error_results
+            ):
                 missing.append(entry)
             continue
         name = entry if isinstance(entry, str) else entry["tool"]
