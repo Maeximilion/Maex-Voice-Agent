@@ -1952,8 +1952,8 @@ def _asked_about_an_allergy(state: ConversationState) -> bool:
     allergisch?", "Haben Sie eine Allergie?")? Never a read-back: its note
     names the allergy, and the "Ja" to it answers the order."""
     say = state.last_say or ""
-    if guards.SAY_ASK_ALLERGY in say:
-        # The fixed question of an allergy turn (#798).
+    if any(ask in say for ask in guards.ASKS_ABOUT_THE_ALLERGY):
+        # The fixed questions of an allergy turn (#798, #929).
         return True
     if state.readback and say.lstrip("…") in state.readback:
         return False

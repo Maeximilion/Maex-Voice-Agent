@@ -155,6 +155,15 @@ _HINT_UNNOTED_SAID = (
     "Gericht, an der Bestellung oder am Tisch und ruf denselben Schritt noch "
     "einmal auf."
 )
+# A health note stands, but an allergen the guest named later is on none
+# (#929, Maxi 24.11.2026: ask for the dish, or the dish named right before).
+HINT_UNNOTED_LATER = "Abgelehnt: kein `note` nennt das Allergen aus „{said}“."
+_HINT_UNNOTED_LATER_WHERE = (
+    " Gilt es für das Gericht, das der Gast direkt davor genannt hat, notiere "
+    "es als WICHTIG-Hinweis dort, für alle an der Bestellung oder am Tisch, und "
+    "ruf denselben Schritt noch einmal auf. Ist unklar, für welches Gericht, "
+    "sag nur „{ask}“"
+)
 HINT_NOTE_CLAIM = (
     "Abgelehnt: ein `note` sagt etwas über ein Gericht (frei von etwas, sicher, "
     "oder es nennt ein Gericht). Notiere nur den Wunsch oder die Allergie, wie "
@@ -633,16 +642,21 @@ _DRAFT_DIFFERS = ToolResult(ok=False, error_code="conflict", hint=HINT_DRAFT_DIF
 _GUEST_NAME = ToolResult(ok=False, error_code="invalid_input", hint=HINT_GUEST_NAME)
 _GUEST_PHONE = ToolResult(ok=False, error_code="invalid_input", hint=HINT_GUEST_PHONE)
 _NOT_BOOKED = ToolResult(ok=False, error_code="conflict", hint=HINT_NOT_BOOKED)
-# The three fixed sentences of an allergy turn (#798). The prompt gives the
-# first two to the model; the core says the third itself (`loop.py`). Drafts
-# for the legal check of the announcements (docs/09), like `SAY_ALLERGY_NOTE`.
+# The fixed sentences of an allergy turn (#798). The prompt gives the model
+# all but the offer, which the core says itself (`loop.py`). Drafts for the
+# legal check of the announcements (docs/09), like `SAY_ALLERGY_NOTE`.
 SAY_ALLERGY_NOTED = "Ihren Hinweis gebe ich an die Küche weiter."
 SAY_ASK_ALLERGY = "Worauf genau soll die Küche achten?"
+# A later allergy whose dish is unclear ("Meine Frau verträgt keinen Sesam",
+# #929, Maxi 24.11.2026).
+SAY_ASK_ALLERGY_DISH = "Für welches Gericht soll die Küche darauf achten?"
 SAY_ALLERGENS_OFFER = (
     "Wenn ich für ein Gericht die Allergene nachsehen soll, nennen Sie mir bitte "
     "seine Nummer."
 )
-FIXED_ALLERGY_SAYS = (SAY_ALLERGY_NOTED, SAY_ASK_ALLERGY, SAY_ALLERGENS_OFFER)
+# The fixed questions whose answer the guest gives next.
+ASKS_ABOUT_THE_ALLERGY = (SAY_ASK_ALLERGY, SAY_ASK_ALLERGY_DISH)
+FIXED_ALLERGY_SAYS = (SAY_ALLERGY_NOTED, *ASKS_ABOUT_THE_ALLERGY, SAY_ALLERGENS_OFFER)
 HINT_ALLERGY_TURN = (
     "Abgelehnt: der Gast spricht in diesem Zug von einer Allergie oder einem "
     "Allergen, deinen eigenen Satz hört er hier nicht. Fragt er, was in einem "
@@ -1349,7 +1363,9 @@ def codes_left(turn: AllergenTurn, state: ConversationState, say: str) -> list[s
     (`ConversationState.allergen_question_codes`). None when the turn ends
     by asking the guest about the allergy: their next words answer it
     ("Worauf genau soll die Küche achten?" - "Sesam.")."""
-    if SAY_ASK_ALLERGY in say or not leaves_a_question(turn, state):
+    if any(ask in say for ask in ASKS_ABOUT_THE_ALLERGY) or not leaves_a_question(
+        turn, state
+    ):
         return []
     return sorted(unexplained_codes(turn, state))
 
@@ -1397,16 +1413,42 @@ def unnoted_allergy(state: ConversationState, call: ToolCall) -> ToolResult | No
     retention job deletes such a note by, so what passes here is deleted in
     time (L13). The hint quotes the guest. The loop gives it back once per
     turn, and writes the guest's words on the next one itself
-    (`with_the_guests_words`), never a loop."""
+    (`with_the_guests_words`), never a loop.
+
+    Every allergen the guest named as theirs must be on such a note, compared
+    by letter whatever the wording: a second allergy said after the read-back
+    ("Ach, und meine Frau verträgt keinen Sesam.") must not pass on the first
+    one's note (#929). The hint then quotes only the sentences no note
+    covers. An allergy named only by an ingredient ("Kiwi") has no letter and
+    needs any health note, as before."""
     if not state.allergy_said or call.name not in NOTED:
         return None
-    if any(
-        HEALTH_NOTE_RE.search(note) and not any(t in note for t in _TEMPLATE)
+    health = [
+        note
         for note in _notes(call)
-    ):
+        if HEALTH_NOTE_RE.search(note) and not any(t in note for t in _TEMPLATE)
+    ]
+    if not health:
+        hint = HINT_UNNOTED_ALLERGY + _HINT_UNNOTED_SAID.format(said=_said(state))
+        return ToolResult(ok=False, error_code="invalid_input", hint=hint)
+    noted = allergens_named(" ".join(health))
+    unnoted = [s for s in state.allergy_said if _named_as_theirs(state, s) - noted]
+    if not unnoted:
         return None
-    hint = HINT_UNNOTED_ALLERGY + _HINT_UNNOTED_SAID.format(said=_said(state))
+    said = " ".join(s.strip() for s in unnoted).rstrip(" .")
+    hint = HINT_UNNOTED_LATER.format(said=said) + _HINT_UNNOTED_LATER_WHERE.format(
+        ask=SAY_ASK_ALLERGY_DISH
+    )
     return ToolResult(ok=False, error_code="invalid_input", hint=hint)
+
+
+def _named_as_theirs(state: ConversationState, said: str) -> set[str]:
+    """The allergen letters a kept sentence names, read as the turn reads the
+    guest (`begin_allergen_turn`): without what only denies an allergy and
+    without the plain names of dishes the call found."""
+    return allergens_named(
+        _without_dish_names(state, _guest_words(said), plain_only=True)
+    )
 
 
 def with_the_guests_words(state: ConversationState, call: ToolCall) -> ToolCall | None:
@@ -1422,6 +1464,13 @@ def with_the_guests_words(state: ConversationState, call: ToolCall) -> ToolCall 
     added = NOTED_FOR_THE_GUEST.format(said=_said(state))
     limit = NOTE_MAX_FOR[call.name]
     before = call.args.get("note")
+    if isinstance(before, str):
+        # A redraft carries the core's earlier block; the new one holds all
+        # it said, so it takes its place: no sentence noted twice (#929).
+        # shortcut: what the model wrote behind that block goes with it; the
+        # core always puts the block last.
+        before = before.partition(NOTED_FOR_THE_GUEST.format(said=""))[0]
+        before = before.rstrip(" .")
     note = (
         f"{before.strip()}. {added}"
         if isinstance(before, str) and before.strip()
