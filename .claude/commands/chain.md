@@ -143,7 +143,16 @@ or any wave of three or more agents at once. Before it starts one, a session
 messages the coordinator "need 2 lanes for <step>" and waits (one background
 sleep under 60 minutes, renewed) for "go heavy"; the coordinator answers when
 a second lane is free under the mode's count, otherwise the session waits until
-one frees. Normal mode has 3 lanes (Maxi: "Vielleicht könnten 3 Lanes im Normal
+one frees: the heavy step waits, the other items keep working (Maxi,
+2026-11-24, popup "Heavy step waits"). The second lane is held only while the
+heavy step runs, from "go heavy" to its end; before and after it the item holds
+one (Maxi, 2026-11-24: "only the gate or the gates of the heavy steps block 2
+lanes and not generally"). In turbo a heavy step holds only its own lane and
+needs no "go heavy" (Maxi, 2026-11-24: "the big workflows and many agents an
+item runs don't block 2 lanes any more because Turbo Mode wants to get ahead").
+A heavy step granted in turbo that still runs when turbo ends finishes; no new
+one starts until it fits the new count (24.11.2026: two reviews granted in
+turbo ran on as four lanes in normal). Normal mode has 3 lanes (Maxi: "Vielleicht könnten 3 Lanes im Normal
 mode passend sein wenn ... teure Items ... zum Blockieren von 2 lanes führen"),
 the other modes as in section 5, never above today's row of "Agents per
 weekday". The measurement of #965 likely included such steps counted as one
@@ -172,6 +181,24 @@ before naming a base.
   message, and it says so in one line, never as a question.
 - Never routes a new task into an existing idle session to get around a
   refused start.
+- Maxi away (AFK) changes only the decisions (Maxi, 2026-11-24: "The planned
+  Items should start like when I would be here"): sessions take the best option
+  and list it in the PR under "Claude's choice, awaiting Maxi"; money, law,
+  security design and production data wait for him. Planned items keep taking
+  free lanes. Since a note turn cannot start a session, a session that sends
+  "PR ready" waits in its turn for the coordinator's reply naming its next
+  planned item with a brief, cuts a new branch from `origin/main` and builds it
+  in the same session, one PR per item (Maxi, 2026-11-24, popup "Finisher takes
+  next item"); past about 80 percent context it says so and the item goes to
+  the next finisher or to a fresh session in Maxi's next turn. "Nothing new"
+  while he is away means only work outside the plan. When the plan runs empty,
+  the coordinator plans about 20 new items and goes on; a decisions issue such
+  as #990 can add items when he answers it.
+- The Hold button of the chain dashboard (Maxi, 2026-11-24): pressed, every
+  build item finishes its current step, pushes and sleeps 50 minutes (baton
+  `none`, the hold in `notes.txt`, no start, no heavy step; the ship lane may
+  finish a merge). The coordinator learns it from the line the dashboard adds
+  to its next prompt or update result; pressed again or past its end it is off.
 - Reserve items (Maxi, 2026-11-23: "if something stops, work on the next one so
   the chain doesn't break"): the plan lists one or two after the chain items,
   each with route and a short brief, and every brief names the next one (item
@@ -190,7 +217,14 @@ before naming a base.
   same turn, before anything else (a "merged #N" sets the item to done at once;
   24.11.2026 #968 stayed active after its merge because this was skipped), answer in one or two lines. A note is the child's report, not
   proof. The dashboard stays the coordinator's: its state is per session and
-  each update replaces the whole list, so children cannot write to it.
+  each update replaces the whole list, so children cannot write to it. Each
+  item carries its size (small: Sonnet polish, GUI or docs; normal: Opus code
+  without a deep review; big: Opus with a deep review, evals or a migration) and
+  the gate running now; the dashboard weights the gates by the time they took
+  in 28 chain items (#822 to #994, 17. to 24.11.2026: a big item's deep review
+  with its fixes about 39 percent, CI and Codex 20, suite and evals 19; CI and
+  review about 40 percent of a small or normal item) and counts the lanes per
+  running gate. A heavy gate is named only after "go heavy".
 - Its own cost counts (24.11.2026: at about 470k context each coordinator turn
   rereads all of it, and four helper agents for the dashboard used about 110k
   tokens each while the window ran +32 ahead). In slow and super slow it starts
@@ -248,11 +282,16 @@ step holds two).
 | Super slow | over +15 | +5 or below, to slow | 1; every other build session pauses with background sleeps of 50 minutes, renewed on each wake | wait for slow or normal |
 | Slow | over +5 in the first hour, +10 in the middle, +5 in the last 2 hours | to normal at -20 or below in the first hour, -15 in the middle, -5 in the last 2 hours | 2, a 45-minute sleep between parts | one at a time, it holds both lanes |
 | Normal | | | 3 | as section 3 |
-| Turbo | under -25 | -10 or above, to normal | up to 5, never above today's row of "Agents per weekday" | as section 3 |
+| Turbo | under -25, never in the last 30 minutes before the reset | -10 or above, or 30 minutes before the reset, to normal | up to 5, never above today's row of "Agents per weekday" | one lane each, no "go heavy" (section 3) |
 
-From normal, over +15 goes straight to super slow. When turbo ends, running
-sessions finish their job; only no new start beyond the new count (Maxi: "let
-the lanes get the Job done (no force break)"). In super slow (Maxi,
+From normal, over +15 goes straight to super slow. Turbo aims at -10, its exit
+(Maxi, 2026-11-24: "target of Turbo mode is -10 ahead"). When turbo ends,
+running sessions finish their job; only no new start beyond the new count (Maxi:
+"let the lanes get the Job done (no force break)"). Thirty minutes before the
+reset Auto leaves turbo for normal (Maxi, 2026-11-24: "otherwise we will run
+with Turbo Mode in the Reset and get ahead + very fast"): the sessions above 3
+lanes finish their current step, commit, push and pause with 45-minute sleeps
+on the baton file below until a lane frees. In super slow (Maxi,
 2026-11-24) all build sessions but one pause with 50-minute sleeps, renewed on
 each wake, so none falls into a cold cache. Each paused session renews its own
 sleep; the coordinator sends no heartbeat (a wake under 60 minutes keeps the
