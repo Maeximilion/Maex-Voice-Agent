@@ -18,8 +18,8 @@ function detail(event) {
 }
 (() => {
     const banner = document.getElementById("verbindung");
-    const liste = document.getElementById("heute-liste");
-    const stoerung = document.getElementById("stoerung");
+    const todayList = document.getElementById("heute-liste");
+    const outageBar = document.getElementById("stoerung");
     // Ein Tap, der am Server scheitert, liefert trotzdem die Kopfzeile mit der
     // roten Leiste. htmx tauscht bei 4xx/5xx sonst nichts aus, und der Knopf
     // saehe aus, als haette er nichts getan. Getauscht wird aber nur HTML: andere
@@ -33,8 +33,8 @@ function detail(event) {
         if (!(xhr instanceof XMLHttpRequest))
             return;
         if (xhr.status < 400) {
-            if (stoerung)
-                stoerung.hidden = true;
+            if (outageBar)
+                outageBar.hidden = true;
             return;
         }
         const typ = xhr.getResponseHeader("Content-Type") || "";
@@ -44,8 +44,8 @@ function detail(event) {
         }
         else {
             d.shouldSwap = false;
-            if (stoerung)
-                stoerung.hidden = false;
+            if (outageBar)
+                outageBar.hidden = false;
         }
     });
     // Server nicht erreichbar: gelbe Leiste statt stiller Knopf (docs/06 §5).
@@ -54,65 +54,65 @@ function detail(event) {
     });
     // The holiday strip is replaced with its list after every answer; keep it open
     // while the team works through the suggestions, or each tap would fold it.
-    let feiertageOffen = false;
+    let holidaysOpen = false;
     document.addEventListener("toggle", (e) => {
         const t = e.target;
         if (t instanceof HTMLDetailsElement && t.id === "feiertage-fold")
-            feiertageOffen = t.open;
+            holidaysOpen = t.open;
     }, true);
     document.body.addEventListener("htmx:afterSwap", () => {
         const fold = document.getElementById("feiertage-fold");
-        if (fold instanceof HTMLDetailsElement && feiertageOffen)
+        if (fold instanceof HTMLDetailsElement && holidaysOpen)
             fold.open = true;
     });
     // The "Mehr" row of the header (#517) holds the wait steppers and "Gericht aus"
     // below 1180 px. The header is replaced after every tap, so the team's choice
     // is kept here; from 1180 px the row is always open (an older browser hides
     // the content of a closed <details> whatever the stylesheet says).
-    let mehrOffen = false;
-    const breit = window.matchMedia("(min-width: 1180px)");
-    function mehrAbgleichen() {
-        const mehr = document.getElementById("mehr");
-        if (mehr instanceof HTMLDetailsElement)
-            mehr.open = breit.matches || mehrOffen;
+    let moreOpen = false;
+    const wide = window.matchMedia("(min-width: 1180px)");
+    function syncMore() {
+        const more = document.getElementById("mehr");
+        if (more instanceof HTMLDetailsElement)
+            more.open = wide.matches || moreOpen;
     }
     // Recorded on the team's own tap or key press on the summary, not on `toggle`:
-    // that event also fires, late, for the open that mehrAbgleichen sets from 1180 px
+    // that event also fires, late, for the open that syncMore sets from 1180 px
     // and would pass for a choice of the team (#938). The click runs before the
     // browser flips `open`, so the new state is the opposite of the current one.
     document.addEventListener("click", (e) => {
         const t = e.target;
         const summary = t instanceof Element ? t.closest("summary") : null;
-        const mehr = summary?.parentElement;
-        if (mehr instanceof HTMLDetailsElement && mehr.id === "mehr")
-            mehrOffen = !mehr.open;
+        const more = summary?.parentElement;
+        if (more instanceof HTMLDetailsElement && more.id === "mehr")
+            moreOpen = !more.open;
     }, true);
-    document.body.addEventListener("htmx:afterSwap", mehrAbgleichen);
-    breit.addEventListener("change", mehrAbgleichen);
-    mehrAbgleichen();
-    if (!liste || !("EventSource" in window))
+    document.body.addEventListener("htmx:afterSwap", syncMore);
+    wide.addEventListener("change", syncMore);
+    syncMore();
+    if (!todayList || !("EventSource" in window))
         return;
     function offline(yes) {
         if (banner)
             banner.hidden = !yes;
     }
-    function nachladen() {
+    function reloadAll() {
         // htmx ersetzt den Inhalt des Ziels; faellt der Aufruf aus, bleibt die
         // zuletzt gezeigte Liste stehen statt zu leeren.
         window.htmx.ajax("GET", "/gui/fragments/heute", { target: "#heute-liste" });
     }
-    function kopfzeile() {
+    function reloadHeader() {
         window.htmx.ajax("GET", "/gui/fragments/kopfzeile", {
             target: "#kopfzeile",
             swap: "outerHTML",
         });
     }
-    function rueckrufe() {
+    function reloadCallbacks() {
         window.htmx.ajax("GET", "/gui/fragments/rueckrufe", {
             target: "#rueckrufe-liste",
         });
     }
-    function feiertage() {
+    function reloadHolidays() {
         window.htmx.ajax("GET", "/gui/fragments/feiertage", {
             target: "#feiertage-liste",
         });
@@ -136,7 +136,7 @@ function detail(event) {
     // Safari auf dem Tablet schaltet Web Audio nur innerhalb einer Geste frei:
     // der Kontext entsteht deshalb im Tap, nicht erst beim ersten Rueckruf, und
     // ein stiller Puffer spielt einmal an. Ohne das bliebe das Tablet stumm.
-    function freischalten() {
+    function unlockSound() {
         if (!Ctx)
             return;
         if (!audio) {
@@ -148,23 +148,23 @@ function detail(event) {
         }
         if (audio.state === "suspended")
             audio.resume();
-        if (tonAn)
-            tonAn.hidden = true;
+        if (soundButton)
+            soundButton.hidden = true;
     }
     // Until the first tap the browser keeps the tone off (docs/06 §8): say so
     // and let one tap on the button end it (T-3.16).
-    const tonAn = document.getElementById("ton-an");
-    if (tonAn && Ctx)
-        tonAn.hidden = false;
-    document.addEventListener("touchstart", freischalten, { passive: true });
-    document.addEventListener("click", freischalten);
-    function ton(folge) {
+    const soundButton = document.getElementById("ton-an");
+    if (soundButton && Ctx)
+        soundButton.hidden = false;
+    document.addEventListener("touchstart", unlockSound, { passive: true });
+    document.addEventListener("click", unlockSound);
+    function playTone(notes) {
         // Noch kein Tap auf die Seite: kein Kontext, kein Ton (Browserregel).
         const ctx = audio;
         if (!ctx)
             return;
         const t = ctx.currentTime;
-        folge.forEach((hz, i) => {
+        notes.forEach((hz, i) => {
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
             osc.frequency.value = hz;
@@ -175,14 +175,15 @@ function detail(event) {
             osc.stop(t + i * 0.25 + 0.23);
         });
     }
-    // The cards of a list by their id. A plain object on purpose: its keys come
-    // back in the order the old script announced new cards in.
-    function karten(liste) {
+    // The cards of a list by their id, with their `attr`. A plain object on
+    // purpose: its keys come back in the order the old script announced new
+    // cards in.
+    function cardAttrs(listId, attr = "data-reason") {
         const ids = {};
-        document.querySelectorAll("#" + liste + " [data-id]").forEach((el) => {
+        document.querySelectorAll("#" + listId + " [data-id]").forEach((el) => {
             const id = el.getAttribute("data-id");
             if (id !== null)
-                ids[id] = el.getAttribute("data-reason");
+                ids[id] = el.getAttribute(attr);
         });
         return ids;
     }
@@ -199,17 +200,20 @@ function detail(event) {
         return ids;
     }
     // Was beim Laden schon da war, klingelt nicht.
-    let bekannt = karten("rueckrufe-liste");
-    let knownOrders = karten("bestellungen-liste");
+    let knownReasons = cardAttrs("rueckrufe-liste");
+    // The text of each callback card, as a version: an open order that joins a
+    // card changes it (#993), and the team must notice that as a new card (#998).
+    let knownVersions = cardAttrs("rueckrufe-liste", "data-version");
+    let knownOrders = cardAttrs("bestellungen-liste");
     let knownOverdue = overdueOrders();
-    function newIds(vorher, jetzt) {
-        return Object.keys(jetzt).filter((id) => !(id in vorher));
+    function newIds(before, nowCards) {
+        return Object.keys(nowCards).filter((id) => !(id in before));
     }
     document.body.addEventListener("htmx:afterSwap", (e) => {
         const target = detail(e).target;
-        const ziel = target instanceof Element ? target.id : null;
-        if (ziel === "bestellungen-liste") {
-            const currentOrders = karten("bestellungen-liste");
+        const targetId = target instanceof Element ? target.id : null;
+        if (targetId === "bestellungen-liste") {
+            const currentOrders = cardAttrs("bestellungen-liste");
             const newOrders = newIds(knownOrders, currentOrders);
             knownOrders = currentOrders;
             // A card that turned red since the last look: nobody has tapped "Passt",
@@ -218,7 +222,7 @@ function detail(event) {
             const turnedRed = newIds(knownOverdue, currentOverdue);
             knownOverdue = currentOverdue;
             if (turnedRed.length) {
-                ton([660, 440, 660, 440]);
+                playTone([660, 440, 660, 440]);
                 const red = document.querySelector('#bestellungen-liste [data-id="' + turnedRed[0] + '"]');
                 if (red)
                     red.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -232,7 +236,7 @@ function detail(event) {
             // niemand das Blinken. A card that turned red in the same redraw keeps
             // the sound and the view: the new cards still blink.
             if (!turnedRed.length)
-                ton([523, 659, 784]);
+                playTone([523, 659, 784]);
             newOrders.forEach((id, i) => {
                 const el = document.querySelector('#bestellungen-liste [data-id="' + id + '"]');
                 if (!el)
@@ -244,20 +248,36 @@ function detail(event) {
             });
             return;
         }
-        if (ziel !== "rueckrufe-liste")
+        if (targetId !== "rueckrufe-liste")
             return;
-        const jetzt = karten("rueckrufe-liste");
-        const neu = newIds(bekannt, jetzt);
-        bekannt = jetzt;
-        if (!neu.length)
+        const nowCards = cardAttrs("rueckrufe-liste");
+        const versions = cardAttrs("rueckrufe-liste", "data-version");
+        const added = newIds(knownReasons, nowCards);
+        // A card already seen whose text changed. An emptied one (the deletion
+        // job, an erasure) has no version and nothing new to read.
+        const changed = Object.keys(versions).filter((id) => id in knownVersions && knownVersions[id] !== versions[id] && versions[id] !== "");
+        // A card that became a complaint (one joined it, #998) alarms like a new one.
+        const complaints = added
+            .concat(changed)
+            .filter((id) => nowCards[id] === "complaint" && knownReasons[id] !== "complaint");
+        knownReasons = nowCards;
+        knownVersions = versions;
+        // A changed card blinks like a new order: nobody has read its new text.
+        changed.forEach((id) => {
+            const el = document.querySelector('#rueckrufe-liste [data-id="' + id + '"]');
+            if (el)
+                el.classList.add("neu");
+        });
+        if (!added.length && !changed.length)
             return;
-        const beschwerde = neu.some((id) => jetzt[id] === "complaint");
-        if (beschwerde) {
-            notifySheet("Neue Beschwerde · ansehen", '#rueckrufe-liste [data-id="' +
-                neu.filter((id) => jetzt[id] === "complaint")[0] +
-                '"]');
+        const isComplaint = complaints.length > 0;
+        if (isComplaint) {
+            notifySheet("Neue Beschwerde · ansehen", '#rueckrufe-liste [data-id="' + complaints[0] + '"]');
         }
-        ton(beschwerde ? [660, 440, 660, 440] : [880, 1175]);
+        else if (changed.length) {
+            notifySheet("Rückruf ergänzt · ansehen", '#rueckrufe-liste [data-id="' + changed[0] + '"]');
+        }
+        playTone(isComplaint ? [660, 440, 660, 440] : [880, 1175]);
     });
     function reloadOrders() {
         window.htmx.ajax("GET", "/gui/fragments/bestellungen", {
@@ -369,6 +389,13 @@ function detail(event) {
         if (typeof value === "string")
             showBoardNote(value, "ok", 6000);
     });
+    // An "Erledigt" on a card whose text changed since it was drawn closed
+    // nothing (#998): the board says why, until the next tap.
+    document.body.addEventListener("callback-notice", (e) => {
+        const value = detail(e).value;
+        if (typeof value === "string")
+            showBoardNote(value, "warn");
+    });
     // A table the team entered (T-3.12): the sheet closes, the board says so; the
     // column "Heute" follows on its own through the event stream.
     document.body.addEventListener("reservierung-eingetragen", (e) => {
@@ -441,8 +468,8 @@ function detail(event) {
         // Without the request to release, a "Ja" could do nothing: the red bar says
         // so, and nothing is sent.
         if (typeof issue !== "function" || !(elt instanceof Element)) {
-            if (stoerung)
-                stoerung.hidden = false;
+            if (outageBar)
+                outageBar.hidden = false;
             return;
         }
         const back = document.createElement("div");
@@ -649,64 +676,64 @@ function detail(event) {
         });
     }
     document.body.addEventListener("gerichte-geaendert", () => {
-        kopfzeile();
+        reloadHeader();
     });
     document.body.addEventListener("bestellungen-geaendert", () => {
         closeCorrection();
         reloadOrders();
     });
-    const strom = new EventSource("/gui/events");
+    const stream = new EventSource("/gui/events");
     // Laedt auch, waehrend jemand korrigiert: der Kasten liegt ausserhalb der
     // Liste und bleibt stehen (Design-Review T-4.7).
-    strom.addEventListener("orders", () => {
+    stream.addEventListener("orders", () => {
         offline(false);
         reloadOrders();
     });
-    strom.addEventListener("callbacks", () => {
+    stream.addEventListener("callbacks", () => {
         offline(false);
-        rueckrufe();
+        reloadCallbacks();
     });
     // Umgeschaltet an einem anderen Tablet oder direkt in der Datenbank: jedes
     // Geraet zeigt denselben Stand.
-    strom.addEventListener("header", () => {
+    stream.addEventListener("header", () => {
         offline(false);
-        kopfzeile();
+        reloadHeader();
     });
     // Another tablet switched a dish, or a switch ran out in the morning: the
     // tile shows it. An open list is not redrawn (a dish would slide away under
     // the finger); every button sets a state, so a stale row does no harm, and
     // the list is fresh the next time the sheet opens.
-    strom.addEventListener("dishes", () => {
+    stream.addEventListener("dishes", () => {
         offline(false);
-        kopfzeile();
+        reloadHeader();
     });
     // The job wrote a suggestion, or another tablet answered one (#207).
-    strom.addEventListener("holidays", () => {
+    stream.addEventListener("holidays", () => {
         offline(false);
-        feiertage();
+        reloadHolidays();
     });
     // The price check found a difference, or another tablet answered one (T-4.9).
-    strom.addEventListener("prices", () => {
+    stream.addEventListener("prices", () => {
         offline(false);
         reloadPrices();
     });
     // The staff changed a team number or a date's hours, or the owner decided
     // a card on another tablet (#570 b).
-    strom.addEventListener("checks", () => {
+    stream.addEventListener("checks", () => {
         offline(false);
         reloadChecks();
     });
-    strom.addEventListener("today", () => {
+    stream.addEventListener("today", () => {
         offline(false);
-        nachladen();
+        reloadAll();
     });
-    strom.addEventListener("problem", () => {
+    stream.addEventListener("problem", () => {
         offline(true);
     });
-    strom.onopen = () => {
+    stream.onopen = () => {
         offline(false);
     };
-    // Der Browser verbindet nach dem Abbruch von selbst neu (retry im Strom).
+    // The browser reconnects by itself after a drop (retry in the stream).
     // Not after an answer that is no stream: a 401 once the device is signed out
     // (#570) or an error page of the proxy. Then a small request asks every 15
     // seconds: signed out goes to the sign-in, a server that answers again
@@ -722,9 +749,9 @@ function detail(event) {
                 setTimeout(probe, 15000);
         }, () => { setTimeout(probe, 15000); });
     }
-    strom.onerror = () => {
+    stream.onerror = () => {
         offline(true);
-        if (strom.readyState === EventSource.CLOSED)
+        if (stream.readyState === EventSource.CLOSED)
             setTimeout(probe, 15000);
     };
 })();

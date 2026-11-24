@@ -858,3 +858,40 @@ def test_a_failing_read_of_the_notes_costs_the_marker_never_the_card(
     assert task is not None
     assert task.summary == f"{SUMMARY_MISSED} Anliegen nicht bekannt."
     assert len(cards(session, call.id)) == 1
+
+
+def test_a_missed_leg_brings_the_open_order_onto_the_card_of_the_call(
+    session, tenant_id
+):
+    """#998 no. 1: the core wrote a card earlier in the call, and the card of
+    the handover names an order unplaced. Nobody answers the team leg: the
+    open card gets the order, never a second card, and keeps its reason."""
+    call = make_call(session, tenant_id, transfer_reason="human_requested")
+    order = "Offene Bestellung, nicht aufgegeben: 2x 23 Pizza Margherita."
+    earlier = create_callback(
+        session,
+        CreateCallbackRequest(
+            call_id=call.id,
+            tenant_id=tenant_id,
+            phone=CALLER,
+            reason="complaint",
+            summary="Kunde hat sich beschwert.",
+        ),
+        now=STARTED,
+    )
+
+    task = team_missed(
+        session,
+        tenant_id,
+        "1760000000.1",
+        summary=f"Kunde wollte mit einem Menschen sprechen. {order}",
+        now=REPORTED,
+    )
+
+    assert task is not None and task.callback_id == earlier.callback_id
+    assert task.reason == "complaint"
+    assert task.summary == (
+        f"Kunde hat sich beschwert. {SUMMARY_MISSED} "
+        f"Kunde wollte mit einem Menschen sprechen. {order}"
+    )
+    assert len(cards(session, call.id)) == 1

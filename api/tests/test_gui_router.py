@@ -1,5 +1,7 @@
 """gui/router: Betriebsansicht, HTMX-Fragment, eigene Dateien, Zustand ohne Mandant."""
 
+import json
+import re
 import uuid
 from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
@@ -941,14 +943,61 @@ def test_beschwerde_steht_oben(client, engine, tenant_id):
     assert body.index("Spaete Beschwerde") < body.index("Erster normaler")
 
 
+def seen_version(client, cb_id) -> dict[str, str]:
+    """The version of the card the tablet shows, as its Erledigt button sends it."""
+    body = client.get("/gui/fragments/rueckrufe").text
+    found = re.search(rf'data-id="{cb_id}"[^>]*data-version="(\w+)"', body)
+    assert found, body
+    assert f'"gesehen": "{found.group(1)}"' in body
+    return {"gesehen": found.group(1)}
+
+
 def test_erledigt_nimmt_die_karte_weg(client, engine, tenant_id):
     cb_id = rueckruf(engine, tenant_id, summary="Weg damit")
 
-    response = client.post(f"/gui/rueckrufe/{cb_id}/erledigt", headers=HX)
+    response = client.post(
+        f"/gui/rueckrufe/{cb_id}/erledigt", headers=HX, data=seen_version(client, cb_id)
+    )
 
     assert response.status_code == 200
     assert "Weg damit" not in response.text
     assert "Keine R&uuml;ckrufe offen." in response.text
+    assert "HX-Trigger" not in response.headers
+
+
+def test_a_tap_on_a_changed_card_closes_nothing(client, engine, tenant_id):
+    """#998 no. 4: an open order joined the card after the tablet drew it.
+    The tap on the old view closes nothing: the fresh card comes back with a
+    line that says so, and the next tap on it closes it."""
+    from api.models import Callback
+
+    cb_id = rueckruf(engine, tenant_id, summary="Gast will X.")
+    seen = seen_version(client, cb_id)
+    with Session(engine) as s:
+        s.get_one(Callback, cb_id).summary = "Gast will X. Offene Bestellung: 2x 23."
+        s.commit()
+
+    stale = client.post(f"/gui/rueckrufe/{cb_id}/erledigt", headers=HX, data=seen)
+    fresh = client.post(
+        f"/gui/rueckrufe/{cb_id}/erledigt", headers=HX, data=seen_version(client, cb_id)
+    )
+
+    assert stale.status_code == 200
+    assert "Offene Bestellung: 2x 23." in stale.text
+    notice = json.loads(stale.headers["HX-Trigger"])["callback-notice"]
+    assert notice == "Die Karte hat sich gerade geändert. Bitte noch einmal prüfen."
+    assert "Keine R&uuml;ckrufe offen." in fresh.text
+
+
+def test_erledigt_without_a_version_closes_nothing(client, engine, tenant_id):
+    """A button drawn before #998 sends no version: it closes nothing, and the
+    fresh card carries one."""
+    cb_id = rueckruf(engine, tenant_id, summary="Bleibt offen")
+
+    response = client.post(f"/gui/rueckrufe/{cb_id}/erledigt", headers=HX)
+
+    assert "Bleibt offen" in response.text
+    assert "callback-notice" in response.headers["HX-Trigger"]
 
 
 def test_erledigt_ohne_hx_request_verboten(client, engine, tenant_id):
@@ -991,11 +1040,11 @@ def test_ton_wird_im_tap_freigeschaltet():
     js = (Path(__file__).resolve().parents[1] / "gui" / "static" / "app.js").read_text(
         encoding="utf-8"
     )
-    handler = js.split("function freischalten()")[1].split("\n    }\n")[0]
+    handler = js.split("function unlockSound()")[1].split("\n    }\n")[0]
 
     assert "new Ctx()" in handler and "resume()" in handler
-    assert 'addEventListener("touchstart", freischalten' in js
-    assert 'addEventListener("click", freischalten' in js
+    assert 'addEventListener("touchstart", unlockSound' in js
+    assert 'addEventListener("click", unlockSound' in js
 
 
 def test_spalten_zeigen_ihre_anzahl(client, engine, tenant_id):
@@ -1273,7 +1322,7 @@ def test_the_page_reloads_the_holiday_list_on_its_event():
         encoding="utf-8"
     )
 
-    assert 'strom.addEventListener("holidays"' in js
+    assert 'stream.addEventListener("holidays"' in js
     assert '"/gui/fragments/feiertage"' in js
     assert 'target: "#feiertage-liste"' in js
 

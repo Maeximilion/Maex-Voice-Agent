@@ -51,20 +51,16 @@ fi
 # same; this is for the calls that reach the team without it.
 # In every form the dialplan's loop guard knows: +49..., 0049... and 0..., and
 # as international digits without a prefix, which an access may dial too
-# (Codex on PR #340): the forms are compared without their "+".
-e164() {
+# (Codex on PR #340): the forms are compared as those bare digits.
+digits() {
     case "$1" in
-        +*) printf '%s' "$1" ;;
-        00*) printf '+%s' "${1#00}" ;;
-        0*) printf '+49%s' "${1#0}" ;;
+        +*) printf '%s' "${1#+}" ;;
+        00*) printf '%s' "${1#00}" ;;
+        0*) printf '49%s' "${1#0}" ;;
         *) printf '%s' "$1" ;;
     esac
 }
-same() {
-    a=$(e164 "$1")
-    b=$(e164 "$2")
-    [ "${a#+}" = "${b#+}" ]
-}
+same() { [ "$(digits "$1")" = "$(digits "$2")" ]; }
 if same "$TEAM_PHONE" "$VOICE_NUMBER"; then
     echo "asterisk does not start: TEAM_PHONE is the AI telephone's own number" >&2
     exit 1
