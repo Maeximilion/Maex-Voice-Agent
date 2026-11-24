@@ -21,7 +21,11 @@ import pytest
 
 from api.tests.test_scripts_backup import BASH
 
-HOOK = Path(__file__).resolve().parents[2] / ".claude" / "hooks" / "sync_main.sh"
+REPO = Path(__file__).resolve().parents[2]
+HOOK = REPO / ".claude" / "hooks" / "sync_main.sh"
+CODEX_HOOK = REPO / ".codex" / "hooks" / "sync_main.sh"
+# The user-level hook of docs/19 section 4, which `~/.claude/hooks/sync-main.sh` copies.
+USER_HOOK = REPO / "scripts" / "claude_user_hooks" / "sync-main.sh"
 
 
 @pytest.fixture
@@ -113,6 +117,27 @@ def repos(tmp_path, request):
         assert done.returncode == 0, done.stderr
         return done.stdout.strip()
 
+    def run_user_hook() -> str:
+        """The user-level copy as its SessionStart entry calls it, from the
+        feature worktree. Empty input: no `source`, so it does not yield to the
+        project hook the feature worktree holds."""
+        assert BASH is not None  # checked at the top of this fixture
+        if not shutil.which("jq"):
+            if os.environ.get("CI"):
+                pytest.fail("the user-level sync hook needs jq")
+            pytest.skip("the user-level sync hook needs jq")
+        done = subprocess.run(
+            [BASH, USER_HOOK.as_posix(), "--always"],
+            cwd=feature,
+            env=env,
+            input="",
+            capture_output=True,
+            encoding="utf-8",
+            timeout=60,
+        )
+        assert done.returncode == 0, done.stderr
+        return done.stdout.strip()
+
     def commits_behind() -> int:
         return int(git(main_checkout, "rev-list", "--count", "main..origin/main"))
 
@@ -150,6 +175,7 @@ def repos(tmp_path, request):
         main_checkout=main_checkout,
         land_on_origin=land_on_origin,
         run_hook=run_hook,
+        run_user_hook=run_user_hook,
         commits_behind=commits_behind,
     )
 
@@ -586,3 +612,78 @@ def test_the_switch_back_to_main_does_not_overwrite_an_ignored_file(repos):
     assert repos.git(repos.main_checkout, "branch", "--show-current") == "finished"
     assert local.read_text(encoding="utf-8") == "local secret\n"
     assert "would overwrite the ignored files .env" in output
+
+
+def commit_on_local_main(repos) -> str:
+    """A commit on the main folder's main that never reached origin."""
+    (repos.main_checkout / "local.txt").write_text("local\n", encoding="utf-8")
+    repos.git(repos.main_checkout, "add", "local.txt")
+    repos.git(repos.main_checkout, "commit", "-q", "-m", "local only")
+    return repos.git(repos.main_checkout, "rev-parse", "main")
+
+
+def test_a_clean_main_ahead_of_origin_is_reported_and_left_alone(repos):
+    # Codex PR #278: with nothing to fetch the fast-forward says "already up to date",
+    # and a task branched from that main carries commits nobody has published.
+    local = commit_on_local_main(repos)
+
+    output = repos.run_hook()
+
+    assert "main in" in output and repos.main_checkout.name in output
+    assert "has 1 commits origin/main lacks" in output
+    assert repos.git(repos.main_checkout, "rev-parse", "main") == local
+
+
+def test_a_main_ahead_of_origin_is_reported_once_for_claude_code(repos):
+    commit_on_local_main(repos)
+
+    sent = json.loads(repos.run_hook("--json"))
+
+    assert "has 1 commits origin/main lacks" in sent["systemMessage"]
+    assert "behind" not in sent["systemMessage"]
+
+
+def test_a_main_ahead_of_origin_checked_out_nowhere_is_reported(repos):
+    local = commit_on_local_main(repos)
+    repos.git(repos.main_checkout, "switch", "-q", "-c", "ongoing")
+
+    assert "local main has commits origin/main lacks" in repos.run_hook()
+    assert repos.git(repos.main_checkout, "rev-parse", "main") == local
+
+
+def test_the_codex_copy_is_the_claude_hook():
+    # Two copies, one behaviour: the tests above run the Claude one only.
+    assert CODEX_HOOK.read_bytes() == HOOK.read_bytes()
+
+
+def test_the_user_level_hook_fast_forwards_a_clean_main(repos):
+    repos.land_on_origin("second")
+
+    assert repos.run_user_hook() == ""
+    assert repos.commits_behind() == 0
+
+
+def test_the_user_level_hook_does_not_overwrite_an_ignored_file(repos):
+    # Audit of 15.10.2026, rank 1: the project hook checks this, the user-level copy
+    # fast-forwarded over a local .env once origin tracked one.
+    local = ignore_locally(repos, ".env", "local secret\n")
+    track_on_origin(repos, ".env", "znew.txt")
+
+    sent = json.loads(repos.run_user_hook())
+
+    assert local.read_text(encoding="utf-8") == "local secret\n"
+    assert repos.commits_behind() == 1
+    shown = sent["systemMessage"]
+    assert "would overwrite the ignored files .env" in shown
+    assert "znew.txt" not in shown and "local secret" not in shown
+    assert sent["hookSpecificOutput"]["hookEventName"] == "SessionStart"
+
+
+def test_the_user_level_hook_still_names_uncommitted_files(repos):
+    repos.land_on_origin("second")
+    (repos.main_checkout / "tracked.txt").write_text("local edit\n", encoding="utf-8")
+
+    sent = json.loads(repos.run_user_hook())
+
+    assert "uncommitted files: M tracked.txt" in sent["systemMessage"]
+    assert repos.commits_behind() == 1
