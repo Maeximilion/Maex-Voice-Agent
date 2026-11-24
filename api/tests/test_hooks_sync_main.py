@@ -21,11 +21,11 @@ import pytest
 
 from api.tests.test_scripts_backup import BASH
 
-REPO = Path(__file__).resolve().parents[2]
-HOOK = REPO / ".claude" / "hooks" / "sync_main.sh"
-CODEX_HOOK = REPO / ".codex" / "hooks" / "sync_main.sh"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+HOOK = REPO_ROOT / ".claude" / "hooks" / "sync_main.sh"
+CODEX_HOOK = REPO_ROOT / ".codex" / "hooks" / "sync_main.sh"
 # The user-level hook of docs/19 section 4, which `~/.claude/hooks/sync-main.sh` copies.
-USER_HOOK = REPO / "scripts" / "claude_user_hooks" / "sync-main.sh"
+USER_HOOK = REPO_ROOT / "scripts" / "claude_user_hooks" / "sync-main.sh"
 
 
 @pytest.fixture
