@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.35
+> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.36
 
 ---
 
@@ -147,6 +147,7 @@ Settled assumptions: `docs/HISTORY.md` sections "Made Assumptions (archive)" and
 
 | Date | What |
 |---|---|
+| 24.11.2026 | **#977 point 2: a plain decline without a cancel word after the stated time cancels the order** (Maxi's decision of 24.11.2026). "Nein danke, dann lasse ich es", "Vergessen Sie es, tschüss" or "Dann doch nicht" to the read-back heard last drops the draft with `loop.SAY_ORDER_DROPPED`, as a plain "stornieren" does, so the hang-up writes no callback card (`escalation.only_declines`, `agent/loop.py`). Kept as before: a bare "Nein" (it may say the read-back is wrong), "Lassen Sie es so", a dish left out, a question, and any decline after another question such as "Noch etwas?" or an allergy question. Eval `abholung_0096`. |
 | 24.11.2026 | **#952 and #953: a dropped order draft is never replayed, and a call that ends while an order waits for its yes leaves a callback card.** #952: the draft key comes from the tool arguments, so the same dishes ordered again after a cancel replayed the dropped draft with its old time and without a new check of hours and sold-out dishes; the agent now passes the order it holds for a yes (`dispatch(pending_order=...)`), and `_stored_under` walks past a draft of the call that is not that one (also after a side question or a correction); the HTTP tool replays as before. #953: a "Danke" alone stays no yes (Maxi, 23.11.2026), and a call that ends while an order waits for its yes writes a callback card with the open order (Maxi, 24.11.2026: "a hang-up while the read-back waits for its yes writes a callback card"; `loop.offer_unanswered`, `SUMMARY_READBACK_UNANSWERED`); not for a table ("Passt das so?", `reservierung_0032`) and not when an outage or a failed line takes the call to the team; a database error on that card never costs the call log. Deep review (`/code-review max`): 14 findings, 6 fixed (card guard, line tests, eval `abholung_0095`, allergy-marker test, docs 04/05/08), the edges filed as #977. Evals equal main case by case plus the new case. |
 | 24.11.2026 | **#775: the AI telephone runs its own Asterisk 22.12.0, built from the official source (Maxi's decision of 23.11.2026, the vendor has no 22.12 image).** `deploy/asterisk/image/`: the tarball pinned by sha256 (signature checked), the bundled pjproject by sha256, Alpine 3.24 by digest, and Alpine's five musl patches of its own asterisk package; `docker compose up` builds it, never pulls it. Measured: the product's media `Dial` against a refusing, an unresolvable and a frozen `voice` killed 22.11.0 with a segmentation fault at the first or second failure (Asterisk issue #2121) and left 22.12.0 up, every Dial `CHANUNAVAIL`, the next call running; the outage drills 58 of 58. The CI job `asterisk-image` builds it and runs that check (`scripts/asterisk_image_check.sh`) whenever the recipe or the dialplan changes. The `/media/ready` probe of #768 stays: it rings the team about 2 s sooner when `voice` is down. |
 | 23.11.2026 | **Operator sign-in: once the account has a passkey, a code is no fresh factor (Maxi's decision of 23.11.2026 on #946's open choice).** A TOTP code or a recovery code still signs in, but `access.sign_in` leaves `stepped_up_at` empty for such a session when the account has a passkey, so no dangerous action (a customer's PINs or call list, a manage step, the dev tools' call log, a factor change) opens before a passkey step-up; `/step-up` offers the passkey alone and `access.step_up` refuses a code with `PasskeyNeeded`, neither counted nor audited. An account without a passkey keeps TOTP as its full way in; an operator who lost every passkey goes through the break glass. No migration (`stepped_up_at` was nullable). docs/23 section 5 updated; six older tests that relied on a TOTP step-up of a passkey account now expect the refusal. |
@@ -178,6 +179,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.36 · 24.11.2026:** #977 point 2: a plain decline without a cancel word after the stated time drops the order, and the hang-up writes no card
 - **v2.69.35 · 24.11.2026:** #956: the card of a team leg nobody answered keeps the kitchen marker after a voice failure mid-call
 - **v2.69.34 · 24.11.2026:** #952 and #953: a dropped order draft is never replayed, and a call that ends while an order waits for its yes leaves a callback card
 - **v2.69.33 · 24.11.2026:** chain: a paused session gets no message in super slow, news waits in a note file

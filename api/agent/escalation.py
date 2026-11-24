@@ -404,15 +404,19 @@ _SO_LONG = re.compile(r"\bach so\b|\bso(?= lange?\b)")
 # ("Lassen Sie die Zwiebeln weg") or ask for more ("Lassen Sie es liefern").
 # shortcut: closed lists like `_PLAIN_CANCEL`, add a form when the call log
 # shows a plain decline they miss.
-_PLAIN_DECLINE = (_PLAIN_CANCEL - {"so"}) | {"wir", "auf", "bis"} | {
-    "tschüss",
-    "tschüs",
-    "tschuess",
-    "ciao",
-    "wiederhören",
-    "wiederhoeren",
-    "wiedersehen",
-}
+_PLAIN_DECLINE = (
+    (_PLAIN_CANCEL - {"so"})
+    | {"wir", "auf", "bis"}
+    | {
+        "tschüss",
+        "tschüs",
+        "tschuess",
+        "ciao",
+        "wiederhören",
+        "wiederhoeren",
+        "wiedersehen",
+    }
+)
 
 
 def only_declines(text: str) -> bool:

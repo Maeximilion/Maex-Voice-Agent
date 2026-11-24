@@ -760,9 +760,7 @@ def test_a_no_or_a_change_after_the_stated_time_keeps_the_order(
 @pytest.mark.parametrize(
     "question", ["Darf es sonst noch etwas sein?", "Hat jemand eine Allergie?"]
 )
-def test_a_decline_to_another_question_keeps_the_order(
-    session, state, order, question
-):
+def test_a_decline_to_another_question_keeps_the_order(session, state, order, question):
     """ "Nein danke, dann lasse ich es" to a question the model asked after
     the read-back ("Noch etwas?", an allergy question) answers that question,
     not the order, which stays."""
