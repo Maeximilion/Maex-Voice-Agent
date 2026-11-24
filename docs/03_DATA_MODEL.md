@@ -235,6 +235,8 @@ Ein Eintrag je Anruf. Grundlage für KPIs und Kostenkontrolle.
 | status | TEXT | `open` / `done` |
 | done_by / done_at | TEXT / TIMESTAMPTZ | |
 
+At most one open card per call: the partial unique index `uq_callbacks_open_per_call` on (tenant, call) where `status = 'open'` and `deleted_at` is empty (migration 047, #981), behind the call's advisory lock of `create_callback` (docs/04).
+
 A callback the core writes on a handover quotes the guest's sentence in `summary`, except a sentence that names an allergy: that is health data the caller agreed to at most as a kitchen note (L13, T-11.1). A question about allergens beyond the maintained values gets the card "Frage zu Allergenen über die hinterlegten Angaben hinaus, vor einer Bestellung zu klären." with the dish and an unplaced order, reason `out_of_scope` (L17). A remedy of `complaint_rules` the guest said yes to is booked as a card of reason `complaint` with the rule's name and amount (T-10.11).
 
 ### `complaint_rules`
@@ -650,6 +652,7 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 044 | `reservations.replayed_at` (TIMESTAMPTZ, empty for every existing row) and index `ix_reservations_call_id` for the seat count's newest-row check (#908): the index took 80 drafts of one call at 144,000 rows from 701 ms to about 3.5 ms; up and down change no row, down drops the column with what it holds |
 | 045 | The callback reason `order_open` (CHECK `ck_callbacks_reason` widened, #977): the cards written so far with the fixed read-back sentence move to it; the downgrade gives them back as `not_understood` |
 | 046 | Partial index `ix_outbox_tenant_order` on (tenant, `payload->>'order_id'`) where that key is set (#980), for the tickets of one order (`send_ticket`, `last_reason`, the newest revision on the print bridge's claim and ack): at 60,000 outbox rows the newest-revision lookup went from a 7.9 ms sequential scan to 0.07 ms; up and down change no row |
+| 047 | Partial unique index `uq_callbacks_open_per_call` on (tenant, call) where `status = 'open'` and not deleted (#981). Before it, a second or later open card of a call (the oldest by `created_at` stays open) is closed as done by `migration:047` with the time of the migration, under a SHARE lock of `callbacks`; the downgrade drops the index and opens exactly those again. The workbench copy (24.11.2026, 3 open cards) had none |
 | planned, next free number | `eval_cases`, `eval_runs` |
 
 ### Operator database (#571, docs/23 §5)

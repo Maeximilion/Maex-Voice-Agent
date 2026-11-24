@@ -1,5 +1,6 @@
 """GUI: the history sheet of done callbacks and "Wieder öffnen" (T-3.15, #516)."""
 
+import json
 import re
 import uuid
 from datetime import date, timedelta
@@ -11,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from api.core.time import utcnow
 from api.db import get_db
-from api.domain.callbacks.board import HISTORY_DAYS
+from api.domain.callbacks.board import CALL_HAS_AN_OPEN_CARD, HISTORY_DAYS
 from api.main import app
 from api.models import AuditLog, Call, Callback
 from scripts.seed import seed
@@ -204,3 +205,30 @@ def test_an_unknown_callback_is_no_error(client, tenant_id):
 def test_reopening_needs_the_operations_view(client, engine, tenant_id):
     cb_id = done_callback(engine, tenant_id)
     assert client.post(f"/gui/rueckrufe/{cb_id}/wieder-offen").status_code == 403
+
+
+def test_reopening_next_to_an_open_card_of_its_call_says_why(client, engine, tenant_id):
+    """One open card per call (#981): the done card stays in the history and
+    the board says where the open one is."""
+    cb_id = done_callback(engine, tenant_id)
+    with Session(engine) as s:
+        done = s.get(Callback, cb_id)
+        s.add(
+            Callback(
+                tenant_id=tenant_id,
+                call_id=done.call_id,
+                phone=PHONE,
+                reason="not_understood",
+                summary="Die neuere Karte.",
+            )
+        )
+        s.commit()
+
+    response = client.post(f"/gui/rueckrufe/{cb_id}/wieder-offen", headers=HX)
+
+    assert response.status_code == 200
+    notice = json.loads(response.headers["HX-Trigger"])["callback-notice"]
+    assert notice == CALL_HAS_AN_OPEN_CARD
+    assert "schon eine Karte offen" in notice
+    with Session(engine) as s:
+        assert s.get(Callback, cb_id).status == "done"

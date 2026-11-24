@@ -76,6 +76,14 @@ class Callback(UUIDPrimaryKey, TenantScoped, Timestamps, SoftDelete, Base):
         _in("reason", CALLBACK_REASONS, "ck_callbacks_reason"),
         _in("status", CALLBACK_STATUSES, "ck_callbacks_status"),
         Index("ix_callbacks_tenant_status", "tenant_id", "status"),
+        # One open card per call (#981, migration 047), behind the call's lock.
+        Index(
+            "uq_callbacks_open_per_call",
+            "tenant_id",
+            "call_id",
+            unique=True,
+            postgresql_where=text("status = 'open' AND deleted_at IS NULL"),
+        ),
     )
 
     call_id: Mapped[uuid.UUID] = mapped_column(

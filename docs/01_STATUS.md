@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.62
+> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.63
 
 ---
 
@@ -147,6 +147,7 @@ Settled assumptions: `docs/HISTORY.md` sections "Made Assumptions (archive)" and
 
 | Date | What |
 |---|---|
+| 24.11.2026 | **#981: one open callback per call, also in the database.** Migration 047 adds the partial unique index `uq_callbacks_open_per_call` (tenant, call; open and not deleted) behind the call's advisory lock. `create_callback` answers a conflict on it as the same replay a second call gets (docs/04); "Wieder öffnen" on a done card whose call has a newer open card is refused with a line on the board, the one path that could make a second open card before. Old duplicates: the oldest open card stays, the others are closed as done by `migration:047`, and the downgrade opens them again; the workbench copy had none. **Workbench:** backup, `make migrate` (044 to 047), restart `api`, `dispatcher` and `voice` (docs/13 §4). | Done |
 | 24.11.2026 | **#74 (T-9.4): uptime check of `/health` from another machine.** `scripts/uptime_check.py` runs one pass a minute from cron (`deploy/uptime.cron`), standard library only, no account: after 3 failed passes in a row one push "Server not answering" to `ops`, one "Server answering again" on recovery, a failed push is tried again on the next pass. Checked end to end against the push server 2.37.2. Open for Maxi (docs/13 §5): which machine checks the server once it exists, and which push server the phone reads while the server is down. |
 | 24.11.2026 | **#980: an index for the tickets of one order.** Migration 046 adds the partial index `ix_outbox_tenant_order` on (tenant, `payload->>'order_id'`) where the key is set. `send_ticket`, `last_reason` and the newest revision on every claim and ack of the print bridge read it instead of every outbox row of the tenant (0.07 ms instead of 7.9 ms at 60,000 rows). Up and down tested, no row changes. **Workbench:** backup, `make migrate`, restart `api` and `dispatcher` (docs/13 §4). | Done |
 | 24.11.2026 | **#984: restore keeps owners and grants, and the client container reaches a loopback-only port.** `scripts/restore.sh` restores a dump with its owners and grants and carries the settings of the replaced database over; on a server without the roles of the dump it stops with nothing changed and names `db_role.sh` and the new `--without-owners`. `pg_resolve_client` (`scripts/lib_pg.sh`) puts the client container on the host network on Linux with a native Docker engine, so the dev stack's 127.0.0.1-only Postgres is reachable without `BACKUP_DOCKER_NETWORK`; Docker Desktop keeps `host.docker.internal`. Both docs/24 rows closed. | Done |
@@ -187,6 +188,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.63 · 24.11.2026:** #981: migration 047, one open callback per call as a partial unique index; a conflict is a replay, reopening next to an open card of the call is refused
 - **v2.69.62 · 24.11.2026:** #1003: an allergy said into a protected sentence reaches the core; into a read-back the draft is read out again with the note before the yes
 - **v2.69.61 · 24.11.2026:** #987: card numbers are said with the prefix in capitals (S12, SM1), the trailing letter as stored
 - **v2.69.60 · 24.11.2026:** #74 (T-9.4): uptime check of /health from another machine, scripts/uptime_check.py from cron, one push on down and one on recovery

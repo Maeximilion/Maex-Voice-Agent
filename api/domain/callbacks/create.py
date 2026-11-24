@@ -11,6 +11,7 @@ from typing import cast
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from api.core.errors import SAY_ON_FAILURE, InvalidInput, NotFound
@@ -62,6 +63,8 @@ SUMMARY_OPEN_ORDER = "Offene Bestellung, nicht aufgegeben:"
 SUMMARY_NOTE_TO_CLEAR = "Hinweis für die Küche mit dem Gast klären"
 _MARKER = f"{SUMMARY_NOTE_TO_CLEAR}."
 COMPLAINT = "complaint"
+# The partial unique index of migration 047: one open card per call (#981).
+OPEN_PER_CALL = "uq_callbacks_open_per_call"
 # How each line `booked` writes begins: only a tail of such lines is the
 # database's own, read again when an order joins a card (#993 review).
 _BOOKED_LINES = tuple(
@@ -95,12 +98,8 @@ def create_callback(
     _lock_call(session, req.tenant_id, req.call_id)
     open_task = _open_for_call(session, req)
     if open_task is not None:
-        # Only a card that names an open order changes the open one; any
-        # other comes back as the card it was, a model's retry too (docs/04).
-        if req.reason == ORDER_OPEN or SUMMARY_OPEN_ORDER in summary:
-            _add_open_order(session, open_task, summary, actor, req.reason)
-        session.commit()
-        return _task(open_task)
+        return _replay(session, open_task, req, summary, actor)
+    said = summary
     summary = _with_bookings(summary, booked(session, req.tenant_id, req.call_id))
 
     callback = Callback(
@@ -112,8 +111,19 @@ def create_callback(
         status="open",
         created_at=now,
     )
-    session.add(callback)
-    session.flush()
+    try:
+        with session.begin_nested():
+            session.add(callback)
+            session.flush()
+    except IntegrityError as exc:
+        # The index behind the lock (#981): a writer that did not take the
+        # lock put its card in first. That card is the call's card.
+        if OPEN_PER_CALL not in str(exc.orig):
+            raise
+        open_task = _open_for_call(session, req)
+        if open_task is None:
+            raise
+        return _replay(session, open_task, req, said, actor)
     note_contact(session, req.tenant_id, req.call_id, phone, now)
 
     session.add(
@@ -141,6 +151,22 @@ def create_callback(
     )
     session.commit()
     return _task(callback)
+
+
+def _replay(
+    session: Session,
+    open_task: Callback,
+    req: CreateCallbackRequest,
+    summary: str,
+    actor: str,
+) -> CallbackTask:
+    """The call's open card, as a second request gets it. Only a card that
+    names an open order changes the open one; any other comes back as the
+    card it was, a model's retry too (docs/04)."""
+    if req.reason == ORDER_OPEN or SUMMARY_OPEN_ORDER in summary:
+        _add_open_order(session, open_task, summary, actor, req.reason)
+    session.commit()
+    return _task(open_task)
 
 
 def booked(session: Session, tenant_id: uuid.UUID, call_id: uuid.UUID) -> str | None:
@@ -302,8 +328,9 @@ def _lock_call(session: Session, tenant_id: uuid.UUID, call_id: uuid.UUID) -> No
     - wer einen Rückruf anlegt, haelt vorher diese Sperre fuer denselben Anruf,
     - die Datenbank faehrt READ COMMITTED (api/db.py), sonst sieht der Wartende
       den fremden Commit nicht und legt trotzdem ein zweites Mal an.
-    Ein partieller Unique-Index waere der haertere Riegel; er kommt, sobald es
-    einen zweiten Schreibpfad gibt (siehe docs/01_STATUS.md, Offene Punkte).
+    Behind it stands the partial unique index `uq_callbacks_open_per_call`
+    (migration 047, #981): a writer without this lock meets it at the insert,
+    and `create_callback` answers that conflict as a replay.
     """
     session.execute(
         text("SELECT pg_advisory_xact_lock(hashtext(:key)::bigint)"),

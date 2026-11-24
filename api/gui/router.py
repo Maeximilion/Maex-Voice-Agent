@@ -716,12 +716,19 @@ def callback_reopen(
     tenant = _tenant(session)
     if tenant is None:
         raise HTTPException(status_code=503)
+    notice = None
     try:
         reopen(session, tenant.id, callback_id)
     except AppError as exc:
         session.rollback()
         logger.info("Rueckruf nicht wieder geoeffnet: %s", exc.message)
-    return _history_sheet(request, session, tenant)
+        if exc.code == "conflict":
+            # The call has another open card (#981): say so on the board.
+            notice = exc.say
+    response = _history_sheet(request, session, tenant)
+    if notice:
+        response.headers["HX-Trigger"] = json.dumps({"callback-notice": notice})
+    return response
 
 
 # --- Holiday suggestions (T-9.5) -----------------------------------------------------
