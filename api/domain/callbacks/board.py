@@ -77,14 +77,17 @@ def list_open(session: Session, tenant_id: uuid.UUID) -> list[OpenCallback]:
 def open_change_token(session: Session, tenant_id: uuid.UUID) -> str:
     """Fingerabdruck der offenen Rückrufe für den Ereignisstrom (gui/sse.py).
 
-    Über die Menge der offenen ids, nicht über updated_at: das setzt nur das
+    Über die Menge der offenen ids und ihren Text, nicht über updated_at: das setzt nur das
     ORM, ein rohes UPDATE in der Datenbank bliebe sonst auf den Tablets
     unsichtbar (Befund Codex PR #111 an der Kopfzeile).
     """
     # The id, and whether the deletion job emptied the card (T-11.2): it clears
-    # number and summary without changing the set of ids (Codex PR #371).
+    # number and summary without changing the set of ids (Codex PR #371), and
+    # its text, which an open order joins (#993).
     ids = func.concat(
-        cast(Callback.id, Text), case((Callback.phone == "", ":gone"), else_="")
+        cast(Callback.id, Text),
+        case((Callback.phone == "", ":gone"), else_=""),
+        func.md5(Callback.summary),
     )
     count, digest = session.execute(
         select(

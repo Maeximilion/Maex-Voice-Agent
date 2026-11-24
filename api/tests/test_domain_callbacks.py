@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from api.core.errors import InvalidInput, NotFound
 from api.domain.callbacks import create_callback
 from api.domain.callbacks.create import _lock_call
-from api.models import AuditLog, Call, Callback, OutboxEvent
+from api.models import AuditLog, Call, Callback, OutboxEvent, Reservation
 from api.schemas.callbacks import CallbackTask, CreateCallbackRequest
 from scripts.seed import seed
 
@@ -114,6 +114,102 @@ def test_zweiter_aufruf_im_selben_anruf_liefert_denselben_rueckruf(
     assert zweiter.summary == erster.summary
     assert session.scalar(select(func.count()).select_from(Callback)) == 1
     assert session.scalar(select(func.count()).select_from(OutboxEvent)) == 1
+
+
+ORDER_TEXT = (
+    "Anruf endete vor dem Ja zur vorgelesenen Bestellung. "
+    "Offene Bestellung, nicht aufgegeben: 2x 23 Pizza Margherita."
+)
+
+
+def test_an_open_order_joins_the_open_card_of_its_call(session, tenant_id, call_id):
+    """#993, option A: the order read back and never answered goes onto the
+    card the call has open, which keeps its reason; once, however often the
+    call ends, with its own audit entry and no second push."""
+    first = create_callback(
+        session, request(tenant_id, call_id, reason="human_requested"), now=NOW
+    )
+    joined = request(tenant_id, call_id, reason="order_open", summary=ORDER_TEXT)
+
+    task = create_callback(session, joined, now=NOW)
+    again = create_callback(session, joined, now=NOW)
+
+    assert task.callback_id == again.callback_id == first.callback_id
+    assert task.reason == "human_requested"
+    assert task.summary == f"{first.summary} {ORDER_TEXT}"
+    assert again.summary == task.summary
+    assert session.scalar(select(func.count()).select_from(Callback)) == 1
+    assert session.scalar(select(func.count()).select_from(OutboxEvent)) == 1
+    added = session.scalars(
+        select(AuditLog).where(AuditLog.action == "callback.order_added")
+    ).all()
+    assert [(a.entity_id, a.payload["reason"]) for a in added] == [
+        (first.callback_id, "order_open")
+    ]
+
+
+def test_an_order_under_another_number_names_it_on_the_card(
+    session, tenant_id, call_id
+):
+    """The guest gave another number for the order than the card calls: the
+    team reads it on the card, whose number stays."""
+    create_callback(session, request(tenant_id, call_id), now=NOW)
+
+    task = create_callback(
+        session,
+        request(
+            tenant_id,
+            call_id,
+            reason="order_open",
+            phone="0721 555-9999",
+            summary=ORDER_TEXT,
+        ),
+        now=NOW,
+    )
+
+    assert task.phone == "+497215551234"
+    assert task.summary.endswith(f"{ORDER_TEXT} Nummer zur Bestellung: +497215559999.")
+
+
+def test_the_card_text_gives_way_and_its_bookings_are_read_again(
+    session, tenant_id, call_id
+):
+    """A long card: its own text is cut, never the order, and the bookings
+    stand at its end as the database holds them now, a table booked since
+    the card was written too; nothing is named twice."""
+    first = create_callback(
+        session,
+        request(tenant_id, call_id, summary="x" * 970 + " Bereits gebucht: Tisch."),
+        now=NOW,
+    )
+    session.add(
+        Reservation(
+            tenant_id=tenant_id,
+            call_id=call_id,
+            status="confirmed",
+            guest_name="Mueller",
+            phone="+497215551234",
+            party_size=4,
+            reserved_for=datetime(2026, 9, 20, 17, 30, tzinfo=UTC),
+            idempotency_key=uuid.uuid4().hex,
+        )
+    )
+    session.commit()
+
+    task = create_callback(
+        session,
+        request(tenant_id, call_id, reason="order_open", summary=ORDER_TEXT),
+        now=NOW,
+    )
+
+    booked = (
+        "Bereits gebucht: Reservierung, 4 Personen, 20.09.2026 19:30 Uhr, Name Mueller."
+    )
+    assert first.summary.endswith("Bereits gebucht: Tisch.")
+    assert task.summary.endswith(f"{ORDER_TEXT} {booked}")
+    assert task.summary.startswith("xxx")
+    assert task.summary.count("Bereits gebucht") == 1
+    assert len(task.summary) <= 1000
 
 
 def test_erledigter_rueckruf_blockiert_einen_neuen_nicht(session, tenant_id, call_id):

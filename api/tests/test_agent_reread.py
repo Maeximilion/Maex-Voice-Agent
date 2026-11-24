@@ -29,6 +29,7 @@ from api.agent.loop import (
     ConversationLoop,
 )
 from api.agent.state import ConversationState, apply_tool_result
+from api.domain.callbacks import create_callback
 from api.events.types import ORDER_CONFIRMED, RESERVATION_CONFIRMED
 from api.models import (
     AuditLog,
@@ -41,6 +42,7 @@ from api.models import (
     ServiceConfig,
 )
 from api.models.calls import CALLBACK_REASONS
+from api.schemas.callbacks import CreateCallbackRequest
 from api.tests.test_domain_draft_order import NOW, _call, _tenant
 
 CALLER = "+497215551234"
@@ -632,6 +634,37 @@ def test_a_call_that_ends_on_the_read_back_leaves_a_card(session, state, order):
     assert SUMMARY_OPEN_ORDER in card[0].summary
     assert card[0].phone == CALLER
     assert status(session, order, draft_id) == "draft"
+    assert state.stage == "callback"
+
+
+def test_an_unanswered_order_joins_the_open_card_of_the_call(session, state, order):
+    """#993 (Maxi, 24.11.2026, option A): the model wrote a card earlier in
+    the call, then the guest ordered and hung up on the read-back. One card
+    per call stays, and the open order is on it where the team looks; its
+    reason stays the older one. Once, however often the end comes."""
+    old = create_callback(
+        session,
+        CreateCallbackRequest(
+            call_id=state.call_id,
+            tenant_id=state.tenant_id,
+            phone=CALLER,
+            reason="human_requested",
+            summary="Gast möchte mit einem Mitarbeiter sprechen.",
+        ),
+        now=NOW,
+    )
+    read_to_the_guest(session, state, order)
+    loop = ConversationLoop(session, Model(), "system", now=NOW, clock=lambda: 0)
+
+    loop.offer_unanswered(state)
+    loop.offer_unanswered(state)
+
+    (card,) = cards(session, state)
+    assert card.id == old.callback_id
+    assert card.reason == "human_requested"
+    assert card.summary.startswith("Gast möchte mit einem Mitarbeiter sprechen.")
+    assert card.summary.count(SUMMARY_READBACK_UNANSWERED) == 1
+    assert card.summary.count(SUMMARY_OPEN_ORDER) == 1
     assert state.stage == "callback"
 
 

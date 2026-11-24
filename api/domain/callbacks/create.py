@@ -46,6 +46,13 @@ _ORDER_STANDS = ("confirmed", "approved", "handed_over")
 # `CreateCallbackRequest.summary`: the card's own text gives way to the
 # bookings, which are never cut.
 SUMMARY_MAX = 1000
+# The card of an order read back and never answered, which only the core
+# writes (`ConversationLoop.offer_unanswered`). Where the call has an open
+# card already, the order joins it (#993, Maxi 24.11.2026, option A).
+ORDER_OPEN = "order_open"
+ACTION_ORDER_ADDED = "callback.order_added"
+# The number the guest gave for the order, where the card calls another. Draft.
+SUMMARY_ORDER_PHONE = "Nummer zur Bestellung: {phone}."
 
 
 def create_callback(
@@ -74,6 +81,8 @@ def create_callback(
     _lock_call(session, req.tenant_id, req.call_id)
     open_task = _open_for_call(session, req)
     if open_task is not None:
+        if req.reason == ORDER_OPEN:
+            _add_open_order(session, open_task, summary, phone, actor)
         session.commit()
         return _task(open_task)
     summary = _with_bookings(summary, booked(session, req.tenant_id, req.call_id))
@@ -178,6 +187,37 @@ def _with_bookings(summary: str, bookings: str | None) -> str:
         return summary
     room = max(SUMMARY_MAX - len(bookings) - 1, 0)
     return f"{summary[:room].rstrip()} {bookings}".lstrip()
+
+
+def _add_open_order(
+    session: Session, card: Callback, text: str, phone: str, actor: str
+) -> None:
+    """The open order onto the open card of its call (#993): one card per
+    call, and the team reads the order where it looks already. The card keeps
+    its reason. Its own text gives way to the order, and its bookings are read
+    again from the database: a table booked since stands on it, and whatever
+    a card's text claimed after "Bereits gebucht:" is replaced (CLAUDE.md §2
+    rule 1). Once: a second hang-up of the call finds the order on it."""
+    if phone != card.phone:
+        text = f"{text} {SUMMARY_ORDER_PHONE.format(phone=phone)}"
+    head, cut, _ = card.summary.rpartition(SUMMARY_BOOKED)
+    own = head.rstrip() if cut else card.summary
+    if text in own:
+        return
+    bookings = booked(session, card.tenant_id, card.call_id)
+    room = SUMMARY_MAX - len(text) - 1 - (len(bookings) + 1 if bookings else 0)
+    joined = f"{own[: max(room, 0)].rstrip()} {text}".lstrip()
+    card.summary = _with_bookings(joined, bookings)
+    session.add(
+        AuditLog(
+            tenant_id=card.tenant_id,
+            actor=actor,
+            action=ACTION_ORDER_ADDED,
+            entity="callback",
+            entity_id=card.id,
+            payload={"call_id": str(card.call_id), "reason": ORDER_OPEN},
+        )
+    )
 
 
 def _lock_call(session: Session, tenant_id: uuid.UUID, call_id: uuid.UUID) -> None:
