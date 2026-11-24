@@ -892,6 +892,91 @@ def test_made_up_names_from_one_64_meet_one_address_wait(sessions, clock):
     assert refused.value.wait_minutes == 1
 
 
+def _spray(db, at: datetime, first: int, count: int, block: str = "2001:db8:1"):
+    """Made-up names, each from a /64 of its own in one /48 (#962); the waits
+    the posts met."""
+    waits = []
+    for n in range(first, first + count):
+        with pytest.raises(access.SignInRefused) as refused:
+            access.sign_in(
+                db, f"nobody{n}", PASSWORD, "000000", f"{block}:{n:x}::1", at
+            )
+        waits.append(refused.value.wait_minutes)
+    return waits
+
+
+def test_made_up_names_from_one_48_meet_one_block_wait(sessions, clock):
+    """#962: every /64 of a /48 had a fresh count, so a spray from 65,536 of
+    them never met a wait. The block counts too, with a wait every
+    BLOCK_WAIT_EVERY failures; another /48 and an IPv4 client are not held."""
+    every = access.BLOCK_WAIT_EVERY
+    with sessions() as db:
+        assert _spray(db, clock.at, 0, every) == [None] * every
+        assert _spray(db, clock.at, every, 1) == [1]
+        assert _spray(db, clock.at, every, 1, block="2001:db8:2") == [None]
+        with pytest.raises(access.SignInRefused) as refused:
+            access.sign_in(db, "nobody", PASSWORD, "000000", "192.0.2.7", clock.at)
+        assert refused.value.wait_minutes is None
+
+
+def test_a_spray_from_one_48_is_bounded_in_hash_runs(sessions, clock, monkeypatch):
+    """#962 done criterion: a sustained spray of made-up names from one /48,
+    200 posts a minute for 20 minutes, reaches the hash only at the block's
+    pace: BLOCK_WAIT_EVERY runs, then waits of 1, 2, 3, 4, 5, 5 minutes."""
+    runs = []
+
+    def counted(secret, stored):
+        runs.append(stored)
+        return False
+
+    monkeypatch.setattr(access, "verify_secret", counted)
+    with sessions() as db:
+        for minute in range(20):
+            _spray(db, START + timedelta(minutes=minute), minute * 200, 200)
+    assert len(runs) == 6 * access.BLOCK_WAIT_EVERY
+
+
+def test_the_operator_signs_in_during_a_block_wait(sessions, clock, factors):
+    """#962: the operator's own browser, known by its device cookie, counts on
+    that device alone, so a spray that holds its /48 does not keep it out."""
+    home = "2001:db8:1:ffff::1"
+    with sessions() as db:
+        first = access.sign_in(
+            db, "maxi", PASSWORD, _code(factors.totp_secret, START), home, START
+        )
+        later = START + timedelta(seconds=90)
+        _spray(db, later, 0, access.BLOCK_WAIT_EVERY + 1)
+        with pytest.raises(access.SignInRefused) as refused:
+            access.sign_in(db, "maxi", PASSWORD, "000000", home, later)
+        assert refused.value.wait_minutes == 1
+        signed = access.sign_in(
+            db,
+            "maxi",
+            PASSWORD,
+            _code(factors.totp_secret, later),
+            home,
+            later,
+            device_token=first.device_token,
+        )
+    assert signed.token
+
+
+def test_a_right_sign_in_takes_the_block_count_back(sessions, clock, factors):
+    """#962: as with the address, a sign-in that succeeds forgets the failures
+    of its /48, or the operator's own typos would add up there all day."""
+    with sessions() as db:
+        _spray(db, START, 0, access.BLOCK_WAIT_EVERY - 1)
+        access.sign_in(
+            db,
+            "maxi",
+            PASSWORD,
+            _code(factors.totp_secret, START),
+            "2001:db8:1:ffff::1",
+            START,
+        )
+        assert db.get(OperatorLoginFailure, "2001:db8:1::/48") is None
+
+
 def test_the_failures_of_addresses_are_pruned_by_an_index(operator_url):
     """#888 S11: every attempt prunes the table by `last_failed_at`; without an
     index that is a scan of every sprayed name and address."""

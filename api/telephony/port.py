@@ -101,9 +101,11 @@ class CallEvents(Protocol):
         ...
 
     def on_talked_over(self, session_id: str, text: str) -> None:
-        """While a recording runs: the caller said `text` into a sentence that
-        may not be interrupted, or into the farewell or the sentence before a
-        transfer. No turn; it may be a withdrawal (docs/09 L2)."""
+        """The caller said `text` into a sentence that may not be interrupted,
+        on every call (#970), or, while a recording runs, into the farewell or
+        the sentence before a transfer. No turn; it may be a withdrawal
+        (docs/09 L2), or speak of an allergy for the card of a missed team
+        leg."""
         ...
 
     def on_voice_failure(self, session_id: str) -> None:

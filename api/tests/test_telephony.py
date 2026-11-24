@@ -32,6 +32,8 @@ from api.agent.loop import (
     SAY_CALLBACK_NUMBER,
     SAY_TABLE_BOOKED,
     SUMMARY_ALLERGENS,
+    SUMMARY_READBACK_UNANSWERED,
+    ConversationLoop,
 )
 from api.agent.state import ConversationState
 from api.config import settings
@@ -39,6 +41,7 @@ from api.domain.callbacks.create import SAY_NOTED, SUMMARY_BOOKED
 from api.domain.callbacks.transfer import (
     SUMMARY_HUNG_UP,
     SUMMARY_MISSED,
+    SUMMARY_NOTE_TO_CLEAR,
 )
 from api.domain.menu.importer import apply
 from api.domain.menu.items import active_count
@@ -48,6 +51,7 @@ from api.models import (
     CallLimitWindow,
     ComplaintRule,
     MenuItem,
+    Order,
     Reservation,
     ServiceConfig,
 )
@@ -2000,6 +2004,91 @@ def test_an_allergen_question_keeps_its_card_when_nobody_answers(session, tenant
     assert "Erdnuss" not in card.summary
 
 
+@pytest.mark.parametrize(
+    ("said", "marked"),
+    [
+        ("Ich haette gern einen Tisch fuer zwei, ich habe eine Nussallergie.", True),
+        ("Ich haette gern einen Tisch fuer zwei.", False),
+    ],
+)
+def test_a_voice_failure_keeps_the_kitchen_marker_for_the_missed_card(
+    session, tenant, said, marked
+):
+    """#956: the voice layer fails mid-call, so the core wrote no card for the
+    handover; the guest spoke of an allergy, and the card of the team leg
+    nobody answered still leads with the kitchen marker, never the allergy
+    (L13)."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    handler.on_user_turn("s-1", said)
+    live = handler._live["s-1"]
+    assert bool(live.state.allergy_said) is marked
+    assert live.state.handoff_summary is None
+
+    handler.on_voice_failure("s-1")
+    handler.on_call_ended("s-1")
+    assert handler.on_team_missed("s-1") is True
+
+    [card] = session.scalars(select(Callback)).all()
+    assert card.summary.startswith(SUMMARY_MISSED)
+    assert (SUMMARY_NOTE_TO_CLEAR in card.summary) is marked
+    assert "Nuss" not in card.summary
+
+
+@pytest.mark.parametrize(
+    ("over", "marked"),
+    [("Ich habe eine Nussallergie.", True), ("Ja, genau.", False)],
+)
+def test_an_allergy_said_into_a_protected_sentence_marks_the_missed_card(
+    session, tenant, over, marked
+):
+    """#970: words said into a read-back make no turn, so the core never hears
+    an allergy among them; the line does, and the card of the team leg nobody
+    answered after a failure leads with the kitchen marker (L13)."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    handler.on_user_turn("s-1", "Ich haette gern einen Tisch fuer zwei.")
+    handler.on_talked_over("s-1", over)
+
+    handler.on_voice_failure("s-1")
+    handler.on_call_ended("s-1")
+    assert handler.on_team_missed("s-1") is True
+
+    [card] = session.scalars(select(Callback)).all()
+    assert (SUMMARY_NOTE_TO_CLEAR in card.summary) is marked
+    assert "Nuss" not in card.summary
+
+
+def test_a_core_card_with_the_marker_keeps_it_once_when_nobody_answers(session, tenant):
+    """The core's own card leads with the marker already (#940): the line's
+    card carries it once."""
+    case = {
+        "caller_id": "+497215551234",
+        "transcript": [
+            {
+                "role": "customer",
+                "text": "Ich haette gern einen Tisch fuer zwei, "
+                "ich habe eine Nussallergie.",
+            },
+            {"role": "customer", "text": "Sind da Spuren von Erdnuessen drin?"},
+        ],
+    }
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    sid = port.play(case, handler)
+    assert port.transfers(sid) == [TEAM_PHONE]
+
+    assert handler.on_team_missed(sid) is True
+
+    [card] = session.scalars(select(Callback)).all()
+    assert card.summary.count(SUMMARY_NOTE_TO_CLEAR) == 1
+    assert "Nuss" not in card.summary and "Erdnu" not in card.summary
+
+
 def test_a_number_the_guest_named_goes_on_the_card(session, tenant):
     """Withheld caller id: only the number said in the call is left, and only
     this process knows it once the call is closed."""
@@ -2594,6 +2683,28 @@ def test_a_guest_who_hangs_up_on_the_outage_sentence_gets_a_card(session, tenant
     assert the_call(session, "s-1").outcome == "error"
 
 
+def test_a_guest_who_hangs_up_on_the_outage_sentence_keeps_the_kitchen_marker(
+    session, tenant
+):
+    """#956: the guest named an allergy, the voice failed and the guest hung up
+    on the outage sentence: the card the hang-up writes leads with the kitchen
+    marker as well, never the allergy (L13)."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    handler.on_user_turn(
+        "s-1", "Ich haette gern einen Tisch fuer zwei, ich habe eine Nussallergie."
+    )
+    handler.on_voice_failure("s-1")
+
+    handler.on_call_ended("s-1", caller_hung_up=True)
+
+    [card] = session.scalars(select(Callback)).all()
+    assert card.summary.startswith(f"{SUMMARY_HUNG_UP} {SUMMARY_NOTE_TO_CLEAR}.")
+    assert "Nuss" not in card.summary
+
+
 def _booked_then_broken(session, tenant) -> "_Wire":
     """On the wire: a table is booked, and the line breaks while the guest
     hears the confirmation, so the outage sentence follows it."""
@@ -2675,3 +2786,72 @@ def test_an_outage_transfer_that_reached_the_line_leaves_no_card(session, tenant
 
     assert session.scalars(select(Callback)).all() == []
     assert the_call(session, "s-1").outcome == "error"
+
+
+# -- #953: the call ends while an order waits for its yes ---------------------------
+
+ORDER_READ_BACK = [
+    {"role": "customer", "text": "Guten Tag, ich moechte etwas zum Abholen bestellen."},
+    {"role": "customer", "text": "Zweimal die 23 und einmal die knusprige Ente."},
+    {"role": "customer", "text": "Huhn bitte."},
+    {"role": "customer", "text": "Nein, das wars."},
+    {"role": "customer", "text": "Auf den Namen Mueller."},
+    {"role": "customer", "text": "Meine Nummer ist 0721 5551234."},
+]
+
+
+def _order_cards(session, sid) -> list[Callback]:
+    call = the_call(session, sid)
+    return list(session.scalars(select(Callback).where(Callback.call_id == call.id)))
+
+
+def test_a_hang_up_on_an_order_read_back_leaves_a_card(session, tenant):
+    """Maxi, 24.11.2026: the caller hangs up while the order waits for its
+    yes; a "Danke" alone is none. The team calls back, nothing is booked."""
+    apply(session, tenant.id, menu_plan(), now=NOW)
+    port = FakeTelephony()
+    case = {"transcript": [*ORDER_READ_BACK, {"role": "customer", "text": "Danke."}]}
+    sid = port.play(case, handler_for(session, tenant, port))
+
+    call = the_call(session, sid)
+    assert call.outcome == "callback"
+    cards = _order_cards(session, sid)
+    assert len(cards) == 1 and SUMMARY_READBACK_UNANSWERED in cards[0].summary
+    assert (
+        session.scalars(select(Order).where(Order.call_id == call.id)).one().status
+        == "draft"
+    )
+
+
+def test_an_outage_on_an_order_read_back_leaves_no_card_of_its_own(session, tenant):
+    """The outage takes the call to the team, whose own card waits if nobody
+    answers: the order card is not written for it."""
+    apply(session, tenant.id, menu_plan(), now=NOW)
+    port = FakeTelephony()
+    case = {
+        "transcript": [*ORDER_READ_BACK, {"role": "customer", "voice_failure": True}]
+    }
+    sid = port.play(case, handler_for(session, tenant, port))
+
+    assert port.transfers(sid) == [TEAM_PHONE]
+    assert the_call(session, sid).outcome == "error"
+    assert all(
+        SUMMARY_READBACK_UNANSWERED not in card.summary
+        for card in _order_cards(session, sid)
+    )
+
+
+def test_a_failed_order_card_still_closes_the_call_log(session, tenant, monkeypatch):
+    """A database error on the card costs the card, never the log: without it
+    the call would count as an outage later."""
+    apply(session, tenant.id, menu_plan(), now=NOW)
+
+    def broken(self, state, *, with_the_team=False):
+        raise OperationalError("insert", {}, Exception("lock timeout"))
+
+    monkeypatch.setattr(ConversationLoop, "offer_unanswered", broken)
+    port = FakeTelephony()
+    sid = port.play({"transcript": ORDER_READ_BACK}, handler_for(session, tenant, port))
+
+    call = the_call(session, sid)
+    assert call.ended_at is not None and call.outcome == "abandoned"

@@ -1651,10 +1651,12 @@ def test_a_stop_said_into_a_protected_sentence_reaches_the_core_as_no_turn(
 
 
 def test_a_protected_sentence_stays_protected_without_a_recording(call):
+    """No turn without a recording either; the words still reach the core as
+    talked over, where an allergy among them marks a card for the team (#970)."""
     call.start(("say", READBACK))
-    call.said("Aufnahme stoppen", after=0.1)
+    call.said("Ich habe eine Nussallergie", after=0.1)
     assert call.core.turns() == []
-    assert call.core.count("talked_over") == 0
+    assert ("talked_over", "Ich habe eine Nussallergie") in call.core.calls
 
 
 def test_a_recorded_team_leg_is_the_lines_to_record(call):

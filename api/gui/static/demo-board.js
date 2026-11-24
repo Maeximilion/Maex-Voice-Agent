@@ -254,7 +254,7 @@ export function renderCallbacks(callbacks) {
         return out + `<p class="empty">Keine R&uuml;ckrufe offen.</p>`;
     out += `<ul class="cards">`;
     for (const c of callbacks) {
-        out += `<li class="card cb${c.reason === "complaint" ? " complaint" : ""}" data-id="${esc(c.id)}" data-reason="${esc(c.reason)}">`;
+        out += `<li class="card cb${c.reason === "complaint" ? " complaint" : ""}" data-id="${esc(c.id)}" data-reason="${esc(c.reason)}" data-version="${esc(c.version ?? "")}">`;
         out += callbackBody(c) + `</div>`;
         out += callbackPhone(c, true);
         if (c.summary)
@@ -263,7 +263,7 @@ export function renderCallbacks(callbacks) {
         if (c.phone && !c.costly)
             out += `<a class="button" href="tel:${esc(c.phone)}">Anrufen</a>`;
         out +=
-            `<button class="primary" hx-post="/gui/rueckrufe/${esc(c.id)}/erledigt" hx-target="#rueckrufe-liste" hx-swap="innerHTML">Erledigt</button>`;
+            `<button class="primary" hx-post="/gui/rueckrufe/${esc(c.id)}/erledigt" hx-vals='{"gesehen": "${esc(c.version ?? "")}"}' hx-target="#rueckrufe-liste" hx-swap="innerHTML">Erledigt</button>`;
         out += `</div></li>`;
     }
     return out + `</ul>`;

@@ -371,3 +371,32 @@ def test_a_partial_run_with_the_board_present_clears_its_resolved_findings() -> 
     result = decision_issue.plan_partial(before, {}, WER, unknown={IMAGES})
     assert [h for h, _ in decision_issue.sections(result.body)] == [IMAGES]
     assert "#82" not in result.body.split("<!--")[0]
+
+
+def test_a_finding_cleared_in_a_partial_run_is_new_when_it_comes_back() -> None:
+    """#985 (Codex on PR #307): the images fail for days; the board clears #82
+    and later reports it again. Its key went with its section, so it is new."""
+    before = decision_issue.plan(None, {OHNE_MERGE: [PR_82], IMAGES: [STALE]}, WER).body
+    cleared = decision_issue.plan_partial(before, {}, WER, unknown={IMAGES})
+    back = decision_issue.plan_partial(
+        cleared.body, {OHNE_MERGE: [PR_82]}, WER, unknown={IMAGES}
+    )
+    assert back.comment is not None and "#82" in back.comment
+    # The failed source's key stays: its finding is not news on the next full run.
+    after = decision_issue.plan(back.body, {OHNE_MERGE: [PR_82], IMAGES: [STALE]}, WER)
+    assert after.comment is None
+
+
+def test_a_partial_run_keeps_a_key_written_before_the_grouping() -> None:
+    """A marker from before #985 holds bare keys: nothing tells their source, so a
+    partial run keeps them all and the next full run rewrites the marker."""
+    old = decision_issue.finding_keys({OHNE_MERGE: [PR_82], IMAGES: [STALE]})
+    before = (
+        decision_issue.render_body({IMAGES: [STALE]}, "Intro").rsplit("<!--", 1)[0]
+        + f"<!-- projektpflege-keys: {','.join(sorted(old))} -->"
+    )
+    result = decision_issue.plan_partial(
+        before, {OHNE_MERGE: [PR_82]}, WER, unknown={IMAGES}
+    )
+    assert result.comment is None
+    assert decision_issue.parse_keys(result.body) == set(old)

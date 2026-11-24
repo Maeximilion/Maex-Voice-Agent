@@ -25,11 +25,13 @@ from zoneinfo import ZoneInfo
 from api.agent.escalation import speaks_of_allergies
 from api.agent.guards import (
     HINT_ALLERGY_CALL,
+    HINT_ALLERGY_DISH,
     HINT_ALLERGY_TURN,
     HINT_GUEST_NAME,
     HINT_GUEST_PHONE,
     HINT_UNLICENSED_ALLERGEN,
     HINT_UNNOTED_ALLERGY,
+    HINT_UNNOTED_LATER,
     SAY_ALLERGENS_OFFER,
     SAY_ALLERGY_NOTED,
     SAY_ASK_ALLERGY,
@@ -164,6 +166,14 @@ _HOUSE_AGAIN = re.compile(r"\bnein\W+(\d+\s?[a-z]?)\b")
 _CITY = re.compile(r"\b(?:in|nach)\s+([A-ZÄÖÜ][\wäöüß-]+)")
 # An objection to recognition goes to the team, by the prompt's rule.
 _OBJECTION = re.compile(r"widersprech|widerspruch|wiedererkannt", re.IGNORECASE)
+# A price question for one card number ("Was kostet die 13?", #928): the
+# number right after the question, so a street number or the next sentence is
+# none ("Was kostet die Lieferung? Ich nehme die 12").
+_PRICE_QUESTION = re.compile(
+    r"\b(?:was\s+kostet|wie\s+teuer\s+ist)\s+(?:die\s+|der\s+|das\s+)?"
+    r"(?:nummer\s+)?([a-z]{0,2}\d{1,3}[a-z]?)\b",
+    re.IGNORECASE,
+)
 # Above this many digits a bare number is a phone number, no part of an address.
 _MAX_ADDRESS_DIGITS = 6
 _DELIVERY_WORDS = re.compile(
@@ -216,6 +226,8 @@ class ScriptedLLM:
         # The call spoke of allergies: a question for safety gets the fixed
         # sentence of the prompt.
         self._allergy_talk = False
+        # The card number of this turn's price question, until it is answered.
+        self._price_for: str | None = None
 
     def next_turn(
         self,
@@ -249,6 +261,17 @@ class ScriptedLLM:
         if _OBJECTION.search(text):
             return LLMTurn(
                 tool_call=ToolCall("transfer_to_team", {"reason": "out_of_scope"})
+            )
+        # A read-back waits for its yes first.
+        price = (
+            None
+            if state.get("stage") == "readback_pending"
+            else _PRICE_QUESTION.search(text)
+        )
+        self._price_for = price.group(1) if price else None
+        if self._price_for:
+            return LLMTurn(
+                tool_call=ToolCall("search_menu", {"query": self._price_for})
             )
         patch = self._extract(text, state.get("slots", {}))
         slots = {**state.get("slots", {}), **patch}
@@ -447,6 +470,17 @@ class ScriptedLLM:
         say = result.get("say")
         slots = state.get("slots", {})
 
+        if self._price_for:
+            # A model reads the price off the hit (#928); a sold-out one has
+            # the search's own sentence.
+            number, self._price_for = self._price_for, None
+            hits = data.get("results") or []
+            if name == "search_menu" and hits and "price_cents" in hits[0]:
+                if hits[0].get("sold_out") and say:
+                    return LLMTurn(say=say)
+                euros, cents = divmod(hits[0]["price_cents"], 100)
+                return LLMTurn(say=f"Die {number} kostet {euros},{cents:02d} Euro.")
+
         if name == "search_menu" and self._opening_allergy:
             request, self._opening_allergy = self._opening_allergy, None
             if not _allergy_on_a_dish(result):
@@ -460,11 +494,12 @@ class ScriptedLLM:
         if name == "search_menu" and self._opening_prefix is not None:
             return self._after_opening_search(result, slots)
         if not result.get("ok") and str(result.get("hint")).startswith(
-            HINT_UNNOTED_ALLERGY
+            (HINT_UNNOTED_ALLERGY, HINT_UNNOTED_LATER.partition("„")[0])
         ):
-            # The core wants the guest's health on a note: the stand-in writes
-            # what the guest said about it, from the state, onto the whole
-            # order or the table (a real model words it, the prompt).
+            # The core wants the guest's health on a note, or an allergen said
+            # later on one (#929): the stand-in writes what the guest said
+            # about it, from the state, onto the whole order or the table (a
+            # real model words it, the prompt).
             note = _health_note(state)
             if self._pickup is not None:
                 return self._pickup.draft_again(slots, note)
@@ -475,6 +510,7 @@ class ScriptedLLM:
             )
         if not result.get("ok") and result.get("hint") in (
             HINT_ALLERGY_CALL,
+            HINT_ALLERGY_DISH,
             HINT_ALLERGY_TURN,
             HINT_UNLICENSED_ALLERGEN,
         ):

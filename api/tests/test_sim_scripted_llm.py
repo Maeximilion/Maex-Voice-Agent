@@ -16,6 +16,7 @@ import pytest
 
 from api.agent.guards import HINT_GUEST_NAME, HINT_GUEST_PHONE
 from sim.scripted_llm import (
+    _PRICE_QUESTION,
     GREETING,
     QUESTIONS,
     SAY_ASK_AGAIN,
@@ -480,3 +481,19 @@ def test_below_the_minimum_asks_for_more_dishes():
     script.delivery, script.phase = True, "customer"
     script.on_order_refused("draft_order", "below_minimum")
     assert (script.delivery, script.phase) == (True, "more")
+
+
+@pytest.mark.parametrize(
+    ("said", "number"),
+    [
+        ("Was kostet die 13?", "13"),
+        ("Wie teuer ist die Nummer S12?", "S12"),
+        ("Was kostet Nummer 35a?", "35a"),
+        # Deep review of #928: no number of another sentence or a street.
+        ("Was kostet die Lieferung? Ich nehme die 12.", None),
+        ("Was kostet die Lieferung in die Hauptstraße 13?", None),
+    ],
+)
+def test_the_stand_in_reads_a_price_question_for_one_card_number(said, number):
+    found = _PRICE_QUESTION.search(said)
+    assert (found.group(1) if found else None) == number

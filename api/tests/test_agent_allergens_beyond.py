@@ -18,6 +18,7 @@ from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session
 
 from api.agent import guards
+from api.agent.dispatch import dispatch
 from api.agent.escalation import (
     asks_about_allergies,
     asks_beyond_the_allergens,
@@ -53,6 +54,8 @@ from api.domain.menu.search import search_menu
 from api.domain.menu.wishes import only_denies
 from api.models import Call, Callback, MenuItem, Order, OrderItem
 from api.tests.test_domain_draft_order import KARTE, NOW, _call, _tenant, item
+from api.tests.test_domain_menu_search import KARTE as SEARCH_KARTE
+from scripts.seed import seed
 
 BERLIN = ZoneInfo("Europe/Berlin")
 CLOSED = datetime(2026, 9, 15, 8, 0, tzinfo=BERLIN)  # before opening: no team
@@ -2783,11 +2786,14 @@ def test_a_question_answered_twice_with_the_noted_sentence_goes_to_the_team(
     assert state.handoff_summary is not None
 
 
-def test_a_stated_allergy_leaves_the_next_price_question_to_the_model(
+def test_a_stated_allergy_leaves_the_next_price_question_to_the_core(
     session, known_tenant
 ):
     """Deep review of PR #860 (P2): the noted sentence ended the turn, so the
-    next dish named is no answer to it, and its price is the model's."""
+    next dish named is no answer to it and no handover. Since #928 (Maxi,
+    options B and B2) the model's sentence about that dish is held to core
+    sentences in a call about an allergy, and the price the guest hears is
+    the core's, from the database."""
     state = state_for(session, known_tenant, phone=CALLER)
     run(
         session,
@@ -2805,11 +2811,10 @@ def test_a_stated_allergy_leaves_the_next_price_question_to_the_model(
         "Was kostet die 13 eigentlich?",
         searches("13"),
         LLMTurn(say=price),
-        LLMTurn(say=price),
     )
 
     assert not result.ended
-    assert result.say == [price]
+    assert result.say == ["Die 13, Pho Bo, kostet 11 Euro 90."]
     assert session.scalars(select(Callback)).all() == []
 
 
@@ -2943,3 +2948,593 @@ def test_an_unreadable_correction_keeps_the_table_read_back_on_the_card(
     assert (
         "Offene Reservierung, nicht bestätigt: 4 Personen, 16.09.2026 19:00 Uhr" in card
     )
+
+
+PHO_PRICE = "Die 13, Pho Bo, kostet 11 Euro 90."
+
+
+def allergic_call(session, tenant_id) -> ConversationState:
+    """A call in which the guest named an allergy (`guards.sticky`)."""
+    state = state_for(session, tenant_id, phone=CALLER)
+    run(
+        session,
+        state,
+        "Ich habe eine Erdnussallergie.",
+        LLMTurn(say=guards.SAY_ALLERGY_NOTED),
+    )
+    assert guards.sticky(state)
+    return state
+
+
+@pytest.mark.parametrize(
+    "promise",
+    [
+        "Bei Ihrer Allergie ist die 13 kein Problem.",
+        "Die Pho Bo ist für Sie gut geeignet.",
+        "Gerne. Die 13 ist unproblematisch!",
+    ],
+)
+def test_a_suitability_promise_about_a_dish_in_an_allergic_call_is_not_heard(
+    session, known_tenant, promise
+):
+    """#928 (Maxi, option B): in a call where the guest named an allergy, a
+    model sentence that names a dish of the call is held to core sentences
+    when the turn took no order step. "kein Problem" names no allergen, so
+    `unlicensed` let it through before."""
+    state = allergic_call(session, known_tenant)
+
+    result, llm = run(
+        session,
+        state,
+        "Was können Sie mir denn empfehlen?",
+        searches("13"),
+        LLMTurn(say=promise),
+        LLMTurn(say=promise),
+    )
+
+    assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_ALLERGY_DISH
+    assert said_nowhere(result, promise)
+    # The strict retry failed. A promise states no price, so the offer: a
+    # price there sounds like a yes (deep review of #928). Nor the search's
+    # "Notiert: Nummer 13."
+    assert result.say == [guards.SAY_ALLERGENS_OFFER]
+    assert not result.ended
+
+
+def test_the_retry_after_a_dish_sentence_may_say_the_noted_sentence(
+    session, known_tenant
+):
+    """#928: the hint names the core sentence the retry may say."""
+    state = allergic_call(session, known_tenant)
+
+    result, _ = run(
+        session,
+        state,
+        "Was können Sie mir denn empfehlen?",
+        searches("13"),
+        LLMTurn(say="Die 13 passt gut zu Ihnen."),
+        LLMTurn(say=guards.SAY_ALLERGY_NOTED),
+    )
+
+    assert result.say == [guards.SAY_ALLERGY_NOTED]
+
+
+def test_an_order_step_keeps_the_models_sentence_about_its_dish(session, known_tenant):
+    """#928: with an order step in the turn the model's read-back of the dish
+    stays the model's, checked by `unlicensed` as before."""
+    state = allergic_call(session, known_tenant)
+    pho = str(item(session, known_tenant, "13"))
+    noted = "Die 13 ist notiert. Darf es noch etwas sein?"
+
+    result, _ = run(
+        session,
+        state,
+        "Dann nehme ich die 13.",
+        searches("13"),
+        LLMTurn(say=noted, cart=[{"menu_item_id": pho, "quantity": 1}]),
+    )
+
+    assert result.say == [noted]
+
+
+def test_an_order_step_with_words_about_the_allergy_is_held(session, known_tenant):
+    """Deep review of #928: the model writes `cart` for every dish a search
+    found clearly (`llm.py`), so an order step alone let "Bei Ihrer Allergie
+    ist die 13 kein Problem" through. The retry that only reads the dish back
+    stays the model's, and the dish stays in the order."""
+    state = allergic_call(session, known_tenant)
+    pho = str(item(session, known_tenant, "13"))
+    promise = "Bei Ihrer Allergie ist die 13 kein Problem, ich habe sie notiert."
+    noted = "Die 13 ist notiert. Darf es noch etwas sein?"
+
+    result, llm = run(
+        session,
+        state,
+        "Dann nehme ich die 13.",
+        searches("13"),
+        LLMTurn(say=promise, cart=[{"menu_item_id": pho, "quantity": 1}]),
+        LLMTurn(say=noted),
+    )
+
+    assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_ALLERGY_DISH
+    assert result.say == [noted]
+    assert [line["menu_item_id"] for line in state.cart] == [pho]
+
+
+def test_a_retry_that_writes_the_dish_into_the_cart_is_heard(session, known_tenant):
+    """Deep review of #928: the hint asks for the `cart` when the guest takes
+    the dish; the retry that writes it took an order step and stays the
+    model's."""
+    state = allergic_call(session, known_tenant)
+    pho = str(item(session, known_tenant, "13"))
+    noted = "Gern, die 13 ist notiert."
+
+    result, _ = run(
+        session,
+        state,
+        "Die 13 klingt gut, die nehme ich.",
+        searches("13"),
+        LLMTurn(say="Die 13 ist für Sie kein Problem."),
+        LLMTurn(say=noted, cart=[{"menu_item_id": pho, "quantity": 1}]),
+    )
+
+    assert result.say == [noted]
+    assert [line["menu_item_id"] for line in state.cart] == [pho]
+
+
+def test_a_retry_after_a_refusal_for_a_dish_is_judged_anew(session, known_tenant):
+    """#928, Maxi: R1. After a refusal only for naming a dish, the retry is
+    judged like a first answer: one that names no dish and no allergy goes
+    through, so a recap of the order ("Auf welchen Namen?") keeps the call
+    going. shortcut: the pronoun promise "Ja, die ist für Sie kein Problem."
+    goes through too, the residual Maxi accepted (`docs/24`)."""
+    state = allergic_call(session, known_tenant)
+    evasion = "Ja, die ist für Sie kein Problem."
+
+    result, llm = run(
+        session,
+        state,
+        "Kann ich die 13 essen?",
+        searches("13"),
+        LLMTurn(say="Die 13 ist für Sie kein Problem."),
+        LLMTurn(say=evasion),
+    )
+
+    assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_ALLERGY_DISH
+    assert evasion in result.say
+
+
+def test_a_retry_that_speaks_of_the_allergy_stays_held(session, known_tenant):
+    """#928, Maxi: R1. The retry is held again when its own words speak of
+    the allergy, with no dish named."""
+    state = allergic_call(session, known_tenant)
+    promise = "Bei Ihrer Allergie ist die kein Problem."
+
+    result, _ = run(
+        session,
+        state,
+        "Kann ich die 13 essen?",
+        searches("13"),
+        LLMTurn(say="Die 13 ist für Sie kein Problem."),
+        LLMTurn(say=promise),
+    )
+
+    assert said_nowhere(result, promise)
+    assert result.say == [guards.SAY_ALLERGENS_OFFER]
+
+
+def test_a_retry_after_an_allergen_word_stays_strict(session, known_tenant):
+    """#928, Maxi: R1 only for a refusal for the dish alone; a sentence
+    refused for an allergen word keeps the strict retry of #860."""
+    state = allergic_call(session, known_tenant)
+    evasion = "Ja, die ist für Sie kein Problem."
+
+    result, _ = run(
+        session,
+        state,
+        "Kann ich die 13 essen?",
+        searches("13"),
+        LLMTurn(say="Die 13 hat keine Erdnüsse."),
+        LLMTurn(say=evasion),
+    )
+
+    assert said_nowhere(result, evasion)
+    assert result.say == [guards.SAY_ALLERGENS_OFFER]
+
+
+def test_a_promise_behind_the_searchs_sentence_is_held(session, known_tenant):
+    """Deep review of #928: the search's sentence names the dish the
+    pronoun after it speaks of."""
+    state = allergic_call(session, known_tenant)
+    echo = dispatch(
+        session, state.call_id, known_tenant, "search_menu", {"query": "13"}, now=NOW
+    ).say
+    assert echo
+    promise = f"{echo} Ja, die können Sie gut essen."
+
+    result, llm = run(
+        session,
+        state,
+        "Kann ich die 13 essen?",
+        searches("13"),
+        LLMTurn(say=promise),
+        LLMTurn(say=promise),
+    )
+
+    assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_ALLERGY_DISH
+    assert said_nowhere(result, "gut essen")
+
+
+def test_a_held_sentence_about_a_sold_out_dish_keeps_the_searchs_sentence(
+    session, known_tenant
+):
+    """Deep review of #928: the second refusal after a dish sentence says the
+    turn's tool sentences, here that the dish is out today."""
+    session.execute(
+        update(MenuItem)
+        .where(MenuItem.tenant_id == known_tenant, MenuItem.number == "13")
+        .values(sold_out_until=NOW + timedelta(hours=6))
+    )
+    session.flush()
+    state = allergic_call(session, known_tenant)
+    promise = "Die 13 wäre für Sie kein Problem, ist aber heute aus."
+
+    result, _ = run(
+        session,
+        state,
+        "Kann ich die 13 essen?",
+        searches("13"),
+        LLMTurn(say=promise),
+        LLMTurn(say=promise),
+    )
+
+    assert result.say == ["Pho Bo ist heute leider aus."]
+
+
+def search_tenant(session) -> uuid.UUID:
+    """The menu of test_domain_menu_search: "eine Suppe" is the 12 or the 13."""
+    tenant_id = uuid.UUID(
+        seed(session, tenant_name="Suppenbetrieb", timezone="Europe/Berlin").tenant_id
+    )
+    plan = parse(SEARCH_KARTE)
+    assert plan.ok, plan.errors
+    apply(session, tenant_id, plan, now=NOW)
+    return tenant_id
+
+
+@pytest.mark.parametrize("own", [False, True])
+def test_the_candidates_of_an_unclear_search_reach_the_guest(session, own):
+    """Deep review of #928: the model's own wording of the core's candidate
+    question names dishes and goes back. The retry may say the search's
+    sentence (the hint names it), and a second refusal says it for the
+    model: the guest hears the candidates and the dish chosen enters the
+    order."""
+    tenant = search_tenant(session)
+    state = allergic_call(session, tenant)
+    question = dispatch(
+        session, state.call_id, tenant, "search_menu", {"query": "eine Suppe"}, now=NOW
+    ).say
+    assert question and question.startswith("Meinen Sie Nummer 12")
+    worded = "Meinen Sie die 12 oder die 13?"
+
+    result, llm = run(
+        session,
+        state,
+        "Ich hätte gern eine Suppe.",
+        searches("eine Suppe"),
+        LLMTurn(say=worded),
+        LLMTurn(say=worded if own else question),
+    )
+
+    assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_ALLERGY_DISH
+    assert result.say == [question]
+    suppe = str(item(session, tenant, "12"))
+
+    chosen, _ = run(
+        session,
+        state,
+        "Die Wan-Tan-Suppe bitte.",
+        LLMTurn(
+            say="Gern, die Wan-Tan-Suppe.",
+            cart=[{"menu_item_id": suppe, "quantity": 1}],
+        ),
+    )
+
+    assert chosen.say == ["Gern, die Wan-Tan-Suppe."]
+    assert [line["menu_item_id"] for line in state.cart] == [suppe]
+
+
+def test_a_dish_named_after_the_offer_is_the_question_it_invited(session, known_tenant):
+    """Sweep of the deep review of #928: the offer that ends a held dish
+    sentence asks for a dish, so the next one named is the allergen question
+    it invited, as after an open turn. A model that talks past it twice hands
+    the call to the team (rule 5); no price in place of the allergens."""
+    state = allergic_call(session, known_tenant)
+    describes = "Die 13 ist eine kräftige Rindfleischsuppe."
+
+    offered, _ = run(
+        session,
+        state,
+        "Wie ist denn die Pho Bo?",
+        searches("13"),
+        LLMTurn(say=describes),
+        LLMTurn(say=describes),
+    )
+
+    assert offered.say == [guards.SAY_ALLERGENS_OFFER]
+    assert state.allergen_question_open
+
+    result, _ = run(
+        session,
+        state,
+        "Die 13.",
+        searches("13"),
+        LLMTurn(say=describes),
+        LLMTurn(say="Die 13 kostet 11,90 Euro."),
+    )
+
+    assert said_nowhere(result, "kostet")
+    assert result.say[0] == SAY_ALLERGENS_BEYOND
+
+
+def test_after_a_table_sentence_alone_a_dish_sentence_stays_the_models(
+    session, known_tenant
+):
+    """Sweep of the deep review of #928: the turn after a table sentence is
+    sticky, but a guest who named no allergy is no allergic call: the hint
+    and its noted sentence would claim one."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    run(
+        session,
+        state,
+        "Welche Allergene haben die Frühlingsrollen?",
+        details(session, known_tenant, "23"),
+        LLMTurn(say=CORE_SAY),
+    )
+    assert guards.sticky(state)
+    assert not guards.allergy_named(state)
+    answer = "Ja, die 47, Ente knusprig, ist sehr beliebt."
+
+    result, _ = run(
+        session,
+        state,
+        "Haben Sie auch etwas mit Ente?",
+        searches("47"),
+        LLMTurn(say=answer),
+    )
+
+    assert result.say == [answer]
+
+
+def test_a_sentence_without_a_dish_stays_the_models_in_an_allergic_call(
+    session, known_tenant
+):
+    """#928: only a sentence that names a dish of the call is held."""
+    state = allergic_call(session, known_tenant)
+    plain = "Gerne. Möchten Sie abholen oder liefern lassen?"
+
+    result, _ = run(
+        session,
+        state,
+        "Was können Sie mir denn empfehlen?",
+        searches("13"),
+        LLMTurn(say=plain),
+    )
+
+    assert result.say == [plain]
+
+
+def test_a_dish_sentence_in_a_call_without_an_allergy_stays_the_models(
+    session, known_tenant
+):
+    """#928: the rule is for calls where the guest named an allergy."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    answer = "Die 13 ist eine kräftige Suppe."
+
+    result, _ = run(
+        session,
+        state,
+        "Was können Sie mir denn empfehlen?",
+        searches("13"),
+        LLMTurn(say=answer),
+    )
+
+    assert result.say == [answer]
+
+
+def test_a_price_asked_in_an_allergic_call_comes_from_the_core(session, known_tenant):
+    """#928 (Maxi, B2): the model's sentence about the dish is held, and the
+    guest hears the database's price in its place, at once: none of the core
+    sentences a retry may say answers a price."""
+    state = allergic_call(session, known_tenant)
+
+    result, llm = run(
+        session,
+        state,
+        "Was kostet die 13?",
+        searches("13"),
+        LLMTurn(say="Die 13 kostet 11,90 Euro."),
+    )
+
+    assert len(llm.calls) == 2
+    assert result.say == [PHO_PRICE]
+    assert not result.ended
+
+
+def test_a_retry_that_states_the_price_gets_the_core_price(session, known_tenant):
+    """#928: a first sentence without a price goes back; the retry names the
+    price, as the hint asks, and the core says it."""
+    state = allergic_call(session, known_tenant)
+
+    result, _ = run(
+        session,
+        state,
+        "Was kostet die 13, und passt sie für mich?",
+        searches("13"),
+        LLMTurn(say="Die 13 passt gut für Sie."),
+        LLMTurn(say="Die 13 kostet 11,90 Euro."),
+    )
+
+    assert result.say == [PHO_PRICE]
+
+
+def test_a_retry_may_search_the_dish_for_its_price(session, known_tenant):
+    """#928: the price comes from a hit of this turn; the hint asks for the
+    search, and a retry that searches gets the core's price."""
+    state = allergic_call(session, known_tenant)
+    pho = str(item(session, known_tenant, "13"))
+    run(
+        session,
+        state,
+        "Dann nehme ich die 13.",
+        searches("13"),
+        LLMTurn(say="Gerne.", cart=[{"menu_item_id": pho, "quantity": 1}]),
+    )
+    answer = "Die 13 kostet 11,90 Euro."
+
+    result, _ = run(
+        session,
+        state,
+        "Was kostet die eigentlich?",
+        LLMTurn(say=answer),
+        searches("13"),
+        LLMTurn(say=answer),
+    )
+
+    assert result.say == [PHO_PRICE]
+
+
+def test_each_dish_the_search_found_gets_its_price_in_search_order(
+    session, known_tenant
+):
+    """#928: two dishes named, two price sentences, both from the database."""
+    state = allergic_call(session, known_tenant)
+    answer = "Die 47 kostet 15,50 Euro und die 13 kostet 11,90 Euro."
+
+    result, _ = run(
+        session,
+        state,
+        "Was kosten die 47 und die 13?",
+        searches("die 47 und die 13"),
+        LLMTurn(say=answer),
+    )
+
+    assert result.say == ["Die 47, Ente knusprig, kostet 15 Euro 50. " + PHO_PRICE]
+
+
+def test_a_price_asked_with_an_option_never_gets_the_base_price(session, known_tenant):
+    """Deep review of #928: "die 47 mit Huhn" costs a euro less than the
+    card's 15,50; a hit searched with a wish gives no price sentence, and the
+    call ends in the offer (docs/24)."""
+    state = allergic_call(session, known_tenant)
+    answer = "Die 47 mit Huhn kostet 14,50 Euro."
+
+    result, _ = run(
+        session,
+        state,
+        "Was kostet die 47 mit Huhn?",
+        searches("47 mit Huhn"),
+        LLMTurn(say=answer),
+        LLMTurn(say=answer),
+    )
+
+    assert said_nowhere(result, "15 Euro 50")
+    assert result.say == [guards.SAY_ALLERGENS_OFFER]
+
+
+def test_a_plain_search_of_the_same_dish_gives_no_base_price_for_an_option(
+    session, known_tenant
+):
+    """Codex review of #928 (P1): the model searches "47" and then "47 mit
+    Huhn" in one turn; the plain hit must not price the dish asked with its
+    option."""
+    state = allergic_call(session, known_tenant)
+    answer = "Die 47 mit Huhn kostet 14,50 Euro."
+
+    result, _ = run(
+        session,
+        state,
+        "Was kostet die 47 mit Huhn?",
+        searches("47"),
+        searches("47 mit Huhn"),
+        LLMTurn(say=answer),
+        LLMTurn(say=answer),
+    )
+
+    assert said_nowhere(result, "15 Euro 50")
+    assert result.say == [guards.SAY_ALLERGENS_OFFER]
+
+
+@pytest.mark.parametrize("own", [False, True])
+def test_the_candidates_of_an_unclear_part_reach_the_guest(session, own):
+    """Codex review of #928 (P2): with several parts the candidate question of
+    the unclear one is that part's `say`; the retry may say it, and a second
+    refusal says it for the model."""
+    tenant = search_tenant(session)
+    state = allergic_call(session, tenant)
+    query = "eine Suppe und die 23"
+    data = dispatch(
+        session, state.call_id, tenant, "search_menu", {"query": query}, now=NOW
+    ).data
+    assert data["match_type"] == "positions"
+    [question] = [p["say"] for p in data["positions"] if p.get("say")]
+    assert question.startswith("Meinen Sie Nummer 12")
+    worded = "Meinen Sie bei der Suppe die 12 oder die 13?"
+
+    result, _ = run(
+        session,
+        state,
+        "Ich hätte gern eine Suppe und die 23.",
+        searches(query),
+        LLMTurn(say=worded),
+        LLMTurn(say=worded if own else question),
+    )
+
+    assert result.say == [question]
+
+
+def test_a_dish_no_search_of_the_turn_found_gets_the_offer(session, known_tenant):
+    """#928: the price comes only from a hit of this turn; a dish known from
+    an earlier turn gets the offer."""
+    state = allergic_call(session, known_tenant)
+    pho = str(item(session, known_tenant, "13"))
+    run(
+        session,
+        state,
+        "Dann nehme ich die 13.",
+        searches("13"),
+        LLMTurn(say="Gerne.", cart=[{"menu_item_id": pho, "quantity": 1}]),
+    )
+    answer = "Die 13 kostet 11,90 Euro."
+
+    result, _ = run(
+        session,
+        state,
+        "Was kostet die eigentlich?",
+        LLMTurn(say=answer),
+        LLMTurn(say=answer),
+    )
+
+    assert result.say == [guards.SAY_ALLERGENS_OFFER]
+
+
+def test_a_sold_out_dish_gets_its_sold_out_sentence(session, known_tenant):
+    """#928 and its deep review: a sold-out hit gets no price, the guest hears
+    that it is out today."""
+    session.execute(
+        update(MenuItem)
+        .where(MenuItem.tenant_id == known_tenant, MenuItem.number == "13")
+        .values(sold_out_until=NOW + timedelta(hours=6))
+    )
+    session.flush()
+    state = allergic_call(session, known_tenant)
+
+    result, _ = run(
+        session,
+        state,
+        "Was kostet die 13?",
+        searches("13"),
+        LLMTurn(say="Die 13 kostet 11,90 Euro."),
+    )
+
+    assert result.say == ["Die 13, Pho Bo, ist heute leider aus."]
