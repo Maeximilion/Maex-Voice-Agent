@@ -256,9 +256,13 @@ up (`guards.is_open`)
        (`HINT_ALLERGY_DISH`: the `cart` for a dish the guest takes, the
        price from `search_menu` for a price question, a tool's own sentence
        word for word, `get_item_details` for what is in a dish, else the
-       noted sentence). A retry that writes the dish into the `cart` is
-       judged as an order step; one without an order step stays held, so
-       "Ja, die ist für Sie kein Problem" after the refusal is not heard. A
+       noted sentence). The retry is judged like a first answer (Maxi
+       24.11.2026, R1): held again when it names a dish or its own words
+       speak of the allergy, else `unlicensed` checks it, so a recap that
+       drops the dish ("Auf welchen Namen darf ich bestellen?") goes
+       through, and so does "Ja, die ist für Sie kein Problem", the
+       accepted residual (`docs/24`). A retry after a sentence refused for
+       an allergen word stays strict (#860). A
        refused sentence that states a price (an amount in euro or cent) of
        a dish this turn's search found, and no search of the turn with a
        wish, gets the core's sentence at once, with no retry: its price
