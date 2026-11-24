@@ -186,6 +186,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 ## Changelog
 
 - **v2.69.56 · 24.11.2026:** chain: a finisher takes the next item instead of being archived, the coordinator archives finished side sessions, never stops for its own context and keeps the chain state in notes and memory, Dependabot PRs go to the ship lane
+- **v2.69.55 · 24.11.2026:** deps: ntfy v2.38.1 and n8n 2.48.7 in the compose files (Dependabot #974, compose-images group); no code change
 - **v2.69.54 · 24.11.2026:** #984: restore.sh keeps owners, grants and database settings (`--without-owners` for a server without the roles), backup and restore reach a 127.0.0.1-only Postgres from a client container on Linux
 - **v2.69.53 · 24.11.2026:** #982: one helper for the forms of a number in deploy/asterisk/render.sh, no behaviour change
 - **v2.69.51 · 24.11.2026:** #979: English identifiers in the older GUI code (route functions of `api/gui/router.py`, names in `app.ts`), no behaviour change
