@@ -48,6 +48,7 @@ from api.domain.menu.wishes import (
     only_denies,
     speaks_of_health,
 )
+from api.domain.ordering.validation import SAY_PICKUP_CLOSED
 from sim.scripted_order import (
     ADDRESS_FIELDS,
     CLEAR_MATCHES,
@@ -550,7 +551,18 @@ class ScriptedLLM:
             if self._out_of_scope_request:
                 return self._out_of_scope(slots, {})
             if self._pickup is not None:
-                prefix = _join(self._greeting_once(), say)
+                greeting = self._greeting_once()
+                prefix = _join(greeting, say)
+                if not data.get("pickup_enabled", True) and not data.get(
+                    "delivery_enabled", True
+                ):
+                    # Neither pickup nor delivery takes an order now: the
+                    # status says so, and no dish is asked for (docs/24, T-5.2).
+                    # With delivery open the core's sentence at the draft
+                    # offers it, so that order is still taken.
+                    self._opening_query = self._opening_allergy = None
+                    self._pickup.closed = say or SAY_PICKUP_CLOSED
+                    return LLMTurn(say=_join(greeting, self._pickup.closed))
                 if self._opening_query:
                     self._opening_prefix = prefix or ""
                     self._last_query, self._opening_query = self._opening_query, None

@@ -49,6 +49,11 @@ SAY_MORE = "Darf es noch etwas sein?"
 SAY_NAME = "Auf welchen Namen darf ich die Bestellung notieren?"
 SAY_PHONE = "Unter welcher Telefonnummer sind Sie erreichbar?"
 SAY_RESTART = "Dann noch einmal von vorn: was möchten Sie bestellen?"
+# A surcharge without a `reason` on the menu (prompt rule, Codex PR #139).
+SAY_NO_REASON = "Der Aufpreis steht so in der Karte."
+_WHY_MORE = re.compile(
+    r"\b(?:warum|wieso|weshalb)\b.*\b(?:kostet|teurer|aufpreis|mehr)\b", re.IGNORECASE
+)
 # An allergy without its ingredient: the model asks (Maxi, 15.11.2026), with
 # the fixed question of an allergy turn (#798); the variant with the dish
 # while another one is open too (Codex PR #139, P1) is refused in such a turn
@@ -165,6 +170,12 @@ class PickupScript:
         self._complete = False
         # The note for the whole order, once the core asked for one.
         self._order_note: str | None = None
+        # The last option with a surcharge and its `reason` from the menu, for
+        # "Warum kostet das mehr?" (Codex PR #139).
+        self._surcharge: tuple[str, str | None] | None = None
+        # What `get_service_status` said when neither pickup nor delivery takes
+        # an order: every later sentence gets it again, no dish is asked for.
+        self.closed: str | None = None
 
     # -- Customer turn ------------------------------------------------------
 
@@ -176,6 +187,8 @@ class PickupScript:
     def on_customer(
         self, text: str, slots: dict[str, Any], patch: dict[str, Any]
     ) -> LLMTurn:
+        if self.closed:
+            return LLMTurn(say=self.closed, state_patch=patch or None)
         if self._same_open:
             self._same_open = False
             self._use_stored = _agrees(text)
@@ -209,8 +222,9 @@ class PickupScript:
                 # Quantity from the answer ("einmal die dreizehn", also without
                 # a marker: "zwei Pho Bo", "zwei Nummer dreizehn"), else from
                 # the question the suggestions belong to ("zwei Suppen") (Codex
-                # PR #133).
-                quantity = _stated_quantity(text, hit) or _quantity(
+                # PR #133). After a no the replacement says it: "Nein, lieber
+                # zwei Nummer 13" (Codex PR #178).
+                quantity = _stated_quantity(other or text, hit) or _quantity(
                     self._suggestion_query, hit
                 )
                 wish = self._add(
@@ -245,6 +259,16 @@ class PickupScript:
             self.phase = "dishes"
             self._suggestions = []
             return _search(text, patch)
+        if self._surcharge and _WHY_MORE.search(text):
+            # Searched, the question found no dish: the reason comes from the
+            # menu, and the open question follows it.
+            option, reason = self._surcharge
+            lead = (
+                f"Der Aufpreis für {option}: {reason.rstrip('.')}."
+                if reason
+                else SAY_NO_REASON
+            )
+            return self._next(slots, patch, lead=lead)
         if self.phase == "option":
             return self._answer_option(text, slots, patch)
         if self.phase == "more":
@@ -553,7 +577,16 @@ class PickupScript:
         wish: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         pending = [
-            {"group": g["group"], "options": [o["name"] for o in g["options"]]}
+            {
+                "group": g["group"],
+                "options": [o["name"] for o in g["options"]],
+                # Surcharge and reason of each option, for the why question.
+                "surcharges": {
+                    o["name"]: o.get("reason")
+                    for o in g["options"]
+                    if o.get("price_delta_cents", 0) > 0
+                },
+            }
             for g in hit.get("option_groups", [])
             if g.get("required")
         ]
@@ -591,6 +624,8 @@ class PickupScript:
         if wish["kind"] == "option":
             item.options.append({"group": wish["group"], "name": wish["option"]})
             item.pending = [g for g in item.pending if g["group"] != wish["group"]]
+            if (wish.get("price_delta_cents") or 0) > 0:
+                self._surcharge = (wish["option"], wish.get("reason"))
         elif wish["kind"] == "open" and wish.get("groups"):
             # The option stands in several groups: the question stays open
             # until the answer names one, none is chosen here.
@@ -717,6 +752,11 @@ class PickupScript:
         item, hit, wish, question = self._group_for[0]
         said = set(_words(text))
         named = [g for g in wish["groups"] if set(_words(g)) <= said]
+        # "Warme Beilage" names "Beilage" too: the longer name is the one meant
+        # (Codex PR #178).
+        named = [
+            g for g in named if not any(set(_words(g)) < set(_words(o)) for o in named)
+        ]
         rejected = _rejects(text) or "nicht" in said
         chosen = len(named) == 1 and not rejected
         dropped = rejected and not named
@@ -754,6 +794,8 @@ class PickupScript:
                 understanding_failure="option",
             )
         item.options.append({"group": group["group"], "name": chosen[0]})
+        if chosen[0] in group["surcharges"]:
+            self._surcharge = (chosen[0], group["surcharges"][chosen[0]])
         item.pending.remove(group)
         return self._next(slots, patch)
 
@@ -950,9 +992,8 @@ def _statement(say: str) -> str:
 
 def _correction_quantity(said: str) -> int | None:
     """The quantity said with a correction: marked ("zweimal", "2 x"), or bare
-    directly before the marker ("zwei Nummer 24", Codex PR #271). Not
-    `_stated_quantity`: that takes the "drei" of "die drei und zwanzig" for a
-    quantity, which is the number itself."""
+    directly before the marker ("zwei Nummer 24", Codex PR #271): a bare
+    number word anywhere else is the number itself ("die drei und zwanzig")."""
     marked = find_quantity(said)
     if marked:
         return marked
@@ -982,7 +1023,8 @@ def _stated_quantity(query: str, hit: dict[str, Any] | None = None) -> int | Non
     """The quantity that was said, or None. By the domain's rule (numberwords):
     with a marker ("zweimal", "2 x") it always applies. If the sentence is the
     card number itself ("die 7", "die sieben", "die 23 a"), a leading number
-    word is a quantity only if it is not the number ("zwei Nummer 23"). Next to
+    word is a quantity only if the rest names the number without it ("zwei
+    Nummer 23", not "die drei und zwanzig"). Next to
     a name it is a quantity ("zwei Frühlingsrollen") - unless the dish that
     was found explains it: its own number with an article in front ("die 23,
     Frühlingsrollen") or a name that itself starts with the number ("Acht
@@ -1000,7 +1042,11 @@ def _stated_quantity(query: str, hit: dict[str, Any] | None = None) -> int | Non
         return None
     ref, _ = sole_item_number(query)
     if ref is not None:
-        return lead if lead != ref.value else None
+        # "die drei und zwanzig": the lead word starts the number itself, and
+        # without it the rest names another card or none (docs/24, PR #271).
+        rest, _ = sole_item_number(" ".join(words[at + 1 :]))
+        stands = lead != ref.value and rest is not None and rest.text == ref.text
+        return lead if stands else None
     if hit is not None:
         name = _words(hit["name"])
         if name and parse_cardinal(name[0]) == lead:
@@ -1059,7 +1105,7 @@ def _rejects(text: str) -> bool:
 # a dish ("keine davon, lieber ...", "weder noch, dann ...", "nein, vielen
 # Dank": courtesy alone is no replacement, Codex PR #178).
 _REJECTION_FILL = frozenset(
-    {"davon", "noch", "lieber", "sondern", "dann", "aber", "stattdessen"}
+    {"davon", "noch", "lieber", "sondern", "dann", "aber", "stattdessen", "doch"}
     | {"danke", "dank", "vielen", "schön", "schoen", "sehr", "bitte"}
 )
 
