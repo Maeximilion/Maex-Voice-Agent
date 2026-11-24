@@ -2783,11 +2783,13 @@ def test_a_question_answered_twice_with_the_noted_sentence_goes_to_the_team(
     assert state.handoff_summary is not None
 
 
-def test_a_stated_allergy_leaves_the_next_price_question_to_the_model(
+def test_a_stated_allergy_holds_the_next_price_sentence_to_core_sentences(
     session, known_tenant
 ):
     """Deep review of PR #860 (P2): the noted sentence ended the turn, so the
-    next dish named is no answer to it, and its price is the model's."""
+    next dish named is no answer to it and no handover. Since #928 (Maxi,
+    option B) the model's sentence about that dish is held to core sentences
+    in a call about an allergy: the guest hears the offer, not the price."""
     state = state_for(session, known_tenant, phone=CALLER)
     run(
         session,
@@ -2809,7 +2811,7 @@ def test_a_stated_allergy_leaves_the_next_price_question_to_the_model(
     )
 
     assert not result.ended
-    assert result.say == [price]
+    assert result.say == [guards.SAY_ALLERGENS_OFFER]
     assert session.scalars(select(Callback)).all() == []
 
 
@@ -2943,3 +2945,120 @@ def test_an_unreadable_correction_keeps_the_table_read_back_on_the_card(
     assert (
         "Offene Reservierung, nicht bestätigt: 4 Personen, 16.09.2026 19:00 Uhr" in card
     )
+
+
+def allergic_call(session, tenant_id) -> ConversationState:
+    """A call in which the guest named an allergy (`guards.sticky`)."""
+    state = state_for(session, tenant_id, phone=CALLER)
+    run(
+        session,
+        state,
+        "Ich habe eine Erdnussallergie.",
+        LLMTurn(say=guards.SAY_ALLERGY_NOTED),
+    )
+    assert guards.sticky(state)
+    return state
+
+
+@pytest.mark.parametrize(
+    "promise",
+    [
+        "Bei Ihrer Allergie ist die 13 kein Problem.",
+        "Die Pho Bo ist für Sie gut geeignet.",
+        "Gerne. Die 13 ist unproblematisch!",
+    ],
+)
+def test_a_suitability_promise_about_a_dish_in_an_allergic_call_is_not_heard(
+    session, known_tenant, promise
+):
+    """#928 (Maxi, option B): in a call where the guest named an allergy, a
+    model sentence that names a dish of the call is held to core sentences
+    when the turn took no order step. "kein Problem" names no allergen, so
+    `unlicensed` let it through before."""
+    state = allergic_call(session, known_tenant)
+
+    result, llm = run(
+        session,
+        state,
+        "Was können Sie mir denn empfehlen?",
+        searches("13"),
+        LLMTurn(say=promise),
+        LLMTurn(say=promise),
+    )
+
+    assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_ALLERGY_DISH
+    assert said_nowhere(result, promise)
+    assert result.say == [guards.SAY_ALLERGENS_OFFER]
+    assert not result.ended
+
+
+def test_the_retry_after_a_dish_sentence_may_say_the_noted_sentence(
+    session, known_tenant
+):
+    """#928: the hint names the core sentence the retry may say."""
+    state = allergic_call(session, known_tenant)
+
+    result, _ = run(
+        session,
+        state,
+        "Was können Sie mir denn empfehlen?",
+        searches("13"),
+        LLMTurn(say="Die 13 passt gut zu Ihnen."),
+        LLMTurn(say=guards.SAY_ALLERGY_NOTED),
+    )
+
+    assert result.say == [guards.SAY_ALLERGY_NOTED]
+
+
+def test_an_order_step_keeps_the_models_sentence_about_its_dish(session, known_tenant):
+    """#928: with an order step in the turn the model's read-back of the dish
+    stays the model's, checked by `unlicensed` as before."""
+    state = allergic_call(session, known_tenant)
+    pho = str(item(session, known_tenant, "13"))
+    noted = "Die 13 ist notiert. Darf es noch etwas sein?"
+
+    result, _ = run(
+        session,
+        state,
+        "Dann nehme ich die 13.",
+        searches("13"),
+        LLMTurn(say=noted, cart=[{"menu_item_id": pho, "quantity": 1}]),
+    )
+
+    assert result.say == [noted]
+
+
+def test_a_sentence_without_a_dish_stays_the_models_in_an_allergic_call(
+    session, known_tenant
+):
+    """#928: only a sentence that names a dish of the call is held."""
+    state = allergic_call(session, known_tenant)
+    plain = "Gerne. Möchten Sie abholen oder liefern lassen?"
+
+    result, _ = run(
+        session,
+        state,
+        "Was können Sie mir denn empfehlen?",
+        searches("13"),
+        LLMTurn(say=plain),
+    )
+
+    assert result.say == [plain]
+
+
+def test_a_dish_sentence_in_a_call_without_an_allergy_stays_the_models(
+    session, known_tenant
+):
+    """#928: the rule is for calls where the guest named an allergy."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    answer = "Die 13 ist eine kräftige Suppe."
+
+    result, _ = run(
+        session,
+        state,
+        "Was können Sie mir denn empfehlen?",
+        searches("13"),
+        LLMTurn(say=answer),
+    )
+
+    assert result.say == [answer]

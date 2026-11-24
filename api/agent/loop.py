@@ -685,7 +685,18 @@ class ConversationLoop:
                 # Sie kein Problem" is the same claim without its noun (deep
                 # review of #860, P1).
                 in_allergy_call = guards.sticky(state)
-                strict = open_turn or (allergen_back and in_allergy_call)
+                # In that call a sentence about a dish of the call is held to
+                # core sentences too when the turn took no order step: "Bei
+                # Ihrer Allergie ist die 13 kein Problem" names no allergen
+                # (#928, Maxi: option B).
+                about_a_dish = (
+                    in_allergy_call
+                    and not changed
+                    and guards.names_a_dish(aturn, state, say)
+                )
+                strict = (
+                    open_turn or (allergen_back and in_allergy_call) or about_a_dish
+                )
                 if (
                     not table
                     and not allergen_says
@@ -698,6 +709,8 @@ class ConversationLoop:
                     refused = (
                         guards.ALLERGY_TURN
                         if open_turn
+                        else guards.ALLERGY_DISH
+                        if about_a_dish
                         else guards.ALLERGY_CALL
                         if in_allergy_call
                         else guards.UNLICENSED_ALLERGEN

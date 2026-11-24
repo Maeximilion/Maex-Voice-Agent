@@ -242,7 +242,14 @@ up (`guards.is_open`)
        before it named. An unlicensed word, or "Allergene" or "Allergiker"
        in the model's own words, goes back once, then as above; in a call
        where the guest named an allergy the retry may say only core
-       sentences (`HINT_ALLERGY_CALL`)
+       sentences (`HINT_ALLERGY_CALL`). In that call a sentence of the
+       model that names a dish of the call (card number or whole name) is
+       held to core sentences from the start when the turn took no order
+       step (#928, Maxi 24.11.2026, option B): "Bei Ihrer Allergie ist die
+       13 kein Problem" names no allergen. It goes back once
+       (`HINT_ALLERGY_DISH`), then as above; the price of a dish asked
+       without an order step ends in the offer sentence too, the accepted
+       cost
    An open turn that ends in a core sentence with the guest's allergy not
    noted, or an allergen nothing explained, leaves the question open for
    one turn: after the offer sentence a dish the guest names next is its

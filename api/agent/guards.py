@@ -663,7 +663,18 @@ HINT_ALLERGY_CALL = (
     + SAY_ALLERGY_NOTED
     + "“"
 )
+# In the same call a sentence about a dish of the call, with no order step in
+# the turn (`names_a_dish`, #928): "Bei Ihrer Allergie ist die 13 kein
+# Problem" promises without an allergen noun.
+HINT_ALLERGY_DISH = (
+    "Abgelehnt: der Gast hat in diesem Gespräch eine Allergie genannt, und dein "
+    "Satz spricht von einem Gericht: deinen eigenen Satz hört er jetzt nicht. "
+    "Was in einem Gericht ist und ob es für den Gast passt, sagt nur der Kern: "
+    "lies es mit get_item_details. Nimmt der Gast ein Gericht, schreib es in den "
+    "`cart`. Sonst sag nur „" + SAY_ALLERGY_NOTED + "“"
+)
 ALLERGY_TURN = ToolResult(ok=False, error_code="invalid_input", hint=HINT_ALLERGY_TURN)
+ALLERGY_DISH = ToolResult(ok=False, error_code="invalid_input", hint=HINT_ALLERGY_DISH)
 UNLICENSED_ALLERGEN = ToolResult(
     ok=False, error_code="invalid_input", hint=HINT_UNLICENSED_ALLERGEN
 )
@@ -1007,6 +1018,16 @@ def _without_core(turn: AllergenTurn, state: ConversationState, say: str) -> str
 def core_only(turn: AllergenTurn, state: ConversationState, say: str) -> bool:
     """Is `say` made of sentences the core wrote and nothing else (row 2)?"""
     return _WORDS.search(_without_core(turn, state, say)) is None
+
+
+def names_a_dish(turn: AllergenTurn, state: ConversationState, say: str) -> bool:
+    """Does the model's own part of `say` name a dish of the call (card number
+    or whole name)? In a call about an allergy such a sentence goes core-only
+    when the turn took no order step (#928, Maxi: option B).
+    shortcut: a card number inside a price or a time ("11,90 Euro", "um 19
+    Uhr") counts as that dish named; the sentence goes back, nothing false
+    is said."""
+    return bool(_dishes_named(state, _without_core(turn, state, say)))
 
 
 def unlicensed(turn: AllergenTurn, state: ConversationState, say: str) -> set[str]:
