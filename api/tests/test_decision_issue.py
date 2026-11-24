@@ -395,6 +395,8 @@ def test_a_partial_run_keeps_a_key_written_before_the_grouping() -> None:
         decision_issue.render_body({IMAGES: [STALE]}, "Intro").rsplit("<!--", 1)[0]
         + f"<!-- projektpflege-keys: {','.join(sorted(old))} -->"
     )
-    result = decision_issue.plan_partial(before, {OHNE_MERGE: [PR_82]}, WER, unknown={IMAGES})
+    result = decision_issue.plan_partial(
+        before, {OHNE_MERGE: [PR_82]}, WER, unknown={IMAGES}
+    )
     assert result.comment is None
     assert decision_issue.parse_keys(result.body) == set(old)
