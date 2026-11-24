@@ -747,7 +747,9 @@ class ConversationLoop:
                         and in_allergy_call
                         and (
                             not dish_only
-                            or guards.speaks_of_the_allergy(aturn, state, say)
+                            or guards.speaks_of_the_allergy(
+                                aturn, state, say, changed=changed
+                            )
                         )
                     )
                 )
@@ -787,9 +789,12 @@ class ConversationLoop:
                         # Rows 3 and 6: back to the model once.
                         allergen_back = True
                         dish_back = refused is guards.ALLERGY_DISH
-                        # Refused only for the dish it names, no allergen word.
-                        dish_only = dish_back and not guards.unlicensed(
-                            aturn, state, say
+                        # Refused only for the dish it names: no allergen word,
+                        # licensed or not (Maxi: R1; deep review of #997).
+                        dish_only = (
+                            dish_back
+                            and not guards.unlicensed(aturn, state, say)
+                            and not guards.own_allergens(aturn, state, say)
                         )
                         called.append(SAY)
                         pending_input = _tool_result_as_input(SAY, refused, zone)
@@ -808,6 +813,14 @@ class ConversationLoop:
                         # sentences of this turn: a sold-out dish, the
                         # candidates of an unclear search (deep review of #928).
                         say = " ".join(dict.fromkeys(aturn.answers))
+                    elif dish_back and changed:
+                        # The guest took a dish: the offer would read their
+                        # next word about it as an allergen question and send
+                        # the call to the team. The noted sentence the hint
+                        # names, in a call where the guest named an allergy
+                        # (`about_a_dish`); the dish stays in the order (deep
+                        # review of #997).
+                        say = guards.SAY_ALLERGY_NOTED
                     else:
                         say = guards.SAY_ALLERGENS_OFFER
                         # The offer asks for a dish: the next one named is its
