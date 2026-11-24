@@ -61,7 +61,13 @@ from api.core.envelope import SAY_ON_FAILURE
 from api.core.errors import SAY_TO_THE_TEAM, Conflict
 from api.core.logging import get_logger, log
 from api.core.time import to_local, utcnow
-from api.domain.callbacks import matching_rule, note_remedy, order_line, remedy_order
+from api.domain.callbacks import (
+    matching_rule,
+    note_offer,
+    note_remedy,
+    order_line,
+    remedy_order,
+)
 
 # Re-exported: the agent's tests name it from here (#998 moved it).
 from api.domain.callbacks.create import SUMMARY_OPEN_ORDER as SUMMARY_OPEN_ORDER
@@ -211,9 +217,9 @@ _MARKER = f"{SUMMARY_NOTE_TO_CLEAR}."
 # guest's sentence behind them. Draft wording.
 SUMMARY_REMEDY_BOOKED = "Beschwerde, Gast hat zugestimmt, bitte ausführen: {remedy}."
 SUMMARY_REMEDY_OPEN = "Kunde hat sich beschwert, Angebot nicht angenommen: {remedy}."
-# The order a rule's card is for (#888 S8): without it the line reads like an
+# The order a rule's card is for, the line's newest (#888 S8): without it the line reads like an
 # order of this call.
-SUMMARY_REMEDY_ORDER = "Betrifft:"
+SUMMARY_REMEDY_ORDER = "Betrifft die letzte Bestellung der Nummer:"
 # The call ended after an order's read-back and before its yes (#953). Draft
 # wording.
 SUMMARY_READBACK_UNANSWERED = "Anruf endete vor dem Ja zur vorgelesenen Bestellung."
@@ -1114,9 +1120,9 @@ class ConversationLoop:
         None leaves the complaint with the team, as with an empty catalogue,
         no match or any doubt. The call ends with the remedy, so nothing else
         may be open in it; and without a number nobody could carry it out.
-        And only for an order the calling line placed in the last day, once
-        per order (`callbacks.remedy_order`, #888 S8): a rule books money for
-        whoever says its words."""
+        And only for an order the calling line placed in the last day, one
+        offer per order (`callbacks.remedy_order`, `note_offer`, #888 S8): a
+        rule books money for whoever says its words."""
         if (
             state.stage != "start"
             or state.slots.keys() != {"phone"}
@@ -1149,6 +1155,7 @@ class ConversationLoop:
             order_id=order.id,
             order=order_line(order),
         )
+        note_offer(self._session, state.tenant_id, state.call_id, rule.id, order.id)
         guards.note_said(state, rule.offer_say)
         return TurnResult(state=state, say=[rule.offer_say])
 

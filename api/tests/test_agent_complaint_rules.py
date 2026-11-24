@@ -26,7 +26,7 @@ from api.agent.loop import (
 )
 from api.agent.recording import SAY_WHAT_CAN_I_DO
 from api.agent.state import ConversationState
-from api.domain.callbacks import matching_rule
+from api.domain.callbacks import matching_rule, remedy_order
 from api.domain.callbacks.complaint_rules import ACTION_REMEDY_BOOKED
 from api.domain.callbacks.create import SAY_NOTED
 from api.models import (
@@ -321,7 +321,7 @@ def test_an_order_gets_one_remedy(session, tenant_id, state):
     order = session.scalars(select(Order).where(Order.phone == CALLER)).one()
     assert row.payload is not None and row.payload["order_id"] == str(order.id)
     assert (
-        "Betrifft: Bestellung zur Abholung, Name Mueller, Code A17."
+        "Betrifft die letzte Bestellung der Nummer: Bestellung zur Abholung, Name Mueller, Code A17."
         in cards(session, state)[0].summary
     )
 
@@ -346,6 +346,64 @@ def test_a_remedied_order_leaves_no_older_order_to_remedy(session, tenant_id, st
 
     assert result.say != [OFFER] and again.remedy_offer is None
     assert len(booked(session)) == 1
+
+
+@pytest.mark.parametrize("answer", ["Nein, das reicht mir nicht.", None])
+def test_an_order_gets_one_offer_whatever_the_answer(session, tenant_id, state, answer):
+    """A guest who declines the offer or hangs up on it is the team's, with a
+    card: a second call about the same order is not offered the rule again,
+    or the team's own answer and the rule could both be paid."""
+    rule(session, tenant_id)
+    agent = loop(session)
+    agent.run_turn(state, COMPLAINT)
+    session.rollback()  # the offer's row is committed when the guest hears it
+    if answer is None:
+        agent.offer_unanswered(state)
+    else:
+        agent.run_turn(state, answer)
+
+    again = _state(session, tenant_id)
+    result = loop(session).run_turn(again, COMPLAINT)
+
+    assert result.say != [OFFER] and again.remedy_offer is None
+    assert booked(session) == []
+
+
+@pytest.mark.parametrize(
+    ("card_before_order", "offered"),
+    [(timedelta(0), False), (timedelta(hours=1), True)],
+)
+def test_a_complaint_the_team_has_on_a_card_earns_no_offer(
+    session, tenant_id, card_before_order, offered
+):
+    """A first complaint about the order went to the team on a card; the team
+    may have answered it by hand, so a second call is not offered the rule.
+    A card from before the order says nothing about it."""
+    rule(session, tenant_id)
+    order = ordered(session, tenant_id)
+    session.add(
+        Callback(
+            tenant_id=tenant_id,
+            call_id=_call(session, tenant_id),
+            phone=CALLER,
+            reason="complaint",
+            summary="Kunde hat sich beschwert.",
+            created_at=order.created_at - card_before_order,
+        )
+    )
+    session.commit()
+
+    again = _state(session, tenant_id)
+    result = loop(session).run_turn(again, COMPLAINT)
+
+    assert (result.say == [OFFER]) is offered
+
+
+def test_without_a_caller_id_there_is_no_order_to_remedy(session, tenant_id):
+    ordered(session, tenant_id)
+
+    assert remedy_order(session, tenant_id, None, OPEN_NOW) is None
+    assert remedy_order(session, tenant_id, CALLER, OPEN_NOW) is not None
 
 
 def test_the_model_never_reads_the_offer_in_the_state(session, tenant_id, state):

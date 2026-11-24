@@ -7,6 +7,7 @@ from api.domain.callbacks.board import (
 )
 from api.domain.callbacks.complaint_rules import (
     matching_rule,
+    note_offer,
     note_remedy,
     remedy_order,
 )
@@ -19,6 +20,7 @@ __all__ = [
     "list_open",
     "mark_done",
     "matching_rule",
+    "note_offer",
     "note_remedy",
     "open_change_token",
     "order_line",

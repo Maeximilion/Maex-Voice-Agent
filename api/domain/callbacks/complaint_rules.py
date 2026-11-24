@@ -13,9 +13,12 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from api.models import AuditLog, ComplaintRule, Order
+from api.models import AuditLog, Callback, ComplaintRule, Order
 
 ACTION_REMEDY_BOOKED = "complaint.remedy_booked"
+# A rule offered for an order, whatever the answer: an order gets one offer,
+# a declined or unanswered one stays with the team's card (#888 S8 review).
+ACTION_REMEDY_OFFERED = "complaint.remedy_offered"
 # A rule books money for whoever says its words: it is offered only for an
 # order the calling line placed this long before the call, and once per
 # order (#888 S8, a default awaiting Maxi's decision). Longer is kinder to a guest
@@ -69,12 +72,15 @@ def remedy_order(
     within `REMEDY_ORDER_WINDOW` before `now` from the line `phone` (the
     caller ID) and booked under it (#888 S8). A number said in either call
     can be anyone's, so an order booked under one counts for nothing. The
-    complaint is about that newest order: once it has a remedy, None, and no
-    older order of the line stands in for it. None sends the complaint to
-    the team.
+    complaint is about that newest order: once a rule was offered for it,
+    whatever the answer, or the line has a complaint card since it was
+    placed (the team may have answered it by hand), None, and no older order
+    of the line stands in for it. None sends the complaint to the team.
     shortcut: two calls of one line at the same moment can both be offered a
-    remedy for the same order; the team sees both cards. A lock on the order
-    row in the booking transaction closes it, once a catalogue is live."""
+    remedy for the same order, and an order cancelled while its offer is
+    spoken is still booked at the yes; the team sees the cards. A lock on the
+    order row and a second check at the yes close both, once a catalogue is
+    live (docs/24)."""
     if not phone:
         return None
     order = session.scalars(
@@ -93,16 +99,49 @@ def remedy_order(
     ).first()
     if order is None:
         return None
-    remedied = session.scalar(
+    offered = session.scalar(
         select(AuditLog.id)
         .where(
             AuditLog.tenant_id == tenant_id,
-            AuditLog.action == ACTION_REMEDY_BOOKED,
+            AuditLog.action.in_((ACTION_REMEDY_OFFERED, ACTION_REMEDY_BOOKED)),
             AuditLog.payload["order_id"].astext == str(order.id),
         )
         .limit(1)
     )
-    return None if remedied is not None else order
+    carded = session.scalar(
+        select(Callback.id)
+        .where(
+            Callback.tenant_id == tenant_id,
+            Callback.phone == phone,
+            Callback.reason == "complaint",
+            Callback.created_at >= order.created_at,
+        )
+        .limit(1)
+    )
+    return None if offered is not None or carded is not None else order
+
+
+def note_offer(
+    session: Session,
+    tenant_id: uuid.UUID,
+    call_id: uuid.UUID,
+    rule_id: uuid.UUID,
+    order_id: uuid.UUID,
+) -> None:
+    """A rule offered for `order_id`, in `audit_log` and committed at once:
+    the order gets no second offer, whether the guest says yes, no or hangs
+    up (`remedy_order`). Every answer but a yes leaves a card with the team."""
+    session.add(
+        AuditLog(
+            tenant_id=tenant_id,
+            actor="agent",
+            action=ACTION_REMEDY_OFFERED,
+            entity="complaint_rule",
+            entity_id=rule_id,
+            payload={"call_id": str(call_id), "order_id": str(order_id)},
+        )
+    )
+    session.commit()
 
 
 def note_remedy(
@@ -113,9 +152,9 @@ def note_remedy(
     remedy_cents: int,
     order_id: uuid.UUID,
 ) -> None:
-    """The guest's yes to a rule for `order_id`, in `audit_log`: the next
-    complaint about that order finds it (`remedy_order`). Not committed: it
-    goes with the card that books the remedy, or with its failure."""
+    """The guest's yes to a rule for `order_id`, in `audit_log`. Not
+    committed: it goes with the card that books the remedy, or with its
+    failure."""
     session.add(
         AuditLog(
             tenant_id=tenant_id,
