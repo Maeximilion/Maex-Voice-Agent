@@ -804,7 +804,9 @@ def search_menu(
         if not items:
             raise NotFound(
                 f"Nummer {ref.text} nicht auf der Karte",
-                say=SAY_NO_SUCH_NUMBER.format(number=spoken_card(ref.text)),
+                say=SAY_NO_SUCH_NUMBER.format(
+                    number=spoken_card(ref.text, card.prefixes)
+                ),
             )
         if len(items) > 1 or ref.heard:
             # "7" and "07" on the same menu, "Sushi eins" with S1 and SM1:

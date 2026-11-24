@@ -852,12 +852,19 @@ def canonical_card(card: str) -> str:
 _PREFIX = re.compile(r"\b[a-z]+(?=\d)")
 
 
-def spoken_card(card: str) -> str:
+def spoken_card(card: str, prefixes: frozenset[str] | None = None) -> str:
     """A card number as the agent says it: the prefix in capitals ("S12",
     "SM1"), the rest as stored ("35b", "25g", "S07"). The menu stores numbers
     lower case (docs/14); this is the form of the eval menu and of the voice
-    runs of T-10.3, where the voice read "23g" as a letter (#987)."""
-    return _PREFIX.sub(lambda m: m[0].upper(), card)
+    runs of T-10.3, where the voice read "23g" as a letter (#987).
+
+    A stored number needs no `prefixes`: its prefix is on the menu. Text from
+    the guest's words passes the menu's (`CardFormat.prefixes`), so letters
+    that are none ("da12" from "Nummer da 12") stay as heard."""
+    return _PREFIX.sub(
+        lambda m: m[0].upper() if prefixes is None or m[0] in prefixes else m[0],
+        card,
+    )
 
 
 _LINK_ARTICLES = frozenset({"die", "der", "das", "den"})

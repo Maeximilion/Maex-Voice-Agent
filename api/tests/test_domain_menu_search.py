@@ -1632,3 +1632,13 @@ def test_an_alias_never_wins_for_a_dish_that_differs_only_by_its_number(session,
 
 def test_the_alias_said_as_it_is_still_finds_its_dish(session, sake):
     assert nummern(suche(session, sake, "der Sake 100 ml")) == ["70"]
+
+
+@pytest.mark.parametrize("said", ["Nummer da 12", "Nummer ab 12"])
+def test_not_found_keeps_letters_that_are_no_prefix_of_the_menu(session, sushi, said):
+    """Deep review of #987: two letters the guest said apart are not a prefix of
+    this menu, so the sentence keeps them as heard instead of spelling them."""
+    with pytest.raises(NotFound) as err:
+        suche(session, sushi, said)
+    assert err.value.say is not None
+    assert "Nummer DA12" not in err.value.say and "Nummer AB12" not in err.value.say

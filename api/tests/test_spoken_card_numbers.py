@@ -80,3 +80,10 @@ def test_what_was_understood_says_the_prefix_in_capitals():
     )
     assert say is not None
     assert "Nummer S12, Nummer SM1 Lachs Maki und Nummer 25g" in say
+
+
+def test_letters_that_are_no_prefix_of_the_menu_stay_as_heard():
+    menu = frozenset({"s", "sm"})
+    assert spoken_card("da12", menu) == "da12"
+    assert spoken_card("s99 oder sm99", menu) == "S99 oder SM99"
+    assert spoken_card("sm12", frozenset()) == "sm12"
