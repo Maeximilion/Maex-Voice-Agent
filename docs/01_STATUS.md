@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.68
+> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.69
 
 ---
 
@@ -188,6 +188,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.69 · 24.11.2026:** #888 round 3: a joining word (und, aber, dafür) or bitte is cut from a wish only as a word of its own, so "ohne Hund" no longer becomes "ohne H"
 - **v2.69.68 · 24.11.2026:** #888 round 3: an expected rejection in an eval case names its call with args (postal code, draft type or address), the recorder keeps the arguments of rejected calls
 - **v2.69.67 · 24.11.2026:** #981: migration 047, one open callback per call as a partial unique index; a conflict is a replay, reopening next to an open card of the call is refused
 - **v2.69.66 · 24.11.2026:** #888 S8: a complaint rule is offered only for the newest order booked under the calling line in the last 24 hours, one offer per order and none after a complaint card; the card names the order
