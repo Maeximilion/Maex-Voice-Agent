@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.36
+> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.37
 
 ---
 
@@ -178,7 +178,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.36 · 24.11.2026:** #966 (d): a code step-up counts the passkeys again under the account's row
+- **v2.69.37 · 24.11.2026:** #966 (d): a code step-up counts the passkeys again under the account's row
+- **v2.69.36 · 24.11.2026:** Leftover scan of /start lists files hidden by an index flag (#986)
 - **v2.69.35 · 24.11.2026:** #956: the card of a team leg nobody answered keeps the kitchen marker after a voice failure mid-call
 - **v2.69.34 · 24.11.2026:** #952 and #953: a dropped order draft is never replayed, and a call that ends while an order waits for its yes leaves a callback card
 - **v2.69.33 · 24.11.2026:** chain: a paused session gets no message in super slow, news waits in a note file
