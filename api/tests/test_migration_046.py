@@ -58,11 +58,13 @@ def test_down_and_up_again_gives_the_same_index(engine, scratch_db_url):
 
 
 def _plan(conn, statement) -> str:
-    sql = statement.compile(
-        dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
-    )
-    rows = conn.execute(text(f"explain {sql}")).scalars().all()
-    return "\n".join(rows)
+    # With bound parameters, as the application sends the lookup (the key
+    # 'order_id' too): the custom plan sees them as constants and matches the
+    # index expression. A generic plan cannot (`payload ->> $1`); in `auto`
+    # mode Postgres keeps the custom plan while it is the cheaper one.
+    compiled = statement.compile(dialect=postgresql.psycopg.dialect())
+    rows = conn.exec_driver_sql(f"explain {compiled}", compiled.params)
+    return "\n".join(row[0] for row in rows)
 
 
 def test_the_lookups_of_an_orders_tickets_use_the_index(engine, scratch_db_url):
