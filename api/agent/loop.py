@@ -718,8 +718,11 @@ class ConversationLoop:
                 # (#928, Maxi: option B). An open turn is strict already and
                 # keeps its own ending: a price is no answer to an allergen
                 # question.
+                # Only where the guest named an allergy: after a table sentence
+                # alone the hint and its noted sentence would claim one (sweep
+                # of the deep review of #928).
                 about_a_dish = (
-                    in_allergy_call
+                    guards.allergy_named(state)
                     and not open_turn
                     and guards.about_a_dish(aturn, state, say, changed=changed)
                 )
@@ -794,6 +797,10 @@ class ConversationLoop:
                         say = " ".join(dict.fromkeys(aturn.answers))
                     else:
                         say = guards.SAY_ALLERGENS_OFFER
+                        # The offer asks for a dish: the next one named is its
+                        # answer, as after an open turn (rule 5 counts it;
+                        # sweep of the deep review of #928).
+                        state.allergen_question_open = True
                 if table:
                     sentences = guards.table_says(aturn)
                     if sentences is None:

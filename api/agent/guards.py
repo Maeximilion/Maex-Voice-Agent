@@ -709,7 +709,8 @@ class AllergenTurn:
     that menu text nor a changed order line explains (`is_open`). In an open
     turn the guest hears only sentences the core wrote; in every other turn
     the model's sentence is spoken when each allergen word in it is licensed
-    (`unlicensed`)."""
+    (`unlicensed`) and, in a call where the guest named an allergy, when it
+    speaks of no dish of the call (`about_a_dish`, #928)."""
 
     # The allergen letters the guest's sentence names, without the sentences
     # that only deny an allergy and without the names of dishes the call
@@ -1004,10 +1005,18 @@ def reacts_to(said: str, *, denied: bool = False) -> frozenset[str]:
 
 
 def sticky(state: ConversationState) -> bool:
-    """The call keeps speaking of allergies: the guest named one (an allergy
-    word, coeliac disease or an allergen in a kept sentence; not every
-    sentence the safety net keeps, "die Stoßzeit meiden" is none, #798), or
-    the last sentence the guest heard was the core's table sentence."""
+    """The call keeps speaking of allergies: the guest named one
+    (`allergy_named`), or the last sentence the guest heard was the core's
+    table sentence."""
+    return allergy_named(state) or (state.last_said or "").startswith(
+        SAY_ALLERGENS_LEAD
+    )
+
+
+def allergy_named(state: ConversationState) -> bool:
+    """The guest named an allergy in this call: an allergy word, coeliac
+    disease or an allergen in a kept sentence; not every sentence the safety
+    net keeps, "die Stoßzeit meiden" is none (#798)."""
     # A denial the safety net keeps ("Haben Sie Pizza? Ich habe keine
     # Allergie.") speaks of none, as in `begin_allergen_turn` (Codex review
     # of #860, P1).
@@ -1015,7 +1024,7 @@ def sticky(state: ConversationState) -> bool:
     return any(
         mentions_allergy(said) or names_coeliac(said) or allergens_named(said)
         for said in kept
-    ) or (state.last_said or "").startswith(SAY_ALLERGENS_LEAD)
+    )
 
 
 def is_open(turn: AllergenTurn, state: ConversationState) -> bool:

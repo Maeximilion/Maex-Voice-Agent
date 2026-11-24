@@ -3204,6 +3204,68 @@ def test_the_candidates_of_an_unclear_search_reach_the_guest(session, own):
     assert [line["menu_item_id"] for line in state.cart] == [suppe]
 
 
+def test_a_dish_named_after_the_offer_is_the_question_it_invited(session, known_tenant):
+    """Sweep of the deep review of #928: the offer that ends a held dish
+    sentence asks for a dish, so the next one named is the allergen question
+    it invited, as after an open turn. A model that talks past it twice hands
+    the call to the team (rule 5); no price in place of the allergens."""
+    state = allergic_call(session, known_tenant)
+    describes = "Die 13 ist eine kräftige Rindfleischsuppe."
+
+    offered, _ = run(
+        session,
+        state,
+        "Wie ist denn die Pho Bo?",
+        searches("13"),
+        LLMTurn(say=describes),
+        LLMTurn(say=describes),
+    )
+
+    assert offered.say == [guards.SAY_ALLERGENS_OFFER]
+    assert state.allergen_question_open
+
+    result, _ = run(
+        session,
+        state,
+        "Die 13.",
+        searches("13"),
+        LLMTurn(say=describes),
+        LLMTurn(say="Die 13 kostet 11,90 Euro."),
+    )
+
+    assert said_nowhere(result, "kostet")
+    assert result.say[0] == SAY_ALLERGENS_BEYOND
+
+
+def test_after_a_table_sentence_alone_a_dish_sentence_stays_the_models(
+    session, known_tenant
+):
+    """Sweep of the deep review of #928: the turn after a table sentence is
+    sticky, but a guest who named no allergy is no allergic call: the hint
+    and its noted sentence would claim one."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    run(
+        session,
+        state,
+        "Welche Allergene haben die Frühlingsrollen?",
+        details(session, known_tenant, "23"),
+        LLMTurn(say=CORE_SAY),
+    )
+    assert guards.sticky(state)
+    assert not guards.allergy_named(state)
+    answer = "Ja, die 47, Ente knusprig, ist sehr beliebt."
+
+    result, _ = run(
+        session,
+        state,
+        "Haben Sie auch etwas mit Ente?",
+        searches("47"),
+        LLMTurn(say=answer),
+    )
+
+    assert result.say == [answer]
+
+
 def test_a_sentence_without_a_dish_stays_the_models_in_an_allergic_call(
     session, known_tenant
 ):
