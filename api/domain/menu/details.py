@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from api.core.errors import NotFound
 from api.core.time import tz, utcnow
 from api.domain.menu.items import is_sold_out, option_groups
+from api.domain.menu.numberwords import spoken_card
 from api.domain.menu.search import SAY_SOLD_OUT
 from api.models import ItemAllergen, MenuItem, Tenant
 from api.models.menu import ALLERGEN_CODES
@@ -116,7 +117,9 @@ def say_allergens(number: str, name: str, names: list[str]) -> str:
     the model sent without the flag, when its answer names allergens (#764)."""
     *rest, last = names
     spoken = f"{', '.join(rest)} und {last}" if rest else last
-    return SAY_ALLERGENS_KNOWN.format(number=number, name=name, names=spoken)
+    return SAY_ALLERGENS_KNOWN.format(
+        number=spoken_card(number), name=name, names=spoken
+    )
 
 
 def _allergens(

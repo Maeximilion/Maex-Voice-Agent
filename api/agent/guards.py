@@ -67,7 +67,7 @@ from api.agent.state import (
 from api.domain.menu.details import SAY_ALLERGENS_LEAD, say_allergens
 from api.domain.menu.items import option_key
 from api.domain.menu.normalize import normalize_query
-from api.domain.menu.numberwords import canonical_card, find_numbers
+from api.domain.menu.numberwords import canonical_card, find_numbers, spoken_card
 from api.domain.menu.pos_convert import allergens_named, names_an_allergen
 from api.domain.menu.search import CLEAR_MATCHES
 from api.domain.menu.wishes import (
@@ -1100,7 +1100,9 @@ def _without_core(turn: AllergenTurn, state: ConversationState, say: str) -> str
         *FIXED_ALLERGY_SAYS,
     ):
         if own:
-            rest = rest.replace(own, " ")
+            # Any case: the core says "Nummer S12", the model's hits carry
+            # "s12", and a copy with the stored form is still the core's (#987).
+            rest = re.sub(re.escape(own), " ", rest, flags=re.IGNORECASE)
     return rest
 
 
@@ -1165,7 +1167,7 @@ def price_says(turn: AllergenTurn, state: ConversationState, say: str) -> list[s
 
 def _price_say(hit: dict[str, Any]) -> str:
     name, number = hit.get("name"), hit.get("number")
-    dish = f"Die {number}, {name}," if number else str(name)
+    dish = f"Die {spoken_card(number)}, {name}," if number else str(name)
     if hit.get("sold_out"):
         return f"{dish} ist heute leider aus."
     # "kostet einen Euro 50": `spoken_euro` writes a lone 1 as "ein".
@@ -1182,7 +1184,11 @@ _FIGURES = re.compile(r"\d+(?:[.,:]\d+)+\.?")
 def _with_search_says(turn: AllergenTurn, say: str, own: str) -> str:
     """The model's own words with the sentences of this turn's searches that
     `say` carries: an echo names the dish a pronoun after it speaks of."""
-    return " ".join([own, *(said for said in turn.search_says if said in say)])
+    # Any case, as `_without_core` removes it: "Nummer s12" copies "Nummer S12".
+    lowered = say.lower()
+    return " ".join(
+        [own, *(said for said in turn.search_says if said.lower() in lowered)]
+    )
 
 
 def _dishes_said(state: ConversationState, text: str) -> set[str]:
