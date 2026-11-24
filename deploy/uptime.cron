@@ -1,0 +1,9 @@
+# Uptime check of /health every minute (T-9.4, docs/13 section 5).
+# Install on a machine OTHER than the one it checks, which reaches a push server
+# that is not on the checked machine either: nothing on a server can report that
+# server down. The machine needs Python 3.12 and a checkout (or only
+# scripts/uptime_check.py). If the checkout is not /srv/maex/uptime, change both
+# paths, write uptime.env there (mode 600, variables in the script's docstring),
+# then `crontab deploy/uptime.cron` as an ordinary user, or add the line to that
+# user's crontab. A pass prints only a push or an error, so the log stays small.
+* * * * * python3 /srv/maex/uptime/scripts/uptime_check.py --env-file /srv/maex/uptime/uptime.env >> /srv/maex/uptime/uptime.log 2>&1
