@@ -8,7 +8,7 @@ in German: the matching reads German.
 """
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -26,7 +26,7 @@ from api.agent.loop import (
 )
 from api.agent.recording import SAY_WHAT_CAN_I_DO
 from api.agent.state import ConversationState
-from api.domain.callbacks import matching_rule
+from api.domain.callbacks import matching_rule, remedy_order
 from api.domain.callbacks.complaint_rules import ACTION_REMEDY_BOOKED
 from api.domain.callbacks.create import SAY_NOTED
 from api.models import (
@@ -35,6 +35,7 @@ from api.models import (
     Callback,
     ComplaintRule,
     ConsentLog,
+    Order,
     Recording,
 )
 from scripts.seed import seed
@@ -49,6 +50,8 @@ CALLER = "+4972215551234"
 OFFER = "Testangebot, stimmt das so für Sie?"
 GRANTED = "Testzusage."
 COMPLAINT = "Ich bin unzufrieden, das Essen war kalt."
+# The caller's order the complaint is about, an hour before the earliest call.
+ORDERED = CLOSED - timedelta(hours=1)
 
 
 @pytest.fixture
@@ -88,8 +91,34 @@ def _state(session, tenant_id, **fields) -> ConversationState:
     )
 
 
+def ordered(
+    session, tenant_id, *, phone=CALLER, at=ORDERED, status="confirmed", own=True
+) -> Order:
+    """An order of an earlier call of the line, the one a remedy can be for.
+    `own` False: the order was booked under a number said in that call."""
+    order = Order(
+        tenant_id=tenant_id,
+        call_id=_call(session, tenant_id),
+        type="pickup",
+        status=status,
+        phone=phone,
+        customer_name="Mueller",
+        items_total_cents=1000,
+        total_cents=1000,
+        idempotency_key=uuid.uuid4().hex,
+        pickup_code="A17",
+        created_at=at,
+        booked_on_own_line=own,
+    )
+    session.add(order)
+    session.commit()
+    return order
+
+
 @pytest.fixture
 def state(session, tenant_id):
+    """A caller with an order of the last hours: a rule may be offered."""
+    ordered(session, tenant_id)
     return _state(session, tenant_id)
 
 
@@ -196,6 +225,187 @@ def test_a_matching_rule_is_offered_in_its_own_words_and_books_nothing_yet(
     assert booked(session) == []
 
 
+# -- #888 S8: a remedy only for an order of the calling line ---------------------
+
+
+@pytest.mark.parametrize(
+    "order",
+    [
+        None,
+        {"at": OPEN_NOW - timedelta(hours=25)},
+        {"status": "draft"},
+        {"status": "cancelled"},
+        {"phone": "+4972215559999"},
+        {"own": False},
+    ],
+    ids=[
+        "no order",
+        "older than a day",
+        "a draft",
+        "cancelled",
+        "another line",
+        "booked under a said number",
+    ],
+)
+def test_without_a_recent_order_of_the_line_the_team_takes_the_complaint(
+    session, tenant_id, order
+):
+    """#888 S8: a rule books money for whoever says its words. It is offered
+    only to a caller whose line placed an order in the last day; any other
+    complaint goes to the team, as with an empty catalogue."""
+    rule(session, tenant_id)
+    if order is not None:
+        ordered(session, tenant_id, **order)
+    state = _state(session, tenant_id)
+
+    result = loop(session).run_turn(state, COMPLAINT)
+
+    assert result.say != [OFFER]
+    assert_went_to_the_team(result, session, state)
+    assert booked(session) == []
+
+
+@pytest.mark.parametrize("status", ["approved", "handed_over"])
+def test_an_order_taken_on_or_handed_over_still_earns_the_offer(
+    session, tenant_id, status
+):
+    """The kitchen took the order or the guest has it: it still stands, and a
+    complaint about it is the common case."""
+    rule(session, tenant_id)
+    ordered(session, tenant_id, status=status)
+    state = _state(session, tenant_id)
+
+    result = loop(session).run_turn(state, COMPLAINT)
+
+    assert result.say == [OFFER]
+
+
+def test_a_number_said_in_the_call_earns_no_remedy(session, tenant_id):
+    """Only the caller ID ties a call to an order: a number the guest says
+    can be anyone's."""
+    rule(session, tenant_id)
+    ordered(session, tenant_id)
+    state = _state(session, tenant_id)
+    state.caller_phone = None
+
+    result = loop(session).run_turn(state, COMPLAINT)
+
+    assert result.say != [OFFER]
+    assert_went_to_the_team(result, session, state)
+
+
+def test_a_callback_number_other_than_the_line_earns_no_remedy(session, tenant_id):
+    """The card's callback number is the slot, the order is the caller ID's:
+    when the guest gave another number, the two would not match on the card,
+    so the team takes the complaint."""
+    rule(session, tenant_id)
+    ordered(session, tenant_id)
+    state = _state(session, tenant_id)
+    state.slots["phone"] = "+4972215559999"
+
+    result = loop(session).run_turn(state, COMPLAINT)
+
+    assert result.say != [OFFER] and state.remedy_offer is None
+    assert booked(session) == []
+
+
+def test_an_order_gets_one_remedy(session, tenant_id, state):
+    """A yes books the rule for the caller's order, and the audit row and the
+    card say which; a second complaint about the same order goes to the team."""
+    rule(session, tenant_id)
+    agent = loop(session)
+    agent.run_turn(state, COMPLAINT)
+    agent.run_turn(state, "Ja")
+
+    [row] = booked(session)
+    order = session.scalars(select(Order).where(Order.phone == CALLER)).one()
+    assert row.payload is not None and row.payload["order_id"] == str(order.id)
+    assert (
+        "Betrifft die letzte Bestellung der Nummer: Bestellung zur Abholung, Name Mueller, Code A17."
+        in cards(session, state)[0].summary
+    )
+
+    again = _state(session, tenant_id)
+    result = loop(session).run_turn(again, COMPLAINT)
+    assert result.say != [OFFER] and result.ended
+    assert again.stage == "transferred" and again.remedy_offer is None
+    assert len(booked(session)) == 1
+
+
+def test_a_remedied_order_leaves_no_older_order_to_remedy(session, tenant_id, state):
+    """The complaint is about the line's newest order: once that one is
+    remedied, an older order of the same day earns no second remedy."""
+    ordered(session, tenant_id, at=ORDERED - timedelta(hours=2))
+    rule(session, tenant_id)
+    agent = loop(session)
+    agent.run_turn(state, COMPLAINT)
+    agent.run_turn(state, "Ja")
+
+    again = _state(session, tenant_id)
+    result = loop(session).run_turn(again, COMPLAINT)
+
+    assert result.say != [OFFER] and again.remedy_offer is None
+    assert len(booked(session)) == 1
+
+
+@pytest.mark.parametrize("answer", ["Nein, das reicht mir nicht.", None])
+def test_an_order_gets_one_offer_whatever_the_answer(session, tenant_id, state, answer):
+    """A guest who declines the offer or hangs up on it is the team's, with a
+    card: a second call about the same order is not offered the rule again,
+    or the team's own answer and the rule could both be paid."""
+    rule(session, tenant_id)
+    agent = loop(session)
+    agent.run_turn(state, COMPLAINT)
+    session.rollback()  # the offer's row is committed when the guest hears it
+    if answer is None:
+        agent.offer_unanswered(state)
+    else:
+        agent.run_turn(state, answer)
+
+    again = _state(session, tenant_id)
+    result = loop(session).run_turn(again, COMPLAINT)
+
+    assert result.say != [OFFER] and again.remedy_offer is None
+    assert booked(session) == []
+
+
+@pytest.mark.parametrize(
+    ("card_before_order", "offered"),
+    [(timedelta(0), False), (timedelta(hours=1), True)],
+)
+def test_a_complaint_the_team_has_on_a_card_earns_no_offer(
+    session, tenant_id, card_before_order, offered
+):
+    """A first complaint about the order went to the team on a card; the team
+    may have answered it by hand, so a second call is not offered the rule.
+    A card from before the order says nothing about it."""
+    rule(session, tenant_id)
+    order = ordered(session, tenant_id)
+    session.add(
+        Callback(
+            tenant_id=tenant_id,
+            call_id=_call(session, tenant_id),
+            phone=CALLER,
+            reason="complaint",
+            summary="Kunde hat sich beschwert.",
+            created_at=order.created_at - card_before_order,
+        )
+    )
+    session.commit()
+
+    again = _state(session, tenant_id)
+    result = loop(session).run_turn(again, COMPLAINT)
+
+    assert (result.say == [OFFER]) is offered
+
+
+def test_without_a_caller_id_there_is_no_order_to_remedy(session, tenant_id):
+    ordered(session, tenant_id)
+
+    assert remedy_order(session, tenant_id, None, OPEN_NOW) is None
+    assert remedy_order(session, tenant_id, CALLER, OPEN_NOW) is not None
+
+
 def test_the_model_never_reads_the_offer_in_the_state(session, tenant_id, state):
     rule(session, tenant_id)
     loop(session).run_turn(state, COMPLAINT)
@@ -228,7 +438,12 @@ def test_a_yes_books_the_amount_of_the_row_on_a_card_and_ends_the_call(
     entry = booked(session)[0]
     assert entry.tenant_id == state.tenant_id
     assert entry.entity_id == row.id
-    assert entry.payload == {"call_id": str(state.call_id), "remedy_cents": 345}
+    order = session.scalars(select(Order).where(Order.phone == CALLER)).one()
+    assert entry.payload == {
+        "call_id": str(state.call_id),
+        "remedy_cents": 345,
+        "order_id": str(order.id),
+    }
 
 
 def test_an_offer_counts_as_heard_on_a_line_with_noise(session, tenant_id, state):
@@ -488,9 +703,9 @@ def test_a_card_that_cannot_be_written_books_nothing(session, tenant_id, state):
     """The guest's yes then moves no money, the audit row goes with the card,
     and the team takes the call."""
     rule(session, tenant_id)
-    state.slots["phone"] = "keine Nummer"
     agent = loop(session)
     agent.run_turn(state, COMPLAINT)
+    state.slots["phone"] = "keine Nummer"
 
     result = agent.run_turn(state, "Ja")
 
@@ -546,6 +761,7 @@ def test_a_call_without_an_offer_leaves_no_card(session, state):
 
 def test_the_text_phone_closes_an_open_offer_with_its_call(session, tenant_id):
     rule(session, tenant_id)
+    ordered(session, tenant_id, phone="+497215551234")
     tenant = resolve_tenant(session, "Testbetrieb")
     call = SimCall(
         session, tenant, llm=FakeLLM([]), now=OPEN_NOW, caller_id="0721 5551234"
@@ -560,6 +776,7 @@ def test_the_text_phone_closes_an_open_offer_with_its_call(session, tenant_id):
 
 def asked(session, tenant_id) -> ConversationState:
     """The first sentence of the phone line asked for the recording (L2)."""
+    ordered(session, tenant_id)
     return _state(session, tenant_id, recording="asked")
 
 
@@ -989,6 +1206,7 @@ def test_a_call_with_other_business_goes_to_the_team(session, tenant_id, open_bu
     """The call ends with the remedy: an order or a table of the same call
     would be lost without a word."""
     rule(session, tenant_id)
+    ordered(session, tenant_id)
     state = _state(session, tenant_id, **open_business)
 
     result = loop(session).run_turn(state, COMPLAINT)

@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.66
+> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.67
 
 ---
 
@@ -188,7 +188,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.66 · 24.11.2026:** #981: migration 047, one open callback per call as a partial unique index; a conflict is a replay, reopening next to an open card of the call is refused
+- **v2.69.67 · 24.11.2026:** #981: migration 047, one open callback per call as a partial unique index; a conflict is a replay, reopening next to an open card of the call is refused
+- **v2.69.66 · 24.11.2026:** #888 S8: a complaint rule is offered only for the newest order booked under the calling line in the last 24 hours, one offer per order and none after a complaint card; the card names the order
 - **v2.69.65 · 24.11.2026:** chain: one item per side session, archived after its merge; queued sessions started in Maxi's turn take free lanes while he is away; merged PRs on the ship lane row only Maxi clears
 - **v2.69.62 · 24.11.2026:** #1003: an allergy said into a protected sentence reaches the core; into a read-back the draft is read out again with the note before the yes
 - **v2.69.61 · 24.11.2026:** #987: card numbers are said with the prefix in capitals (S12, SM1), the trailing letter as stored

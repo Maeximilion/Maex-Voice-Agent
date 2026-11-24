@@ -1060,8 +1060,33 @@ def test_a_sentence_the_core_counts_as_heard_is_not_talked_over(session, tenant)
 
 
 def _a_rule(session, tenant) -> str:
-    """Invented for these tests, no rule of any restaurant. The offer it adds."""
+    """Invented for these tests, no rule of any restaurant. The offer it adds.
+    The line 0721 5551234 ordered an hour before: a rule is offered only for
+    such an order (#888 S8)."""
     offer = "Testangebot, stimmt das so für Sie?"
+    earlier = Call(
+        tenant_id=tenant.id,
+        external_session_id=uuid.uuid4().hex,
+        started_at=NOW - timedelta(hours=1),
+        delete_after=NOW.date(),
+    )
+    session.add(earlier)
+    session.flush()
+    session.add(
+        Order(
+            tenant_id=tenant.id,
+            call_id=earlier.id,
+            type="pickup",
+            status="confirmed",
+            phone="+497215551234",
+            booked_on_own_line=True,
+            customer_name="Mueller",
+            items_total_cents=1000,
+            total_cents=1000,
+            idempotency_key=uuid.uuid4().hex,
+            created_at=NOW - timedelta(hours=1),
+        )
+    )
     session.add(
         ComplaintRule(
             tenant_id=tenant.id,
