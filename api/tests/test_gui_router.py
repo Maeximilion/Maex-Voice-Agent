@@ -943,7 +943,7 @@ def test_beschwerde_steht_oben(client, engine, tenant_id):
     assert body.index("Spaete Beschwerde") < body.index("Erster normaler")
 
 
-def gesehen(client, cb_id) -> dict[str, str]:
+def seen_version(client, cb_id) -> dict[str, str]:
     """The version of the card the tablet shows, as its Erledigt button sends it."""
     body = client.get("/gui/fragments/rueckrufe").text
     found = re.search(rf'data-id="{cb_id}"[^>]*data-version="(\w+)"', body)
@@ -956,7 +956,7 @@ def test_erledigt_nimmt_die_karte_weg(client, engine, tenant_id):
     cb_id = rueckruf(engine, tenant_id, summary="Weg damit")
 
     response = client.post(
-        f"/gui/rueckrufe/{cb_id}/erledigt", headers=HX, data=gesehen(client, cb_id)
+        f"/gui/rueckrufe/{cb_id}/erledigt", headers=HX, data=seen_version(client, cb_id)
     )
 
     assert response.status_code == 200
@@ -965,21 +965,21 @@ def test_erledigt_nimmt_die_karte_weg(client, engine, tenant_id):
     assert "HX-Trigger" not in response.headers
 
 
-def test_ein_tap_auf_eine_geaenderte_karte_erledigt_nichts(client, engine, tenant_id):
+def test_a_tap_on_a_changed_card_closes_nothing(client, engine, tenant_id):
     """#998 no. 4: an open order joined the card after the tablet drew it.
     The tap on the old view closes nothing: the fresh card comes back with a
     line that says so, and the next tap on it closes it."""
     from api.models import Callback
 
     cb_id = rueckruf(engine, tenant_id, summary="Gast will X.")
-    seen = gesehen(client, cb_id)
+    seen = seen_version(client, cb_id)
     with Session(engine) as s:
         s.get_one(Callback, cb_id).summary = "Gast will X. Offene Bestellung: 2x 23."
         s.commit()
 
     stale = client.post(f"/gui/rueckrufe/{cb_id}/erledigt", headers=HX, data=seen)
     fresh = client.post(
-        f"/gui/rueckrufe/{cb_id}/erledigt", headers=HX, data=gesehen(client, cb_id)
+        f"/gui/rueckrufe/{cb_id}/erledigt", headers=HX, data=seen_version(client, cb_id)
     )
 
     assert stale.status_code == 200
@@ -989,7 +989,7 @@ def test_ein_tap_auf_eine_geaenderte_karte_erledigt_nichts(client, engine, tenan
     assert "Keine R&uuml;ckrufe offen." in fresh.text
 
 
-def test_erledigt_ohne_gesehen_erledigt_nichts(client, engine, tenant_id):
+def test_erledigt_without_a_version_closes_nothing(client, engine, tenant_id):
     """A button drawn before #998 sends no version: it closes nothing, and the
     fresh card carries one."""
     cb_id = rueckruf(engine, tenant_id, summary="Bleibt offen")

@@ -35,8 +35,9 @@ CARD_CHANGED = "Die Karte hat sich gerade geändert. Bitte noch einmal prüfen."
 def card_version(summary: str) -> str:
     """The version of a card as the team read it: its text, which is what an
     order joining it changes (#998). Not updated_at: a raw UPDATE would pass
-    it by, as `open_change_token` says."""
-    return hashlib.sha256(summary.encode()).hexdigest()[:16]
+    it by, as `open_change_token` says. An emptied card (the deletion job,
+    an erasure) has none: nothing new stands on it to read (#998 review)."""
+    return hashlib.sha256(summary.encode()).hexdigest()[:16] if summary else ""
 
 
 @dataclass(frozen=True)
@@ -149,7 +150,8 @@ def mark_done(
     if callback.status != DONE:
         if seen is not None and seen != card_version(callback.summary):
             raise Conflict(
-                f"Rueckruf {callback_id}: Stand {seen} gesehen", say=CARD_CHANGED
+                f"Callback {callback_id}: version {seen!r} seen, the card changed",
+                say=CARD_CHANGED,
             )
         callback.status = DONE
         callback.done_by = actor

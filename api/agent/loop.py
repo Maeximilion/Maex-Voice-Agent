@@ -1183,18 +1183,25 @@ class ConversationLoop:
         guest who leaves it unanswered knows nothing is booked. The order
         joins a card the call has open (#993, #998). Not when the
         call goes `with_the_team` (an outage, a failed line): the team has it,
-        and its own card waits if nobody answers."""
+        and its own card waits if nobody answers. A card the call has already
+        still gets the order then: the team leg's card names none, and joins
+        that card unchanged (#998 review)."""
         offer, state.remedy_offer = state.remedy_offer, None
         if offer is not None:
             self._complaint_card(state, offer, SUMMARY_REMEDY_OPEN)
         elif (
-            not with_the_team
             # Also when a card ended the call on the read-back: one the model
-            # wrote names no order (#998). The yes moves the cart away, and a
-            # card that names the order already gets it no second time.
-            and (
-                state.stage == "readback_pending"
-                or (state.stage == "callback" and state.cart)
+            # wrote names no order (#998). The yes moves the cart away and the
+            # read-back with it: a cart begun after a booking keeps the booked
+            # order's id but was never read back (#998 review). A card that
+            # names the order already gets it no second time.
+            (
+                (state.stage == "readback_pending" and not with_the_team)
+                or (
+                    state.stage == "callback"
+                    and state.cart
+                    and state.readback is not None
+                )
             )
             and state.order_id is not None
             and (phone := state.slots.get("phone") or state.caller_phone)

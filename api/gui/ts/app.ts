@@ -213,7 +213,7 @@ function detail(event: Event): Record<string, unknown> {
   let bekannt = karten("rueckrufe-liste");
   // The text of each callback card, as a version: an open order that joins a
   // card changes it (#993), and the team must notice that as a new card (#998).
-  let bekannterStand = karten("rueckrufe-liste", "data-version");
+  let knownVersions = karten("rueckrufe-liste", "data-version");
   let knownOrders = karten("bestellungen-liste");
   let knownOverdue = overdueOrders();
   function newIds(vorher: Record<string, string | null>, jetzt: Record<string, string | null>): string[] {
@@ -261,31 +261,35 @@ function detail(event: Event): Record<string, unknown> {
     }
     if (ziel !== "rueckrufe-liste") return;
     const jetzt = karten("rueckrufe-liste");
-    const stand = karten("rueckrufe-liste", "data-version");
+    const versions = karten("rueckrufe-liste", "data-version");
     const neu = newIds(bekannt, jetzt);
-    const geaendert = Object.keys(stand).filter(
-      (id) => id in bekannterStand && bekannterStand[id] !== stand[id]
+    // A card already seen whose text changed. An emptied one (the deletion
+    // job, an erasure) has no version and nothing new to read.
+    const changed = Object.keys(versions).filter(
+      (id) => id in knownVersions && knownVersions[id] !== versions[id] && versions[id] !== ""
     );
+    // A card that became a complaint (one joined it, #998) alarms like a new one.
+    const complaints = neu
+      .concat(changed)
+      .filter((id) => jetzt[id] === "complaint" && bekannt[id] !== "complaint");
     bekannt = jetzt;
-    bekannterStand = stand;
+    knownVersions = versions;
     // A changed card blinks like a new order: nobody has read its new text.
-    geaendert.forEach((id) => {
+    changed.forEach((id) => {
       const el = document.querySelector('#rueckrufe-liste [data-id="' + id + '"]');
       if (el) el.classList.add("neu");
     });
-    if (!neu.length && !geaendert.length) return;
-    const beschwerde = neu.some((id) => jetzt[id] === "complaint");
+    if (!neu.length && !changed.length) return;
+    const beschwerde = complaints.length > 0;
     if (beschwerde) {
       notifySheet(
         "Neue Beschwerde · ansehen",
-        '#rueckrufe-liste [data-id="' +
-          neu.filter((id) => jetzt[id] === "complaint")[0] +
-          '"]'
+        '#rueckrufe-liste [data-id="' + complaints[0] + '"]'
       );
-    } else if (geaendert.length) {
+    } else if (changed.length) {
       notifySheet(
         "Rückruf ergänzt · ansehen",
-        '#rueckrufe-liste [data-id="' + geaendert[0] + '"]'
+        '#rueckrufe-liste [data-id="' + changed[0] + '"]'
       );
     }
     ton(beschwerde ? [660, 440, 660, 440] : [880, 1175]);

@@ -425,9 +425,7 @@ def drive(client: TestClient, seeded: data.Seeded) -> None:
     if seen is None:
         raise SystemExit("the callback to close has no version")
     _ok(
-        client.post(
-            f"/gui/rueckrufe/{done}/erledigt", data={"gesehen": seen.group(1)}
-        ),
+        client.post(f"/gui/rueckrufe/{done}/erledigt", data={"gesehen": seen.group(1)}),
         "callback done",
     )
     _room(

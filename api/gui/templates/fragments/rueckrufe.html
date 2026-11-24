@@ -1,8 +1,8 @@
 {# Spalte "Rückrufe" (docs/06 §3): offene Rückrufe, Beschwerden oben. Wird als
    Ganzes ersetzt - nach "Erledigt" und nach jedem Ereignis "callbacks". Die
    Überschrift gehört dazu, damit die Zahl mitwandert. data-id und data-reason
-   nutzt app.js, um bei neuen Karten den Ton zu spielen, data-version bei
-   geänderten (#998). #}
+   nutzt app.js, um bei neuen Karten den Ton zu spielen. data-version: the
+   card's text as a version, for a changed card's tone and "Erledigt" (#998). #}
 <h2>R&uuml;ckrufe{% if callbacks %} <span class="count">{{ callbacks|length }}</span>{% endif %}
  <button type="button" class="h2-action" hx-get="/gui/rueckrufe/verlauf" hx-target="#rueckruf-verlauf">Verlauf</button>
 </h2>

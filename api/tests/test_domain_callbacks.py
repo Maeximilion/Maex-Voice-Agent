@@ -587,3 +587,57 @@ def test_the_kitchen_marker_stands_once_on_a_joined_card(session, tenant_id, cal
     )
 
     assert task.summary == f"{MARKER} X. {ORDER_TEXT}"
+
+
+def test_a_complaint_that_joins_makes_the_card_a_complaint(session, tenant_id, call_id):
+    """#998 review: a complaint's handoff card meets an older card of the
+    call. The card becomes a complaint (top of the column, the tablet's
+    alarm), and the push says so instead of "Bestellung offen"."""
+    first = create_callback(
+        session,
+        request(tenant_id, call_id, reason="out_of_scope", summary="Gast will X."),
+        now=NOW,
+    )
+
+    task = create_callback(
+        session,
+        request(
+            tenant_id,
+            call_id,
+            reason="complaint",
+            summary=f"Kunde hat sich beschwert. {OPEN_ORDER}",
+        ),
+        now=NOW,
+    )
+
+    assert task.callback_id == first.callback_id
+    assert task.reason == "complaint"
+    assert task.summary == f"Gast will X. Kunde hat sich beschwert. {OPEN_ORDER}"
+    pushes = session.scalars(select(OutboxEvent).order_by(OutboxEvent.created_at))
+    assert [e.payload["reason"] for e in pushes] == ["out_of_scope", "complaint"]
+
+
+def test_the_kitchen_marker_survives_a_join_that_fills_the_card(
+    session, tenant_id, call_id
+):
+    """#998 review: the card's own text gives way at its end. Its kitchen
+    marker stands in front of the joined card, however long the order and the
+    bookings are, and once."""
+    _table(session, tenant_id, call_id, "Mueller")
+    create_callback(
+        session,
+        request(tenant_id, call_id, reason="human_requested", summary=f"{MARKER} X."),
+        now=NOW,
+    )
+    order = f"{OPEN_ORDER[:-1]}, " + "2x 23 Pizza Margherita, " * 37
+
+    task = create_callback(
+        session,
+        request(tenant_id, call_id, reason="order_open", summary=order.rstrip(", ")),
+        now=NOW,
+    )
+
+    assert task.summary.startswith(MARKER)
+    assert task.summary.count(MARKER) == 1
+    assert "Bereits gebucht: Reservierung" in task.summary
+    assert len(task.summary) <= 1000

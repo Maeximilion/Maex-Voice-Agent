@@ -61,6 +61,7 @@ SUMMARY_OPEN_ORDER = "Offene Bestellung, nicht aufgegeben:"
 # (L13). Draft wording; the core's cards lead with it (`agent/loop.py`).
 SUMMARY_NOTE_TO_CLEAR = "Hinweis für die Küche mit dem Gast klären"
 _MARKER = f"{SUMMARY_NOTE_TO_CLEAR}."
+COMPLAINT = "complaint"
 # How each line `booked` writes begins: only a tail of such lines is the
 # database's own, read again when an order joins a card (#993 review).
 _BOOKED_LINES = tuple(
@@ -97,7 +98,7 @@ def create_callback(
         # Only a card that names an open order changes the open one; any
         # other comes back as the card it was, a model's retry too (docs/04).
         if req.reason == ORDER_OPEN or SUMMARY_OPEN_ORDER in summary:
-            _add_open_order(session, open_task, summary, actor)
+            _add_open_order(session, open_task, summary, actor, req.reason)
         session.commit()
         return _task(open_task)
     summary = _with_bookings(summary, booked(session, req.tenant_id, req.call_id))
@@ -204,7 +205,9 @@ def _with_bookings(summary: str, bookings: str | None) -> str:
     return f"{summary[:room].rstrip()} {bookings}".lstrip()
 
 
-def _add_open_order(session: Session, card: Callback, order: str, actor: str) -> None:
+def _add_open_order(
+    session: Session, card: Callback, order: str, actor: str, reason: str
+) -> None:
     """The open order onto the open card of its call (#993): one card per
     call, and the team reads the order where it looks already. The card keeps
     its reason and number. Its own text gives way to the order, and the
@@ -213,22 +216,35 @@ def _add_open_order(session: Session, card: Callback, order: str, actor: str) ->
     push of the card named only its old reason (#993 review). Once: a second
     hang-up of the call finds the order on it and changes nothing, and a
     card that names an open order already gets none more, its lines fitted
-    to another room as they may be (#998). The kitchen marker stands once."""
+    to another room as they may be (#998). The kitchen marker stands once,
+    in front, where no cut reaches it (#998 review). A complaint that joins
+    makes the card a complaint: it goes to the top and alarms the tablet, and
+    the push says so (#998 review); `reason` is the joining card's."""
     own = _own_text(card.summary)
-    if _MARKER in own:
-        order = " ".join(order.replace(_MARKER, "", 1).split())
-    if order in own or SUMMARY_OPEN_ORDER in own:
+    if SUMMARY_OPEN_ORDER in own:
+        return
+    marked = _MARKER in own or _MARKER in order
+    own, order = _unmarked(own), _unmarked(order)
+    if order in own:
         return
     bookings = booked(session, card.tenant_id, card.call_id)
-    room = SUMMARY_MAX - len(order) - 1 - (len(bookings) + 1 if bookings else 0)
-    # shortcut: a big order leaves little of the card's own text, which is cut
-    # at its end; fit both in the loop if the team misses a guest's words.
-    joined = _with_bookings(
-        f"{own[: max(room, 0)].rstrip()} {order}".lstrip(), bookings
+    lead = len(_MARKER) + 1 if marked else 0
+    room = SUMMARY_MAX - lead - len(order) - 1 - (len(bookings) + 1 if bookings else 0)
+    # shortcut: a big order or the guest's words of a joining handoff leave
+    # little of the card's own text, which is cut at its end; fit both in the
+    # loop if the team misses a guest's words.
+    text = " ".join(
+        part
+        for part in (_MARKER if marked else "", own[: max(room, 0)].rstrip(), order)
+        if part
     )
+    joined = _with_bookings(text, bookings)
+    pushed = COMPLAINT if reason == COMPLAINT else ORDER_OPEN
     if joined == card.summary:
         return
     card.summary = joined
+    if pushed == COMPLAINT:
+        card.reason = COMPLAINT
     enqueue(
         session,
         tenant_id=card.tenant_id,
@@ -237,7 +253,7 @@ def _add_open_order(session: Session, card: Callback, order: str, actor: str) ->
             "callback_id": str(card.id),
             "call_id": str(card.call_id),
             "phone": card.phone,
-            "reason": ORDER_OPEN,
+            "reason": pushed,
             "summary": joined,
         },
     )
@@ -248,9 +264,17 @@ def _add_open_order(session: Session, card: Callback, order: str, actor: str) ->
             action=ACTION_ORDER_ADDED,
             entity="callback",
             entity_id=card.id,
-            payload={"call_id": str(card.call_id), "reason": ORDER_OPEN},
+            payload={"call_id": str(card.call_id), "reason": pushed},
         )
     )
+
+
+def _unmarked(text: str) -> str:
+    """`text` without its kitchen marker, which a joined card carries once."""
+    at = text.find(_MARKER)
+    if at < 0:
+        return text
+    return f"{text[:at].rstrip()} {text[at + len(_MARKER) :].lstrip()}".strip()
 
 
 def _own_text(summary: str) -> str:

@@ -701,6 +701,28 @@ def test_a_model_card_after_the_read_back_carries_the_open_order(session, state,
     assert status(session, order, draft_id) == "draft"
 
 
+def test_a_model_card_gets_the_order_also_when_the_call_goes_to_the_team(
+    session, state, order
+):
+    """#998 review: the model wrote its card after the read-back, then the
+    line failed and the call went to the team. The team leg's card names no
+    order and meets the model's card unchanged: the order joins that card
+    when the call closes."""
+    read_to_the_guest(session, state, order)
+    callback = ToolCall(
+        "create_callback",
+        {"phone": CALLER, "reason": "human_requested", "summary": "Rückruf bitte."},
+    )
+    turn(session, state, "Rufen Sie mich lieber zurück.", Model(callback, say="Gut."))
+    loop = ConversationLoop(session, Model(), "system", now=NOW, clock=lambda: 0)
+
+    loop.offer_unanswered(state, with_the_team=True)
+
+    (card,) = cards(session, state)
+    assert card.summary.startswith("Rückruf bitte.")
+    assert card.summary.count(SUMMARY_OPEN_ORDER) == 1
+
+
 def test_a_handoff_past_an_open_card_brings_the_order_onto_it(
     session, state, order, monkeypatch
 ):
@@ -740,6 +762,22 @@ def test_a_handoff_past_an_open_card_brings_the_order_onto_it(
     assert card.id == old.callback_id
     assert card.summary.startswith("Gast möchte mit einem Mitarbeiter sprechen.")
     assert card.summary.count(SUMMARY_OPEN_ORDER) == 1
+
+
+def test_a_cart_begun_after_a_booking_is_no_order_read_back(session, state, order):
+    """#998 review: the yes keeps the booked order's id and drops the
+    read-back. A cart the model begins after it was never read back: a model
+    card and the hang-up write nothing that claims a read-back."""
+    read_to_the_guest(session, state, order)
+    turn(session, state, "Okay", Model(order.confirm(order.draft_id(state)), say="x"))
+    state.cart = copy.deepcopy(state.booked_cart)
+    state.stage = "callback"
+    loop = ConversationLoop(session, Model(), "system", now=NOW, clock=lambda: 0)
+
+    loop.offer_unanswered(state)
+
+    assert state.order_id is not None and state.readback is None
+    assert cards(session, state) == []
 
 
 def _reasons_allowed(session, reasons) -> None:
