@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
 # Restore a dump written by backup.sh (T-9.3, docs/13 §4).
 #
-#   bash scripts/restore.sh FILE --check
-#   bash scripts/restore.sh FILE --replace DATABASE
+#   bash scripts/restore.sh FILE --check [--without-owners]
+#   bash scripts/restore.sh FILE --replace DATABASE [--without-owners]
 #
 #   --check              rehearsal: restore into a scratch database, report, drop it.
 #                        The database of DATABASE_URL is not touched
 #   --replace DATABASE   restore and put the result in place of the database of
 #                        DATABASE_URL; DATABASE must be its name, as a confirmation
+#   --without-owners     for a server without the roles of the dump: everything
+#                        belongs to the user who restores, grants of the dump are
+#                        left out (the application's role still gets its rights)
+#
+# Owners and grants come back as the dump holds them (#984), and the settings of the
+# database replaced (alter database ... set) carry over to the restored one.
 #
 # The dump always goes into a new database first. --replace then renames the current
 # database to <name>_before_restore_<time> and the new one into its place: nothing is
@@ -23,6 +29,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib_pg.sh"
 file=""
 mode=""
 confirm=""
+without_owners=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --check)
@@ -34,6 +41,10 @@ while [ $# -gt 0 ]; do
             mode=replace
             confirm="$2"
             shift 2
+            ;;
+        --without-owners)
+            without_owners=1
+            shift
             ;;
         -*) die 2 "unknown argument: $1 (usage in the head of scripts/restore.sh)" ;;
         *)
@@ -93,12 +104,17 @@ trap drop_scratch EXIT
 pg_sql "$maintenance" "create database \"$scratch\" template template0" ||
     die 1 "cannot create the scratch database; nothing changed"
 scratch_exists=1
-pg_restore_from "$file" --no-owner --no-privileges --exit-on-error --dbname "$scratch" ||
-    die 1 "pg_restore failed; nothing changed"
+restore_args=(--exit-on-error --dbname "$scratch")
+if [ "$without_owners" = 1 ]; then
+    restore_args+=(--no-owner --no-privileges)
+    echo "without owners and grants of the dump: everything belongs to the user who restores"
+fi
+pg_restore_from "$file" "${restore_args[@]}" ||
+    die 1 "pg_restore failed; nothing changed. If a role of the dump does not exist on this server, create it first (bash scripts/db_role.sh for the application's) or restore with --without-owners"
 
-# The dump comes back without privileges. Where the application has a role of its
-# own (the user of DATABASE_URL, #252), it gets its rights here, before the swap: a
-# restored database the application cannot read would be the next outage.
+# The application's role gets its rights here as well, before the swap: a dump from
+# before the role, or one restored --without-owners, has none, and a restored
+# database the application cannot read would be the next outage (#252).
 connected_as="$(pg_sql "$maintenance" "select current_user")" ||
     die 1 "the server no longer answers; nothing changed"
 pg_resolve_app_role "$connected_as"
@@ -107,6 +123,14 @@ if [ -n "$APP_ROLE" ]; then
         die 1 "cannot give the role $APP_ROLE its rights on the restored database (bash scripts/db_role.sh creates the role); nothing changed"
     echo "rights of the application's role $APP_ROLE set"
 fi
+
+# Settings of the database itself are no part of a dump without --create. Those of
+# the database replaced carry over, in --check as well, so a setting this user may
+# not set fails the rehearsal and not the real run.
+# shortcut: a list setting (search_path) comes back as one quoted value; none is set today.
+pg_sql "$maintenance" "select format('alter database %I set %s = %L;', '$scratch', split_part(c, '=', 1), substr(c, strpos(c, '=') + 1)) from pg_db_role_setting s join pg_database d on d.oid = s.setdatabase, unnest(s.setconfig) c where d.datname = '$PGDATABASE' and s.setrole = 0" |
+    pg_script "$maintenance" ||
+    die 1 "cannot carry the settings of $PGDATABASE over to the restored database; nothing changed"
 
 revision="$(pg_sql "$scratch" "select version_num from alembic_version" 2>/dev/null || true)"
 restored="$(pg_sql "$scratch" "select count(*) from information_schema.tables where table_schema = 'public'")"
