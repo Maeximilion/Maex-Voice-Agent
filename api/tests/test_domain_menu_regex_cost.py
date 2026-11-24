@@ -120,9 +120,10 @@ CASES = [
         "mit x" + "\t" * LENGTH + "ohne y",
     ),
     (
+        # One round of `_without_glue` per word: "und." stops the scanner.
         "classify_wish, a chain of joining words before an addition",
         lambda text: classify_wish(text, []),
-        "ohne x" + " und" * (CHAIN_LENGTH // 4) + " mit y",
+        "ohne x" + " und." * (CHAIN_LENGTH // 5) + " mit y",
     ),
 ]
 
