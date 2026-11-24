@@ -728,3 +728,25 @@ def test_a_call_the_team_never_rang_carries_the_marker_too(session, tenant_id):
 
     assert task is not None
     assert task.summary == f"{SUMMARY_HUNG_UP} {MARKER} Anliegen nicht bekannt."
+
+
+def test_a_core_card_with_the_marker_only_inside_gets_it_in_front(session, tenant_id):
+    """A health note replaced inside an order line (`_order_lines`) stands at
+    the end of the core's card, where the cut for the bookings reaches first;
+    the line's card leads with the marker as well."""
+    make_call(session, tenant_id, transfer_reason="human_requested")
+    summary = (
+        f"Offene Bestellung, nicht gebucht: 1x 13 Pho Bo ({SUMMARY_NOTE_TO_CLEAR})."
+    )
+
+    task = team_missed(
+        session,
+        tenant_id,
+        "1760000000.1",
+        summary=summary,
+        kitchen_note=True,
+        now=REPORTED,
+    )
+
+    assert task is not None
+    assert task.summary == f"{SUMMARY_MISSED} {MARKER} {summary}"

@@ -62,7 +62,12 @@ from api.core.logging import get_logger, log
 from api.core.time import to_local, utcnow
 from api.domain.callbacks import matching_rule, note_remedy
 from api.domain.callbacks.create import booked
-from api.domain.callbacks.transfer import SUMMARY_MISSED, SUMMARY_NOTE_TO_CLEAR
+from api.domain.callbacks.transfer import SUMMARY_MISSED
+
+# Re-exported: the agent's tests and cards name it from here (#956 moved it).
+from api.domain.callbacks.transfer import (
+    SUMMARY_NOTE_TO_CLEAR as SUMMARY_NOTE_TO_CLEAR,
+)
 from api.domain.menu.details import SAY_ALLERGENS_LEAD, SAY_ALLERGENS_UNKNOWN
 from api.domain.menu.pos_convert import allergens_named, names_an_allergen
 from api.domain.menu.wishes import (

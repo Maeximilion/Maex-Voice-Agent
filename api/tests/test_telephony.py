@@ -2037,9 +2037,7 @@ def test_a_voice_failure_keeps_the_kitchen_marker_for_the_missed_card(
     assert "Nuss" not in card.summary
 
 
-def test_a_core_card_with_the_marker_keeps_it_once_when_nobody_answers(
-    session, tenant
-):
+def test_a_core_card_with_the_marker_keeps_it_once_when_nobody_answers(session, tenant):
     """The core's own card leads with the marker already (#940): the line's
     card carries it once."""
     case = {
@@ -2657,6 +2655,28 @@ def test_a_guest_who_hangs_up_on_the_outage_sentence_gets_a_card(session, tenant
     [card] = session.scalars(select(Callback)).all()
     assert card.phone == "+497215551234"
     assert the_call(session, "s-1").outcome == "error"
+
+
+def test_a_guest_who_hangs_up_on_the_outage_sentence_keeps_the_kitchen_marker(
+    session, tenant
+):
+    """#956: the guest named an allergy, the voice failed and the guest hung up
+    on the outage sentence: the card the hang-up writes leads with the kitchen
+    marker as well, never the allergy (L13)."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    handler.on_user_turn(
+        "s-1", "Ich haette gern einen Tisch fuer zwei, ich habe eine Nussallergie."
+    )
+    handler.on_voice_failure("s-1")
+
+    handler.on_call_ended("s-1", caller_hung_up=True)
+
+    [card] = session.scalars(select(Callback)).all()
+    assert card.summary.startswith(f"{SUMMARY_HUNG_UP} {SUMMARY_NOTE_TO_CLEAR}.")
+    assert "Nuss" not in card.summary
 
 
 def _booked_then_broken(session, tenant) -> "_Wire":

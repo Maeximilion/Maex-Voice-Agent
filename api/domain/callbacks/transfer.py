@@ -199,11 +199,14 @@ def team_missed(
 
 
 def _marked(card: str | None, *, kitchen_note: bool) -> str | None:
-    """`card` led by the kitchen marker, unless it carries it already: the
-    core's card does once the guest spoke of an allergy (#940)."""
-    if not kitchen_note or (card and SUMMARY_NOTE_TO_CLEAR in card):
+    """`card` led by the kitchen marker, unless it leads with it already: the
+    core's card does once the guest spoke of an allergy (#940). Only in front:
+    the cuts behind it (`SUMMARY_MAX`, the bookings) keep the start, and a
+    marker inside an order line at the end of a long card may be cut."""
+    marker = f"{SUMMARY_NOTE_TO_CLEAR}."
+    if not kitchen_note or (card and card.startswith(marker)):
         return card
-    return f"{SUMMARY_NOTE_TO_CLEAR}. {card or ''}".strip()
+    return f"{marker} {card or ''}".strip()
 
 
 def _without_the_cores_card(session: Session, call: Call) -> str | None:
