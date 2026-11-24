@@ -2358,3 +2358,155 @@ def test_an_intolerance_in_the_opening_is_not_lost(
     ]
     handed_over = list(session.scalars(select(Callback)))
     assert handed_over or any(ingredient in note for note in noted)
+
+
+# --- Stand-in gaps from docs/24 (round 3 of #888) ----------------------------------
+
+
+@pytest.mark.parametrize(
+    ("said_words", "quantity"),
+    [
+        # The first word of a split number is the number, not a quantity.
+        ("Die drei und zwanzig.", 1),
+        ("drei und zwanzig", 1),
+        ("Nummer drei und zwanzig", 1),
+        # A quantity in front of the split number still counts.
+        ("zwei Nummer drei und zwanzig", 2),
+        ("zweimal die drei und zwanzig", 2),
+        ("drei Nummer 23", 3),
+    ],
+)
+def test_a_split_number_is_no_quantity(said_words, quantity):
+    assert _quantity(said_words, FRUEHLING) == quantity
+
+
+def test_a_split_number_books_the_dish_once(session, tenant):
+    """Found while fixing PR #271: "Die drei und zwanzig." booked dish 23
+    three times."""
+    _bestellung(session, tenant, "Die drei und zwanzig.")
+    [order] = orders(session)
+    assert positions(session, order) == [("23", 1, [])]
+
+
+@pytest.fixture
+def warm_side(session, tenant):
+    """Group names that contain each other: "Beilage" and "Warme Beilage"."""
+    plan = parse(
+        {
+            **KARTE,
+            MENU_FILE: KARTE[MENU_FILE] + "56;Gemüsecurry;Hauptgerichte;9,50;;ja\n",
+            OPTIONS_FILE: KARTE[OPTIONS_FILE]
+            + "56;Beilage;Reis;0,00;nein;nein\n"
+            + "56;Warme Beilage;Reis;1,50;nein;nein\n",
+        }
+    )
+    assert plan.ok, plan.errors
+    apply(session, tenant.id, plan, now=NOW)
+    return tenant
+
+
+@pytest.mark.parametrize(
+    ("answer", "group"),
+    [("Warme Beilage.", "Warme Beilage"), ("Als Beilage.", "Beilage")],
+)
+def test_the_longest_group_name_wins(session, warm_side, answer, group):
+    """Codex PR #178: "Warme Beilage" names both groups by their words; the
+    group the whole answer names is the longer one, not a reason to ask
+    again."""
+    _, turns = _bestellung(session, warm_side, "Die 56 mit Reis.", answer)
+    assert "Meinen Sie Reis" not in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert _chosen(session, order) == [(group, "Reis")]
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Beilage oder Warme Beilage, was ist der Unterschied?",
+        "Warme Beilage oder Beilage?",
+    ],
+)
+def test_both_group_names_said_leave_the_question_open(session, warm_side, answer):
+    """Codex PR #1023: an answer that names the shorter group outside the
+    longer one too chooses neither, and no surcharge is added."""
+    _, turns = _bestellung(
+        session, warm_side, "Die 56 mit Reis.", answer, "Warme Beilage."
+    )
+    assert "Meinen Sie Reis" in " ".join(turns[2].say)
+    assert "search_menu" not in str(turns[2].tools)
+    [order] = orders(session)
+    assert _chosen(session, order) == [("Warme Beilage", "Reis")]
+
+
+def test_doch_after_a_rejection_is_filler():
+    from sim.scripted_order import _replacement
+
+    assert _replacement("Nein, doch die 23.") == "die 23."
+
+
+def test_doch_after_a_rejection_finds_the_dish(session, tenant):
+    """Codex PR #178: "Nein, doch die 23." means the 23."""
+    _suppe_und(session, tenant, "Nein, doch die 23.")
+    [order] = orders(session)
+    assert positions(session, order) == [("23", 1, [])]
+
+
+def test_the_quantity_of_an_offered_replacement_counts(session, tenant):
+    """Codex PR #178: "Nein, lieber drei Nummer 13" on the two soups picks the
+    13 with its own quantity, not the two of the question."""
+    _suppe_und(session, tenant, "Nein, lieber drei Nummer 13.")
+    [order] = orders(session)
+    assert positions(session, order) == [("13", 3, [])]
+
+
+CLOSED = datetime(2026, 9, 15, 23, 30, tzinfo=BERLIN)
+
+
+def _closed_pickup(session, tenant, now=CLOSED):
+    return replay(
+        session,
+        case(
+            "Guten Tag, ich moechte etwas zum Abholen bestellen.",
+            "Die 23.",
+            "Auf den Namen Mueller.",
+            "0721 5551234",
+        ),
+        tenant,
+        now=now,
+    )
+
+
+def test_a_closed_pickup_stops_at_once(session, tenant):
+    """Eval suite T-5.2: `get_service_status` says it is closed, so the
+    stand-in says so and takes no order: no dish search, no question for one."""
+    _, turns = _closed_pickup(session, tenant)
+    assert "geschlossen" in " ".join(turns[0].say)
+    assert "Was möchten Sie bestellen?" not in said(turns)
+    assert all("search_menu" not in str(t.tools) for t in turns)
+    assert all("draft_order" not in str(t.tools) for t in turns)
+    assert orders(session) == []
+
+
+def test_pickup_and_delivery_switched_off_stop_at_once(session, tenant):
+    from api.models import ServiceConfig
+
+    session.execute(
+        update(ServiceConfig).values(pickup_enabled=False, delivery_enabled=False)
+    )
+    session.commit()
+    _, turns = _closed_pickup(session, tenant, now=NOW)
+    assert "pausiert" in " ".join(turns[0].say)
+    assert all("search_menu" not in str(t.tools) for t in turns)
+    assert orders(session) == []
+
+
+def test_a_closed_pickup_with_a_dish_in_the_opening_searches_nothing(session, tenant):
+    _, turns = replay(
+        session,
+        case("Ich moechte die 23 zum Abholen.", "Auf den Namen Mueller."),
+        tenant,
+        now=CLOSED,
+    )
+    assert "geschlossen" in " ".join(turns[0].say)
+    assert all("search_menu" not in str(t.tools) for t in turns)
