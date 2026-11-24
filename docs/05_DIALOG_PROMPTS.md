@@ -204,7 +204,8 @@ spoke of their health carries that line too (`allergy_said`, ledger #764
 review): the core's cards, the one that waited for a callback number (judged
 again after the guest's answer), the table the team decides on, and the
 model's own `create_callback`, and the card of a team leg nobody answered
-(also after a voice failure mid-call, #956), each with the line in front, where no cut to
+(also after a voice failure mid-call, #956; in mode shadow, said into a protected
+sentence, or with only a health note of the call's rows left, #969, #970), each with the line in front, where no cut to
 the card's length or the call's bookings reaches it (#940). "Zöliakie" (or "Cöliakie") also
 arms the claim check above, since it names no allergen (#763, Maxi
 14.11.2026)

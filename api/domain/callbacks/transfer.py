@@ -17,25 +17,33 @@ from typing import cast, get_args
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from api.core.errors import SAY_ON_FAILURE, NotFound
+from api.core.logging import get_logger
 from api.core.time import utcnow
 from api.domain.callbacks.create import SUMMARY_MAX, booked, create_callback
 from api.domain.customers.contact import note_contact
 from api.domain.customers.phone import number_or_none
+from api.domain.menu.wishes import speaks_of_health
 from api.domain.status.hours import load_hours, open_window_at
 from api.domain.status.staff_changes import team_phone_at
 from api.models import (
     AuditLog,
     Call,
     Callback,
+    Order,
+    OrderItem,
+    Reservation,
     ServiceConfig,
     Tenant,
 )
 from api.models.tenants import SERVICES
 from api.schemas.callbacks import CallbackReason, CallbackTask, CreateCallbackRequest
 from api.schemas.transfer import TransferResult, TransferToTeamRequest
+
+logger = get_logger("api.domain.callbacks.transfer")
 
 ACTOR_AGENT = "agent"
 ACTOR_TELEPHONY = "telephony"
@@ -187,7 +195,7 @@ def team_missed(
                     SUMMARY_MISSED if rang else SUMMARY_HUNG_UP,
                     _marked(
                         summary or _without_the_cores_card(session, call),
-                        kitchen_note=kitchen_note,
+                        kitchen_note=kitchen_note or _health_noted(session, call),
                     ),
                 )
                 if part
@@ -207,6 +215,47 @@ def _marked(card: str | None, *, kitchen_note: bool) -> str | None:
     if not kitchen_note or (card and card.startswith(marker)):
         return card
     return f"{marker} {card or ''}".strip()
+
+
+def _health_noted(session: Session, call: Call) -> bool:
+    """Does a row of the call carry a note about the guest's health, read as
+    the core reads one (`wishes.speaks_of_health`)? The safety net makes the
+    core write such a note on every draft of a guest who spoke of it, so the
+    marker holds also where the line's memory has none: `voice` restarted in
+    the call, or the report reached a process that never saw it (#969). Any
+    row of the call, a draft, a cancelled or a deleted one too: there is a note to clear
+    with the guest either way. Only the core writes the notes of a call's
+    rows; the team's corrections keep or drop one and type none
+    (`ordering/correction.py`), and a table the team enters belongs to no call
+    (D30). The note itself never reaches the card (L13). Best effort: a read
+    that fails costs the marker, never the card (rule 5).
+    shortcut: an allergy said before any draft leaves no row, so no marker;
+    a per-call flag on `calls` would cover it, at the price of a migration."""
+    try:
+        with session.begin_nested():
+            notes = _call_notes(session, call)
+    except SQLAlchemyError as exc:
+        logger.error(
+            "the health notes of a call could not be read for its card",
+            extra={"extra": {"call_id": str(call.id), "error": type(exc).__name__}},
+        )
+        return False
+    return any(note and speaks_of_health(note) for note in notes)
+
+
+def _call_notes(session: Session, call: Call) -> list[str | None]:
+    """The notes of the call's orders, their lines and its tables."""
+    lines = session.execute(
+        select(Order.note, OrderItem.note)
+        .outerjoin(OrderItem, OrderItem.order_id == Order.id)
+        .where(Order.tenant_id == call.tenant_id, Order.call_id == call.id)
+    )
+    tables = session.scalars(
+        select(Reservation.note).where(
+            Reservation.tenant_id == call.tenant_id, Reservation.call_id == call.id
+        )
+    )
+    return [note for row in lines for note in row] + list(tables)
 
 
 def _without_the_cores_card(session: Session, call: Call) -> str | None:

@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.45
+> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.46
 
 ---
 
@@ -181,6 +181,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.46 · 24.11.2026:** #969 #970: the missed-leg card keeps the kitchen marker after a voice restart (from the call's health notes), in mode shadow and for an allergy said into a protected sentence
 - **v2.69.45 · 24.11.2026:** #929: a second allergy said after the read-back must reach a note; the model may ask for which dish
 - **v2.69.44 · 24.11.2026:** Operator sign-in: an IPv6 /64 also counts in its /48, a wait every 30th failure, so a spray of made-up names from one /48 is bounded (#962)
 - **v2.69.43 · 24.11.2026:** chain: a heavy step holds two lanes only while it runs and waits for room, turbo aims at -10 and ends 30 minutes before the reset, the chain runs on while Maxi is away (finisher takes the next item), Hold button, gates by item size
