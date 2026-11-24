@@ -7,6 +7,7 @@ The yes to that one books. Every loop test runs for a table and for an order,
 on the database, the audit log and the outbox.
 """
 
+import copy
 import json
 import uuid
 from dataclasses import dataclass
@@ -654,10 +655,13 @@ def test_an_unanswered_order_joins_the_open_card_of_the_call(session, state, ord
         now=NOW,
     )
     read_to_the_guest(session, state, order)
+    # A second closer of the same call that read the state before the first
+    # wrote: its call reaches `create_callback` (the first's stage would not).
+    other = copy.deepcopy(state)
     loop = ConversationLoop(session, Model(), "system", now=NOW, clock=lambda: 0)
 
     loop.offer_unanswered(state)
-    loop.offer_unanswered(state)
+    loop.offer_unanswered(other)
 
     (card,) = cards(session, state)
     assert card.id == old.callback_id
@@ -665,7 +669,7 @@ def test_an_unanswered_order_joins_the_open_card_of_the_call(session, state, ord
     assert card.summary.startswith("Gast möchte mit einem Mitarbeiter sprechen.")
     assert card.summary.count(SUMMARY_READBACK_UNANSWERED) == 1
     assert card.summary.count(SUMMARY_OPEN_ORDER) == 1
-    assert state.stage == "callback"
+    assert state.stage == other.stage == "callback"
 
 
 def _reasons_allowed(session, reasons) -> None:

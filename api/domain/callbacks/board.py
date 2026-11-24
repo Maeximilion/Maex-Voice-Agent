@@ -77,7 +77,7 @@ def list_open(session: Session, tenant_id: uuid.UUID) -> list[OpenCallback]:
 def open_change_token(session: Session, tenant_id: uuid.UUID) -> str:
     """Fingerabdruck der offenen Rückrufe für den Ereignisstrom (gui/sse.py).
 
-    Über die Menge der offenen ids und ihren Text, nicht über updated_at: das setzt nur das
+    Über die Menge der offenen ids, nicht über updated_at: das setzt nur das
     ORM, ein rohes UPDATE in der Datenbank bliebe sonst auf den Tablets
     unsichtbar (Befund Codex PR #111 an der Kopfzeile).
     """

@@ -51,8 +51,11 @@ SUMMARY_MAX = 1000
 # card already, the order joins it (#993, Maxi 24.11.2026, option A).
 ORDER_OPEN = "order_open"
 ACTION_ORDER_ADDED = "callback.order_added"
-# The number the guest gave for the order, where the card calls another. Draft.
-SUMMARY_ORDER_PHONE = "Nummer zur Bestellung: {phone}."
+# How each line `booked` writes begins: only a tail of such lines is the
+# database's own, read again when an order joins a card (#993 review).
+_BOOKED_LINES = tuple(
+    line.split("{")[0] for line in (_TABLE_BOOKED, *_ORDER_BOOKED.values())
+)
 
 
 def create_callback(
@@ -82,7 +85,7 @@ def create_callback(
     open_task = _open_for_call(session, req)
     if open_task is not None:
         if req.reason == ORDER_OPEN:
-            _add_open_order(session, open_task, summary, phone, actor)
+            _add_open_order(session, open_task, summary, actor)
         session.commit()
         return _task(open_task)
     summary = _with_bookings(summary, booked(session, req.tenant_id, req.call_id))
@@ -189,25 +192,39 @@ def _with_bookings(summary: str, bookings: str | None) -> str:
     return f"{summary[:room].rstrip()} {bookings}".lstrip()
 
 
-def _add_open_order(
-    session: Session, card: Callback, text: str, phone: str, actor: str
-) -> None:
+def _add_open_order(session: Session, card: Callback, order: str, actor: str) -> None:
     """The open order onto the open card of its call (#993): one card per
     call, and the team reads the order where it looks already. The card keeps
-    its reason. Its own text gives way to the order, and its bookings are read
-    again from the database: a table booked since stands on it, and whatever
-    a card's text claimed after "Bereits gebucht:" is replaced (CLAUDE.md §2
-    rule 1). Once: a second hang-up of the call finds the order on it."""
-    if phone != card.phone:
-        text = f"{text} {SUMMARY_ORDER_PHONE.format(phone=phone)}"
-    head, cut, _ = card.summary.rpartition(SUMMARY_BOOKED)
-    own = head.rstrip() if cut else card.summary
-    if text in own:
+    its reason and number. Its own text gives way to the order, and the
+    bookings at its end are read again from the database: a table booked
+    since stands on it (CLAUDE.md §2 rule 1). The push names the order, the
+    push of the card named only its old reason (#993 review). Once: a second
+    hang-up of the call finds the order on it and changes nothing."""
+    own = _own_text(card.summary)
+    if order in own:
         return
     bookings = booked(session, card.tenant_id, card.call_id)
-    room = SUMMARY_MAX - len(text) - 1 - (len(bookings) + 1 if bookings else 0)
-    joined = f"{own[: max(room, 0)].rstrip()} {text}".lstrip()
-    card.summary = _with_bookings(joined, bookings)
+    room = SUMMARY_MAX - len(order) - 1 - (len(bookings) + 1 if bookings else 0)
+    # shortcut: a big order leaves little of the card's own text, which is cut
+    # at its end; fit both in the loop if the team misses a guest's words.
+    joined = _with_bookings(
+        f"{own[: max(room, 0)].rstrip()} {order}".lstrip(), bookings
+    )
+    if joined == card.summary:
+        return
+    card.summary = joined
+    enqueue(
+        session,
+        tenant_id=card.tenant_id,
+        event_type=CALLBACK_CREATED,
+        payload={
+            "callback_id": str(card.id),
+            "call_id": str(card.call_id),
+            "phone": card.phone,
+            "reason": ORDER_OPEN,
+            "summary": joined,
+        },
+    )
     session.add(
         AuditLog(
             tenant_id=card.tenant_id,
@@ -218,6 +235,16 @@ def _add_open_order(
             payload={"call_id": str(card.call_id), "reason": ORDER_OPEN},
         )
     )
+
+
+def _own_text(summary: str) -> str:
+    """A card's text without the bookings `booked` put at its end. Text that
+    only reads like them stays: the model's words are not cut away."""
+    head, cut, tail = summary.rpartition(SUMMARY_BOOKED)
+    lines = tail.strip().removesuffix(".").split("; ")
+    if cut and all(line.startswith(_BOOKED_LINES) for line in lines):
+        return head.rstrip()
+    return summary
 
 
 def _lock_call(session: Session, tenant_id: uuid.UUID, call_id: uuid.UUID) -> None:
@@ -255,7 +282,11 @@ def _open_for_call(session: Session, req: CreateCallbackRequest) -> Callback | N
             Callback.deleted_at.is_(None),
         )
         .order_by(Callback.created_at)
-        .limit(1),
+        .limit(1)
+        # "Erledigt" takes the row, not the call's lock (`mark_done`): an order
+        # that joins the card waits for it and then finds no open card (#993
+        # review), never writes onto a done one.
+        .with_for_update(),
         execution_options={"populate_existing": True},
     ).scalar_one_or_none()
 
