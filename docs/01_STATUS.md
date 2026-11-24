@@ -2,7 +2,6 @@
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
 > Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.55
-> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.54
 
 ---
 
