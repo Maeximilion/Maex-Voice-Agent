@@ -429,15 +429,25 @@ class ConversationLoop:
         if reason == "complaint" and wish is None:
             escalated = self._offer_remedy(state, user_text)
         if (
-            reason == "cancellation"
-            and state.stage == "readback_pending"
+            state.stage == "readback_pending"
             and state.order_id is not None
-            # Only a plain cancel: anything more may be another booking, one
-            # line or a question, and goes to the team as before.
-            and escalation.only_cancels(user_text)
+            and (
+                # Only a plain cancel: anything more may be another booking,
+                # one line or a question, and goes to the team as before.
+                (reason == "cancellation" and escalation.only_cancels(user_text))
+                # A plain decline without a cancel word (Maxi, #977), only to
+                # the read-back the guest heard last: to "Noch etwas?" or an
+                # allergy question "Nein danke, dann lasse ich es" answers that.
+                or (
+                    reason is None
+                    and state.readback_heard
+                    and escalation.only_declines(user_text)
+                )
+            )
         ):
             # "So lange? Dann stornieren Sie das." Nothing is booked before
-            # the yes, so the team has nothing to undo (Maxi, #678).
+            # the yes, so the team has nothing to undo (Maxi, #678), and the
+            # hang-up after it writes no card (`offer_unanswered`).
             if self._clock() - self._started > self._max_call_seconds:
                 # Its sentence asks for more: no call stays open past its
                 # limit on it, as on `only_asks`.

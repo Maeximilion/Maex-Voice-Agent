@@ -392,6 +392,108 @@ def only_cancels(text: str) -> bool:
     )
 
 
+# A decline of the order read back that holds no cancel word (Maxi, #977,
+# 24.11.2026), in one of two forms, each with its own closed list of words
+# that may stand next to it. The cancel list is no such list: next to a decline
+# its words turn the meaning round ("Doch nicht so lange, alles klar",
+# "Ja, lass machen", "Nein, doch nicht Lieferung", deep review of #977).
+# - "lassen" or "vergessen" with the whole order as what is left: "Nein danke,
+#   dann lasse ich es", "Vergessen Sie die Bestellung, tschüss".
+# - "dann doch nicht", "dann eben nicht" or "dann lieber nicht", with nothing
+#   else said but a no, a thanks or a goodbye: "Nee, dann doch nicht". Without
+#   the "dann", or next to a dish, a time or a pronoun, it starts a correction
+#   or turns that round ("Nein, doch nicht ...", "Doch nicht so lange", "Nein,
+#   das doch nicht").
+# No assent ("ja", "gut", "alles klar", "doch"), no dish, line or kind of order
+# ("die", "Lieferung") may stand next to either: such a sentence keeps the order
+# or changes it, and the model asks. shortcut: closed lists, add a form when
+# the call log shows a plain decline they miss.
+_LEAVE = re.compile(r"\b(?:lass(?:e|en|t)?|vergess(?:e|en)?|vergiss)\b")
+_NOT_AFTER_ALL = re.compile(r"\bdann (?:doch|eben|lieber|doch lieber) nicht\b")
+_THE_ORDER = re.compile(r"\b(?:die|meine) (?:ganze )?bestellung\b")
+# "so" only in "so lange" and "ach so": "Lassen Sie es so" keeps the order.
+_SO_LONG = re.compile(r"\bach so\b|\bso(?= lange?\b)")
+# "Lassen Sie's", "lass ich's": the "es" the speech engine wrote short.
+_SHORT_ES = re.compile(r"['\u2019]s\b")
+# "Lasse ich es" opening its clause asks, or thinks aloud, with its mark lost.
+_ASKS_ITSELF = re.compile(
+    r"(?:^|[.,;!?])\s*(?:(?:nein|nee|ne|ach|oh|na|also|äh|ähm)\W+)*"
+    r"(?:lass|lasse|vergess|vergesse) ich\b"
+)
+# One piece per sentence, also where no space follows its mark ("es?Ja").
+_PIECES = re.compile(r"(?<=[.;!?])")
+# The one question a decline may hold: disbelief at the time ("Oh, so lange?",
+# "Was, zu lange?"). Any other asks first ("Dauert das lange? Dann lasse ich
+# es"): its answer may change the guest's mind.
+_DISBELIEF = frozenset({"oh", "ach", "na", "was", "lang", "lange"})
+# "mir" and "zu" only in the time: "Das dauert mir zu lange". Elsewhere they
+# turn "lassen" round: "Lassen Sie mir das" keeps it, "Das lass ich zu" allows.
+_TIME = re.compile(r"\b(?:dauert mir|zu(?= lange?\b))")
+# A goodbye, thanks and sounds: they decline nothing and keep nothing. Not
+# "bis gleich", "bis später" or "bis dann": the guest who says it comes for
+# the food. Not "bitte" either: "Bitte doch nicht!" pleads. Not "äh": the
+# guest pauses, and the rest of the sentence comes as the next turn.
+_AROUND = frozenset(
+    {"dann", "nein", "nee", "ne", "ach", "oh", "na", "also"}
+    | {"danke", "vielen", "dank", "dankeschön", "dankeschoen", "trotzdem"}
+    | {"leider", "schade"}
+    | {"tschüss", "tschüs", "tschuess", "tschues", "tschau", "ciao", "bye"}
+    | {"servus", "ade", "auf", "wiederhören", "wiederhoeren", "wiedersehen"}
+)
+# What may stand with "lassen" or "vergessen": the whole order as "es" or
+# "das", who leaves it, and why. One of `_WHOLE` must stand there: "Lassen
+# Sie, äh ..." or "Lassen Sie bitte" is a correction cut off by a pause. The time words only here: "Das dauert mir zu
+# lange, dann lasse ich es"; any "nicht" fails, so "Das dauert doch nicht
+# lange, lassen Sie es" keeps the order.
+_WITH_LEAVE = _AROUND | {
+    "es",
+    "das",
+    "sie",
+    "ich",
+    "wir",
+    "bitte",
+    "lieber",
+    "einfach",
+    "mal",
+    "bleiben",
+    "dauert",
+    "lang",
+    "lange",
+}
+
+
+_WHOLE = frozenset({"es", "das", "mal", "bleiben"})
+
+
+def only_declines(text: str) -> bool:
+    """Does the sentence decline the order and say nothing else? One of the
+    two forms above with only its own words next to it, no question but
+    disbelief at the time ("Lasse ich es?", "Dauert das lange?"), and no
+    "Lasse ich es" opening a clause. Whether the read-back was what the guest
+    heard last is the caller's to check: to "Noch etwas?" the same words
+    answer that question."""
+    folded = _folded(text).replace("ß", "ss")
+    folded = _TIME.sub(" ", _SO_LONG.sub(" ", _SHORT_ES.sub(" es", folded)))
+    pieces = _PIECES.split(folded)
+    asked = [piece for piece in pieces if "?" in piece]
+    if _ASKS_ITSELF.search(folded) or any(
+        not set(_WORDS.findall(piece)) <= _DISBELIEF for piece in asked
+    ):
+        return False
+    # The disbelief said, the rest is measured: "Oh, so lange? Dann doch nicht."
+    folded = " ".join(piece for piece in pieces if "?" not in piece)
+    if _LEAVE.search(folded):
+        whole = _THE_ORDER.search(folded)
+        words, rest = _WITH_LEAVE, _LEAVE.sub(" ", _THE_ORDER.sub(" ", folded))
+        if not whole and not _WHOLE & set(_WORDS.findall(rest)):
+            return False
+    elif _NOT_AFTER_ALL.search(folded):
+        words, rest = _AROUND, _NOT_AFTER_ALL.sub(" ", folded)
+    else:
+        return False
+    return all(word in words for word in _WORDS.findall(rest))
+
+
 def check(text: str) -> EscalationReason | None:
     """Erster treffende Auslöser aus docs/05 §4, oder `None`. Wird auf jedem
     rohen Kundenzug geprüft, bevor `loop.py` das Modell überhaupt aufruft."""

@@ -719,3 +719,128 @@ def test_the_card_of_an_unanswered_order_leads_with_the_kitchen_marker(
     (card,) = cards(session, state)
     assert card.summary.startswith(SUMMARY_NOTE_TO_CLEAR)
     assert SUMMARY_READBACK_UNANSWERED in card.summary
+
+
+# --- #977: a plain decline after the stated time is a cancel ---------------------
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Nein danke, dann lasse ich es.",
+        "Vergessen Sie es, tschüss.",
+        "Oh, so lange? Dann lassen wir das lieber.",
+        "Nee, dann doch nicht.",
+        "Lassen Sie es bitte, danke. Auf Wiederhören.",
+        "Ach, vergessen Sie das einfach.",
+    ],
+)
+def test_a_plain_decline_after_the_stated_time_drops_the_draft(
+    session, state, order, answer
+):
+    """Maxi, 24.11.2026 (#977): a decline without a cancel word drops the
+    order that waits as "stornieren" does, and the hang-up after it writes no
+    card: the team would call back a guest who said no."""
+    read_to_the_guest(session, state, order)
+    draft_id = order.draft_id(state)
+
+    said = turn(session, state, answer, Model(say="Nicht gesprochen."))
+    loop = ConversationLoop(session, Model(), "system", now=NOW, clock=lambda: 0)
+    loop.offer_unanswered(state)
+
+    assert said == [SAY_ORDER_DROPPED]
+    assert (state.order_id, state.readback, state.stage) == (None, None, "collecting")
+    assert (state.cart, state.order_note) == ([], None)
+    assert status(session, order, draft_id) == "draft"
+    assert cards(session, state) == []
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        # A bare no may say the read-back is wrong: the model asks what.
+        "Nein",
+        "Nein danke",
+        "Nein, das stimmt doch nicht",
+        "Lassen Sie die Zwiebeln weg",
+        "Vergessen Sie die Cola",
+        "Ich habe etwas vergessen",
+        "Lassen Sie es mich kurz überlegen",
+        "Vergessen Sie es nicht",
+        "Lasse ich es?",
+        "Dann doch nicht so scharf",
+        # "Leave it as it is" keeps the order.
+        "Lassen Sie es so, danke",
+        "Ja, lassen wir das so",
+        "Ach so, lassen Sie es so",
+        "Den Tisch lassen wir, die Bestellung nehme ich",
+    ],
+)
+def test_a_no_or_a_change_after_the_stated_time_keeps_the_order(
+    session, state, order, answer
+):
+    """Only a decline and nothing else drops the order: a bare no, a question,
+    one line or a dish left out is the model's to answer, and the order that
+    waits stays for its yes or for the team's card."""
+    read_to_the_guest(session, state, order)
+    draft_id = order.draft_id(state)
+
+    said = turn(session, state, answer, Model(say="Was darf ich ändern?"))
+
+    assert said != [SAY_ORDER_DROPPED]
+    assert state.cart, "the open order stays"
+    assert status(session, order, draft_id) == "draft"
+
+
+@pytest.mark.parametrize(
+    "question", ["Darf es sonst noch etwas sein?", "Hat jemand eine Allergie?"]
+)
+def test_a_decline_to_another_question_keeps_the_order(session, state, order, question):
+    """ "Nein danke, dann lasse ich es" to a question the model asked after
+    the read-back ("Noch etwas?", an allergy question) answers that question,
+    not the order, which stays."""
+    read_to_the_guest(session, state, order)
+    draft_id = order.draft_id(state)
+    turn(session, state, "Moment, noch eine Frage", Model(say=question))
+    assert state.order_id == draft_id and not state.readback_heard
+
+    said = turn(session, state, "Nein danke, dann lasse ich es.", Model(say="Gut."))
+
+    assert said != [SAY_ORDER_DROPPED]
+    # After the allergy question the answer is noted for the kitchen and the
+    # order is drafted anew with it (#798): taken back, not dropped.
+    assert state.cart, "the order stays"
+
+
+def test_a_decline_of_a_table_is_left_to_the_model(session, state, tenant_id, flow):
+    """A table's read-back asks "Passt das so?"; a guest who declines it
+    knows nothing is booked, and the model answers as before (#977 covers the
+    order that waits after its time)."""
+    if flow.entity != "reservation":
+        pytest.skip("the order is the case above")
+    read_to_the_guest(session, state, flow)
+    draft_id = flow.draft_id(state)
+
+    said = turn(session, state, "Nein danke, dann lasse ich es.", Model(say="Gut."))
+
+    assert said == ["Gut."]
+    assert state.reservation_id == draft_id
+
+
+def test_a_decline_past_the_call_limit_ends_with_the_team(session, state, order):
+    """As a cancel: past its limit the call goes to the team, the order kept."""
+    read_to_the_guest(session, state, order)
+    times = iter([0.0, 10_000.0])
+    loop = ConversationLoop(
+        session,
+        Model(say="x"),
+        "system",
+        now=NOW,
+        clock=lambda: next(times, 10_000.0),
+        max_call_seconds=60,
+    )
+
+    said = loop.run_turn(state, "Nein danke, dann lasse ich es.").say
+
+    assert SAY_TIMEOUT in said and SAY_ORDER_DROPPED not in said
+    assert state.order_id is not None
