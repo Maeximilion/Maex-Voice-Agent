@@ -713,6 +713,29 @@ def test_an_okay_to_the_stop_notice_confirms_nothing(session, tenant, switched_o
     assert "Mueller" in port.says(SID)[-1]
 
 
+def test_a_stop_and_an_allergy_said_into_the_read_back_hold_both(
+    session, tenant, switched_on
+):
+    """#1003: one sentence into the read-back stops the recording and names
+    an allergy. The stop holds once, the notice is said once, and the table
+    is read out again with the note: nothing is booked before a yes to it."""
+    port, handler = on_the_phone(session, tenant)
+    handler.on_user_turn(SID, "Ja.")
+    handler.on_user_turn(SID, A_TABLE)
+    handler.on_user_turn(SID, "Auf den Namen Mueller.")
+    first = port.says(SID)[-1]
+
+    handler.on_talked_over(SID, "Aufnahme stoppen, ich habe eine Nussallergie.")
+
+    assert port.stopped(SID) == ["discard"]
+    assert answers(session) == ["yes", "no"]
+    assert port.says(SID).count(SAY_RECORDING_STOPPED) == 1
+    again = port.says(SID)[-1]
+    assert again != first and "Mueller" in again
+    # The first draft stays one beside the new one: nothing is booked.
+    assert set(session.scalars(select(Reservation.status))) == {"draft"}
+
+
 def test_anything_else_said_into_a_protected_sentence_stays_unheard(
     session, tenant, switched_on
 ):

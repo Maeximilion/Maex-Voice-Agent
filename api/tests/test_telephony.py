@@ -2908,7 +2908,8 @@ def test_an_allergy_said_into_the_read_back_is_read_back_before_the_yes(
 ):
     """#1003, rules 2 and 3, L13: the guest names an allergy while the order is
     read back. The draft without it is set aside and read out again with the
-    note, so the yes after it books the order the kitchen can cook safely."""
+    note, so only the yes after that books the order the kitchen can cook
+    safely."""
     port = FakeTelephony()
     handler = _order_read_back(session, tenant, port)
     first = port.says("s-1")[-1]
@@ -2930,6 +2931,24 @@ def test_an_allergy_said_into_the_read_back_is_read_back_before_the_yes(
     assert all(speaks_of_health(order.note or "") for order in placed)
 
 
+def test_a_yes_and_an_allergy_in_one_breath_into_the_read_back_book_nothing(
+    session, tenant
+):
+    """#1003, rule 3: the yes said in the same utterance as the allergy, into
+    the read-back, is no yes to it. Whatever the model makes of the sentence,
+    the order without the note is not placed."""
+    port = FakeTelephony()
+    handler = _order_read_back(session, tenant, port)
+
+    handler.on_talked_over("s-1", "Ja, passt, ich habe eine Erdnussallergie.")
+    handler.on_call_ended("s-1")
+
+    orders = session.scalars(
+        select(Order).where(Order.call_id == the_call(session, "s-1").id)
+    ).all()
+    assert orders and {order.status for order in orders} == {"draft"}
+
+
 def test_a_yes_into_the_read_back_with_no_allergy_makes_no_turn(session, tenant):
     """Only an allergy makes a turn of words said into the read-back: a yes
     said there still books nothing (rule 3)."""
@@ -2947,9 +2966,10 @@ def test_a_yes_into_the_read_back_with_no_allergy_makes_no_turn(session, tenant)
 def test_an_allergy_said_into_another_protected_sentence_is_kept_without_a_turn(
     session, tenant
 ):
-    """#1003: into a sentence that waits for no yes (the AI disclosure, a
-    dish offered) the words still make no turn, and the guest hears nothing
-    new; the allergy is kept for the safety net of every later draft."""
+    """#1003: into a protected sentence while no draft waits for its yes (the
+    session decides which sentence is protected; the handler takes what it
+    hands over as such) the words still make no turn, and the guest hears
+    nothing new; the allergy is kept for the safety net of every later draft."""
     port = FakeTelephony()
     handler = handler_for(session, tenant, port)
     port.open("s-1", caller_id="+497215551234")
