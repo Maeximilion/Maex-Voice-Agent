@@ -320,9 +320,9 @@ header.admin{border-bottom:0}
 /* Waits for "Passt" too long: the waiting card's edge, in red. Not the full red
    frame, which says the slip did not print. */
 .order.overdue{border-color:var(--danger);box-shadow:inset var(--edge) 0 0 var(--danger);padding-left:20px}
-.order.neu{animation:blink 1s ease-in-out 3}
+.order.neu,.cb.neu{animation:blink 1s ease-in-out 3}
 @keyframes blink{50%{background:var(--accent-bg)}}
-@media (prefers-reduced-motion:reduce){.order.neu{animation:none;background:var(--accent-bg)}}
+@media (prefers-reduced-motion:reduce){.order.neu,.cb.neu{animation:none;background:var(--accent-bg)}}
 /* Holiday suggestions: one folded strip, the cards open on a tap. */
 .fold{background:var(--surface-2);border:2px dashed var(--line-strong);border-radius:var(--r-lg);padding:var(--s2) var(--s2) var(--s2) var(--s4);margin-bottom:var(--s3)}
 .fold > summary{display:flex;align-items:center;gap:var(--s3);min-height:var(--tap);font-weight:600;cursor:pointer;list-style:none}

@@ -24,6 +24,9 @@ from api.core.errors import SAY_ON_FAILURE, NotFound
 from api.core.logging import get_logger
 from api.core.time import utcnow
 from api.domain.callbacks.create import SUMMARY_MAX, booked, create_callback
+from api.domain.callbacks.create import (
+    SUMMARY_NOTE_TO_CLEAR as SUMMARY_NOTE_TO_CLEAR,
+)
 from api.domain.customers.contact import note_contact
 from api.domain.customers.phone import number_or_none
 from api.domain.menu.wishes import speaks_of_health
@@ -60,10 +63,6 @@ SUMMARY_MISSED = "Ans Team weitergeleitet, dort hat niemand abgenommen."
 # Mode shadow with the recording question: the caller hung up before the line
 # handed the call on, and the team never rang (#252 no. 9).
 SUMMARY_HUNG_UP = "Aufgelegt, bevor das Team klingelte."
-# A card's note when the guest spoke of an allergy in the call: the team asks
-# about the kitchen note when it calls back, the card never names the allergy
-# (L13). Draft wording; the core's cards lead with it too (`agent/loop.py`).
-SUMMARY_NOTE_TO_CLEAR = "Hinweis für die Küche mit dem Gast klären"
 SUMMARY_BY_REASON = {
     "cancellation": "Kunde wollte etwas stornieren.",
     None: "Anliegen nicht bekannt.",
