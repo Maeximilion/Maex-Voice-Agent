@@ -243,7 +243,10 @@ cd ~/Maex-Voice-Agent
 BACKUP_DOCKER_NETWORK=maex-voice-agent_backend BACKUP_PASSPHRASE_FILE=/home/maeximilion/.config/maex-voice-agent/backup.passphrase bash scripts/backup.sh --label before_migration_<NNN>
 make migrate
 docker compose restart api dispatcher
+docker compose --profile voice restart voice
 ```
+
+The last line only where the phone line runs (`voice` profile), and only after `make migrate`: `voice` has no reload and keeps the code it started with, and the conversation core in it writes what the new revision allows (#977, migration 045).
 
 The passphrase file exists since 29.10.2026 (mode 600). Without `BACKUP_PASSPHRASE_FILE` the script writes nothing; without `BACKUP_DOCKER_NETWORK` its client container cannot resolve `db` (only the `backend` network holds the database). Both can stand in the workbench's `.env` instead, with full paths (`~` is not expanded there). `make migrate` mounts the main folder's code, so that folder has to be on the `main` that holds the migration; the restart lets `api` and the dispatcher load the new models. Check: `docker exec maex-voice-agent-db-1 psql -U maex -d maex_agent -tAc "select version_num from alembic_version"`.
 

@@ -25,7 +25,15 @@ from api.models.tenants import _in
 INTENTS = ("reservation", "pickup", "delivery", "info", "complaint", "unknown")
 OUTCOMES = ("completed", "transferred", "callback", "abandoned", "error")
 LINE_NOTES = ("no_caller_audio",)
-CALLBACK_REASONS = ("complaint", "not_understood", "human_requested", "out_of_scope")
+# `order_open`: an order read back and never answered with a yes (#977); the
+# core's own, never a model's.
+CALLBACK_REASONS = (
+    "complaint",
+    "not_understood",
+    "human_requested",
+    "out_of_scope",
+    "order_open",
+)
 CALLBACK_STATUSES = ("open", "done")
 
 
