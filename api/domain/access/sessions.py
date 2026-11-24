@@ -401,16 +401,20 @@ def counted_address(host: str) -> str:
 
 
 def count_failure(
-    failures: int, last_failed_at: datetime | None, now: datetime
+    failures: int,
+    last_failed_at: datetime | None,
+    now: datetime,
+    every: int = WAIT_EVERY,
 ) -> tuple[int, datetime | None, datetime]:
     """One more failure: the new count, the wait it brings and the time to keep
-    as the last failure. The one step every failure counter takes."""
+    as the last failure. The one step every failure counter takes; `every`
+    is how many failures in a row bring the next wait."""
     if last_failed_at is None or now - last_failed_at >= FAILURES_FORGOTTEN:
         failures = 0
     failures += 1
-    if failures % WAIT_EVERY:
+    if failures % every:
         return failures, None, now
-    minutes = min(failures // WAIT_EVERY, WAIT_MAX_MINUTES)
+    minutes = min(failures // every, WAIT_MAX_MINUTES)
     return failures, now + timedelta(minutes=minutes), now
 
 
