@@ -293,6 +293,8 @@ Der kalte Pfad beginnt hier. Wird in **derselben Transaktion** wie der Fachvorga
 | last_error | TEXT NULL | |
 | sent_at | TIMESTAMPTZ NULL | |
 
+Indexes: `ix_outbox_status_next_attempt` (status, next attempt) for the dispatcher, and the partial `ix_outbox_tenant_order` (tenant, `payload->>'order_id'`) for the tickets of one order (migration 046, #980).
+
 ### `audit_log`
 | Feld | Typ | Bemerkung |
 |---|---|---|
@@ -646,6 +648,8 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 042 | `reservations.off_hours` (BOOL NOT NULL, default false) with CHECK `ck_reservations_off_hours_tablet` (only a `tablet` row is marked): a table the team booked outside the opening hours on purpose (#819); a new column only, false for every existing row, since whether an older table was meant cannot be read back; down drops it, and the marked tables come back on the list of guests to call (backup label `before_migration_042`) |
 | 043 | Index `ix_audit_log_tenant_action` (tenant, action, id) for the version of the operator's page (review of #837); up and down change no row |
 | 044 | `reservations.replayed_at` (TIMESTAMPTZ, empty for every existing row) and index `ix_reservations_call_id` for the seat count's newest-row check (#908): the index took 80 drafts of one call at 144,000 rows from 701 ms to about 3.5 ms; up and down change no row, down drops the column with what it holds |
+| 045 | The callback reason `order_open` (CHECK `ck_callbacks_reason` widened, #977): the cards written so far with the fixed read-back sentence move to it; the downgrade gives them back as `not_understood` |
+| 046 | Partial index `ix_outbox_tenant_order` on (tenant, `payload->>'order_id'`) where that key is set (#980), for the tickets of one order (`send_ticket`, `last_reason`, the newest revision on the print bridge's claim and ack): at 60,000 outbox rows the newest-revision lookup went from a 7.9 ms sequential scan to 0.07 ms; up and down change no row |
 | planned, next free number | `eval_cases`, `eval_runs` |
 
 ### Operator database (#571, docs/23 §5)

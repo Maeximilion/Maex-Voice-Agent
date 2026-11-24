@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.53
+> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.55
 
 ---
 
@@ -147,6 +147,7 @@ Settled assumptions: `docs/HISTORY.md` sections "Made Assumptions (archive)" and
 
 | Date | What |
 |---|---|
+| 24.11.2026 | **#980: an index for the tickets of one order.** Migration 046 adds the partial index `ix_outbox_tenant_order` on (tenant, `payload->>'order_id'`) where the key is set. `send_ticket`, `last_reason` and the newest revision on every claim and ack of the print bridge read it instead of every outbox row of the tenant (0.07 ms instead of 7.9 ms at 60,000 rows). Up and down tested, no row changes. **Workbench:** backup, `make migrate`, restart `api` and `dispatcher` (docs/13 §4). | Done |
 | 24.11.2026 | **#982: one helper for the forms of a number.** `deploy/asterisk/render.sh` turns a number into its bare international digits in `digits` (`+` and `00` dropped, a leading `0` becomes `49`), and `same` compares those; `e164` is gone. No behaviour change, the render tests unchanged and green. | Done |
 | 24.11.2026 | **#979: English identifiers in the older GUI code.** The route functions of `api/gui/router.py` and the names in `api/gui/ts/app.ts` are English now; URLs, query keys (`tag`, `ergebnis`, `anliegen` through `Query` aliases), element ids, template names and tablet text are unchanged. | Done |
 | 24.11.2026 | **#998: every open order reaches a card, and the tablet notices a changed card** (follow-ups of the #993 deep review). A handoff's or a missed team leg's card that names an open order joins the call's open card instead of meeting it unchanged; a model card written after the read-back gets the order at the hang-up; the kitchen marker stands once. The tablet rings and blinks for a card whose text changed, and "Erledigt" sends the version it was drawn with, so a stale tap closes nothing. Points 5, 7, 8 of the issue stay open in `docs/24`. |
@@ -184,6 +185,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.55 · 24.11.2026:** #980: migration 046, a partial index on the outbox by tenant and order id for the tickets of one order
 - **v2.69.53 · 24.11.2026:** #982: one helper for the forms of a number in deploy/asterisk/render.sh, no behaviour change
 - **v2.69.51 · 24.11.2026:** #979: English identifiers in the older GUI code (route functions of `api/gui/router.py`, names in `app.ts`), no behaviour change
 - **v2.69.50 · 24.11.2026:** #998: every open order reaches the call's card, a changed card rings on the tablet, a stale "Erledigt" closes nothing
