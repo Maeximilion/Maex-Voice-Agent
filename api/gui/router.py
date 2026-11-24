@@ -18,7 +18,7 @@ from typing import Any
 from urllib.parse import parse_qs
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
@@ -407,7 +407,7 @@ def _switch(
 
 @router.get("", response_class=HTMLResponse, include_in_schema=False)
 @router.get("/", response_class=HTMLResponse, include_in_schema=False)
-def betrieb(request: Request, session: Session = Depends(get_db)) -> HTMLResponse:
+def board_page(request: Request, session: Session = Depends(get_db)) -> HTMLResponse:
     """Betriebsansicht fürs Tablet."""
     tenant = _tenant(session)
     context: dict[str, Any] = {"problem": NO_TENANT, "today": []}
@@ -428,7 +428,7 @@ def betrieb(request: Request, session: Session = Depends(get_db)) -> HTMLRespons
 
 
 @router.get("/kennzahlen", response_class=HTMLResponse, include_in_schema=False)
-def kennzahlen(request: Request, session: Session = Depends(get_db)) -> HTMLResponse:
+def figures_page(request: Request, session: Session = Depends(get_db)) -> HTMLResponse:
     """Key figures: the four values of the last 7 days and the history (T-8.4)."""
     tenant = _tenant(session)
     context: dict[str, Any] = {"problem": NO_TENANT}
@@ -440,11 +440,11 @@ def kennzahlen(request: Request, session: Session = Depends(get_db)) -> HTMLResp
 
 
 @router.get("/anrufe", response_class=HTMLResponse, include_in_schema=False)
-def anrufe(
+def calls_page(
     request: Request,
-    tag: str | None = None,
-    ergebnis: str | None = None,
-    anliegen: str | None = None,
+    day: str | None = Query(None, alias="tag"),
+    outcome: str | None = Query(None, alias="ergebnis"),
+    intent: str | None = Query(None, alias="anliegen"),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
     """The call list of one business day, with its filters (T-8.7)."""
@@ -454,7 +454,7 @@ def anrufe(
         context = {
             "tenant": tenant,
             **_frame(session, tenant),
-            **calls_view.page(session, tenant, tag, ergebnis, anliegen),
+            **calls_view.page(session, tenant, day, outcome, intent),
         }
     return _page_response(
         request, "betrieb/anrufe.html", context, status_code=200 if tenant else 503
@@ -485,7 +485,7 @@ def menu_page(
 
 
 @router.get("/fragments/heute", response_class=HTMLResponse, include_in_schema=False)
-def heute_fragment(
+def today_fragment(
     request: Request, session: Session = Depends(get_db)
 ) -> HTMLResponse:
     """Nur die Liste der Spalte "Heute". Holt die Seite nach jedem Ereignis."""
@@ -502,7 +502,7 @@ def heute_fragment(
 @router.get(
     "/fragments/kopfzeile", response_class=HTMLResponse, include_in_schema=False
 )
-def kopfzeile_fragment(
+def header_fragment(
     request: Request, session: Session = Depends(get_db)
 ) -> HTMLResponse:
     """Nur die Kopfzeile. Holt die Seite nach jedem Ereignis "header"."""
@@ -522,7 +522,7 @@ def kopfzeile_fragment(
     include_in_schema=False,
     dependencies=[Depends(_require_htmx)],
 )
-def ki_pausieren(request: Request, session: Session = Depends(get_db)) -> HTMLResponse:
+def ai_pause(request: Request, session: Session = Depends(get_db)) -> HTMLResponse:
     """Not-Aus: ein Tap, keine Rueckfrage (docs/06 §3)."""
     return _switch(request, session, lambda t: switches.pause_ai(session, t))
 
@@ -533,9 +533,7 @@ def ki_pausieren(request: Request, session: Session = Depends(get_db)) -> HTMLRe
     include_in_schema=False,
     dependencies=[Depends(_require_htmx)],
 )
-def ki_einschalten(
-    request: Request, session: Session = Depends(get_db)
-) -> HTMLResponse:
+def ai_resume(request: Request, session: Session = Depends(get_db)) -> HTMLResponse:
     """Rueckfrage stellt der Knopf selbst (hx-confirm), hier wird nur geschaltet."""
     return _switch(request, session, lambda t: switches.resume_ai(session, t))
 
@@ -546,7 +544,7 @@ def ki_einschalten(
     include_in_schema=False,
     dependencies=[Depends(_require_htmx)],
 )
-def modus(
+def change_mode(
     request: Request, mode: str, session: Session = Depends(get_db)
 ) -> HTMLResponse:
     """The mode switch (T-8.1). A step up asks on the button (hx-confirm)."""
@@ -561,7 +559,7 @@ def modus(
     include_in_schema=False,
     dependencies=[Depends(_require_htmx)],
 )
-def wartezeit(
+def adjust_wait(
     request: Request, service: str, step: int, session: Session = Depends(get_db)
 ) -> HTMLResponse:
     if service not in WAIT_SERVICES or step not in (-WAIT_STEP, WAIT_STEP):
@@ -576,7 +574,7 @@ def wartezeit(
 @router.get(
     "/fragments/rueckrufe", response_class=HTMLResponse, include_in_schema=False
 )
-def rueckrufe_fragment(
+def callbacks_fragment(
     request: Request, session: Session = Depends(get_db)
 ) -> HTMLResponse:
     """Nur die Liste der Spalte "Rückrufe". Holt die Seite nach jedem Ereignis."""
@@ -627,7 +625,7 @@ async def _form(request: Request) -> dict[str, str]:
     include_in_schema=False,
     dependencies=[Depends(_require_htmx)],
 )
-def rueckruf_erledigt(
+def callback_done(
     request: Request,
     callback_id: uuid.UUID,
     form: dict[str, str] = Depends(_form),
@@ -690,7 +688,7 @@ def _history_sheet(request: Request, session: Session, tenant: Tenant) -> HTMLRe
     include_in_schema=False,
     dependencies=[Depends(require_unlocked)],
 )
-def rueckrufe_verlauf(
+def callbacks_history(
     request: Request, session: Session = Depends(get_db)
 ) -> HTMLResponse:
     """The sheet with the callbacks done in the last days, to undo a wrong tap.
@@ -707,7 +705,7 @@ def rueckrufe_verlauf(
     include_in_schema=False,
     dependencies=[Depends(_require_htmx)],
 )
-def rueckruf_wieder_offen(
+def callback_reopen(
     request: Request, callback_id: uuid.UUID, session: Session = Depends(get_db)
 ) -> HTMLResponse:
     """Bring a card back; the column follows through the event stream.
@@ -732,7 +730,7 @@ def rueckruf_wieder_offen(
 @router.get(
     "/fragments/feiertage", response_class=HTMLResponse, include_in_schema=False
 )
-def feiertage_fragment(
+def holidays_fragment(
     request: Request, session: Session = Depends(get_db)
 ) -> HTMLResponse:
     """Only the holiday list: the page fetches it after each event (#207)."""
@@ -762,7 +760,7 @@ HOLIDAY_ANSWERS = {
     include_in_schema=False,
     dependencies=[Depends(_require_htmx)],
 )
-def feiertag(
+def holiday_choice(
     request: Request,
     special_day_id: uuid.UUID,
     choice: str,
@@ -993,7 +991,7 @@ def cancel_order_tap(
 @router.get(
     "/wartezeit/{service}", response_class=HTMLResponse, include_in_schema=False
 )
-def wartezeit_blatt(
+def wait_sheet(
     request: Request, service: str, session: Session = Depends(get_db)
 ) -> HTMLResponse:
     """The sheet of one wait: today's value and the standard (T-3.9, T-3.14)."""
@@ -1028,7 +1026,7 @@ def _typed_minutes(text: str) -> int:
     include_in_schema=False,
     dependencies=[Depends(_require_htmx)],
 )
-def wartezeit_getippt(
+def wait_typed(
     request: Request,
     service: str,
     form: dict[str, str] = Depends(_form),
@@ -1050,7 +1048,7 @@ def wartezeit_getippt(
     include_in_schema=False,
     dependencies=[Depends(_require_htmx)],
 )
-def standardzeit(
+def default_wait(
     request: Request,
     service: str,
     form: dict[str, str] = Depends(_form),
@@ -1074,7 +1072,7 @@ def standardzeit(
     include_in_schema=False,
     dependencies=[Depends(_require_htmx)],
 )
-def standardzeit_zurueck(
+def default_wait_reset(
     request: Request, service: str, session: Session = Depends(get_db)
 ) -> HTMLResponse:
     if service not in WAIT_SERVICES:
@@ -1093,7 +1091,7 @@ def standardzeit_zurueck(
     include_in_schema=False,
     dependencies=[Depends(_require_htmx)],
 )
-def dienst(
+def service_switch(
     request: Request, service: str, state: str, session: Session = Depends(get_db)
 ) -> HTMLResponse:
     """Abholung, Lieferung and Reservierung on or off."""
@@ -1321,7 +1319,9 @@ def _notice_sheet(
     include_in_schema=False,
     dependencies=[Depends(require_admin)],
 )
-def vorlauf(request: Request, session: Session = Depends(get_db)) -> HTMLResponse:
+def lead_time_page(
+    request: Request, session: Session = Depends(get_db)
+) -> HTMLResponse:
     """The sheet with the notice per weekday (T-3.13). Behind the admin PIN
     with its write: a notice too long turns callers away (#827 F6)."""
     tenant = _tenant(session)
@@ -1336,7 +1336,7 @@ def vorlauf(request: Request, session: Session = Depends(get_db)) -> HTMLRespons
     include_in_schema=False,
     dependencies=[Depends(_require_htmx), Depends(require_admin)],
 )
-def vorlauf_speichern(
+def lead_time_save(
     request: Request,
     form: dict[str, str] = Depends(_form),
     session: Session = Depends(get_db),
@@ -1473,7 +1473,9 @@ def _entry_summary(
 
 
 @router.get("/reservierung", response_class=HTMLResponse, include_in_schema=False)
-def reservierung(request: Request, session: Session = Depends(get_db)) -> HTMLResponse:
+def reservation_page(
+    request: Request, session: Session = Depends(get_db)
+) -> HTMLResponse:
     """The empty sheet: today, a new key per opened sheet (T-3.12)."""
     tenant = _tenant(session)
     if tenant is None:
@@ -1491,7 +1493,7 @@ def reservierung(request: Request, session: Session = Depends(get_db)) -> HTMLRe
     include_in_schema=False,
     dependencies=[Depends(_require_htmx)],
 )
-def reservierung_pruefen(
+def reservation_check(
     request: Request,
     form: dict[str, str] = Depends(_form),
     session: Session = Depends(get_db),
@@ -1518,7 +1520,7 @@ def reservierung_pruefen(
     include_in_schema=False,
     dependencies=[Depends(_require_htmx)],
 )
-def reservierung_eintragen(
+def reservation_enter(
     request: Request,
     reservation_id: uuid.UUID,
     form: dict[str, str] = Depends(_form),

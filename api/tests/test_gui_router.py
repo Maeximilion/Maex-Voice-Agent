@@ -1040,11 +1040,11 @@ def test_ton_wird_im_tap_freigeschaltet():
     js = (Path(__file__).resolve().parents[1] / "gui" / "static" / "app.js").read_text(
         encoding="utf-8"
     )
-    handler = js.split("function freischalten()")[1].split("\n    }\n")[0]
+    handler = js.split("function unlockSound()")[1].split("\n    }\n")[0]
 
     assert "new Ctx()" in handler and "resume()" in handler
-    assert 'addEventListener("touchstart", freischalten' in js
-    assert 'addEventListener("click", freischalten' in js
+    assert 'addEventListener("touchstart", unlockSound' in js
+    assert 'addEventListener("click", unlockSound' in js
 
 
 def test_spalten_zeigen_ihre_anzahl(client, engine, tenant_id):
@@ -1322,7 +1322,7 @@ def test_the_page_reloads_the_holiday_list_on_its_event():
         encoding="utf-8"
     )
 
-    assert 'strom.addEventListener("holidays"' in js
+    assert 'stream.addEventListener("holidays"' in js
     assert '"/gui/fragments/feiertage"' in js
     assert 'target: "#feiertage-liste"' in js
 
