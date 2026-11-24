@@ -262,14 +262,21 @@ up (`guards.is_open`)
        word for word, `get_item_details` for what is in a dish, else the
        noted sentence). The retry is judged like a first answer (Maxi
        24.11.2026, R1): held again when it names a dish or its own words
-       speak of the allergy (a word for the guest's health, "meiden" too,
-       or an allergen: "Ja, die ist ohne Erdnüsse" is held even where the
-       turn's menu text names peanuts; deep review of #997), else
-       `unlicensed` checks it, so a recap that
-       drops the dish ("Auf welchen Namen darf ich bestellen?") goes
-       through, and so does "Ja, die ist für Sie kein Problem", the
-       accepted residual (`docs/24`). A retry after a sentence refused for
-       an allergen word stays strict (#860). A
+       speak of the allergy (a word for the guest's health or allergy,
+       "meiden", "gut verträglich", "worauf Sie reagieren" too; without an
+       order step also an allergen outside a whole dish name: "Ja, die ist
+       ohne Erdnüsse" is held even where the turn's menu text names
+       peanuts; deep review of #997), else `unlicensed` checks it, so a
+       recap that drops the dish ("Auf welchen Namen darf ich bestellen?")
+       goes through, and so does "Ja, die ist für Sie kein Problem", the
+       accepted residual (`docs/24`). Next to an order step an allergen in
+       the retry is the dish read back ("Gern, die 47 mit Erdnuss ist
+       notiert."), checked by `unlicensed`. A retry after a sentence refused
+       with an allergen word of the model's own stays strict (#860), also
+       where the dish's own text licenses the word ("Die 47 hat keine
+       Erdnüsse.", the 47's option "Erdnuss"). A held retry next to an
+       order step ends in the noted sentence, not the offer: the dish stays
+       in the order and no allergen question opens (deep review of #997). A
        refused sentence that states a price (an amount in euro or cent) of
        a dish this turn's search found, and no search of the turn with a
        wish, gets the core's sentence at once, with no retry: its price
