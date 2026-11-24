@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.43
+> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.44
 
 ---
 
@@ -181,7 +181,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.43 · 24.11.2026:** #929: a second allergy said after the read-back must reach a note; the model may ask for which dish
+- **v2.69.44 · 24.11.2026:** #929: a second allergy said after the read-back must reach a note; the model may ask for which dish
+- **v2.69.43 · 24.11.2026:** chain: a heavy step holds two lanes only while it runs and waits for room, turbo aims at -10 and ends 30 minutes before the reset, the chain runs on while Maxi is away (finisher takes the next item), Hold button, gates by item size
 - **v2.69.42 · 24.11.2026:** #993: an unanswered order joins the call's open card instead of hiding behind it
 - **v2.69.41 · 24.11.2026:** #928 R1 (Maxi): after a refusal only for naming a dish, the retry is judged like a first answer, held again only when it names a dish or speaks of the allergy
 - **v2.69.40 · 24.11.2026:** #928: dish sentences in a call about an allergy held to core sentences, price from the database (B, B2), with the deep review's fixes
