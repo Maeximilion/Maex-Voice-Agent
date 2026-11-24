@@ -173,9 +173,16 @@ segment, or a spray of made-up names from one /64 would meet a fresh count, and 
 every /128; the audit and the double tap keep the address as sent (review of #946). Two residuals:
 a neighbour on the same /64 (hotel or coworking Wi-Fi, a /64 shared by several servers) counts as
 the operator's own address, so its guesses make the operator's sign-in from a new browser wait, as
-behind an IPv4 NAT; and a line or server given a /56 or /48 still holds 256 to 65,536 fresh /64
-counters, so a spray from it is not bounded by them (#962). An unknown name still costs the dummy
-hash, so the answer time tells no names. Every attempt forgets the counters a day after their last
+behind an IPv4 NAT; and a line or server given a /56 or /48 holds 256 to 65,536 fresh /64
+counters. So each attempt without a known device also counts on its /48 (#962), with a wait every
+30th failure in a row (the same 1 to 5 minutes): a spray of made-up names from one /48 reaches the
+hash 30 times, then at most 30 times per 5 minutes, about 2 seconds of scrypt (69 ms a run,
+measured) instead of roughly 650 runs a second. Every attempt counts there, a known name too, so the
+wait tells no names; a right sign-in forgets its /48 as it does its address. The price: while a
+spray holds the operator's own /48, a new browser there waits too; a browser with the device
+cookie counts alone and signs in. Left open: an attacker with many /48s (a /32) or many IPv4
+addresses still meets a fresh count in each. An unknown name still costs the dummy hash, so the
+answer time tells no names. Every attempt forgets the counters a day after their last
 failure, by the index on `last_failed_at` (migration op007).
 
 **Audit:** logins, failures, factor changes and every action in the dashboard go to the operator
