@@ -169,6 +169,7 @@ CALLBACK_LABELS = {
         ("not_understood", "warn"),
         ("human_requested", "accent"),
         ("out_of_scope", "accent"),
+        ("order_open", "warn"),
     )
 }
 

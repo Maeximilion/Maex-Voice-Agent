@@ -367,7 +367,7 @@
             {
               "id": "edb1b3d0-cc2c-5b24-a715-15b1bcc1c046",
               "name": "text",
-              "value": "={{ ({ complaint: 'Beschwerde', not_understood: 'Nicht verstanden', human_requested: 'Will Mitarbeiter sprechen', out_of_scope: 'Anderes Anliegen' })[$json.payload.reason] ?? $json.payload.reason }}. Nummer und Notiz am Tablet.",
+              "value": "={{ ({ complaint: 'Beschwerde', not_understood: 'Nicht verstanden', human_requested: 'Will Mitarbeiter sprechen', out_of_scope: 'Anderes Anliegen', order_open: 'Bestellung offen' })[$json.payload.reason] ?? $json.payload.reason }}. Nummer und Notiz am Tablet.",
               "type": "string"
             },
             {
