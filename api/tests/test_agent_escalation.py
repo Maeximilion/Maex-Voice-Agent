@@ -9,6 +9,7 @@ from api.agent.escalation import (
     asks_more,
     check,
     names_an_additive,
+    only_declines,
     without_human_question,
 )
 
@@ -536,3 +537,84 @@ def test_an_incident_word_is_read_as_a_word_not_inside_another(said, incident):
     from api.agent.escalation import names_an_incident
 
     assert names_an_incident(said) is incident
+
+
+# --- #977: a plain decline of the order read back --------------------------------
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "Nein danke, dann lasse ich es.",
+        "Vergessen Sie es, tschüss.",
+        "Vergessen Sie die Bestellung, tschüss.",
+        "Nee, dann doch nicht.",
+        "Ach, dann doch nicht, danke. Auf Wiederhören.",
+        "Dann lieber nicht.",
+        "Dann eben nicht.",
+        "Oh, so lange? Dann lassen wir das lieber.",
+        "Das dauert mir zu lange, dann lasse ich es.",
+        "Lassen Sie es bitte, danke.",
+        "Ach, vergessen Sie das einfach.",
+        "Lass mal, danke.",
+        "Nein danke, dann lass ich es bleiben.",
+        # A short "es", a curly apostrophe and "ß" as speech engines write them.
+        "Nein danke, dann lass ich's.",
+        "Vergessen Sie’s, tschüß.",
+        "Dann lassen wir's.",
+        "Nein, vielen Dank, dann lasse ich es.",
+        "Vergessen Sie es, tschau.",
+    ],
+)
+def test_a_plain_decline_is_one(sentence):
+    assert only_declines(sentence)
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        # Relief at the time, not a decline (deep review of #977).
+        "Oh, doch nicht so lange, alles klar, tschüss.",
+        "Ach, so lange dauert das doch nicht. Alles klar, tschüss.",
+        "Das dauert doch nicht lange.",
+        "Nein, das dauert mir doch nicht zu lange.",
+        "Das dauert doch nicht lange, lassen Sie es.",
+        # A correction of the read-back: the model drafts it anew.
+        "Nein",
+        "Nein danke",
+        "Nein, doch nicht Lieferung, Abholung!",
+        "Nein, das doch nicht.",
+        "Nein, doch nicht die ganze Bestellung.",
+        "So lange? Dann lassen Sie die Lieferung. Lieber Abholung.",
+        "Vergessen Sie die Lieferung, lieber Abholung.",
+        "Nein, die Abholung lass ich.",
+        # One dish or line, a pronoun for one, or the order kept as it is.
+        "Nein, die lassen wir.",
+        "Lassen Sie die Zwiebeln weg",
+        "Vergessen Sie die Cola",
+        "Ja, lassen Sie alles.",
+        "Lassen Sie es so, danke",
+        "Ach so, lassen Sie es so",
+        "Vergessen Sie es nicht",
+        "Vergessen Sie die Bestellung doch nicht.",
+        "Das vergesse ich doch nicht.",
+        # An assent next to it: the guest goes ahead, or says both.
+        "Ja, lass machen, tschüss.",
+        "Gut, dann lass mal machen.",
+        "Ja, alles gut, lassen Sie es.",
+        "Ach, vergessen Sie es, alles gut.",
+        "Nee, lass mal. Ach doch, okay, gerne.",
+        "Nein danke, dann lasse ich es. Ach doch, ja, die Bestellung bitte.",
+        "Lassen Sie es, bis gleich.",
+        # A question, with its mark, without a space after it, or lost.
+        "Lasse ich es?",
+        "Lasse ich es?!",
+        "Lasse ich es?Ja",
+        "Lasse ich es dann",
+        "Vergesse ich es dann",
+        "Ich habe etwas vergessen",
+        "Lassen Sie es mich kurz überlegen",
+    ],
+)
+def test_anything_more_than_a_decline_is_none(sentence):
+    assert not only_declines(sentence)
