@@ -19,6 +19,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from api.core.errors import Ambiguous
+from api.domain.menu import wishes
 from api.domain.menu.details import get_item_details
 from api.domain.menu.importer import (
     ALIASES_FILE,
@@ -472,6 +473,56 @@ def test_weglassen_und_unbekannte_zugabe():
     assert wish.kind == "unknown"
     assert wish.text == "mit Pommes"
     assert wish.note == "ohne Zwiebeln"
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "ohne Hund, dafür mit Nudeln",
+        "ohne Hund, mit Nudeln",
+        "ohne Hund und mit Nudeln",
+    ],
+)
+def test_a_word_that_only_ends_in_a_joiner_stays_whole(said):
+    """docs/24: "und" at the end of "Hund" is no joining word; the note kept "ohne H"."""
+    wish = wish_of(said, BEILAGE)
+    assert (wish.kind, wish.option, wish.note) == ("option", "Nudeln", "ohne Hund")
+
+
+def test_a_word_that_only_ends_in_a_joiner_stays_whole_before_a_removal():
+    """The same cut in front of "ohne": what is asked back names the whole word."""
+    wish = wish_of("mit Nudeln, gesund, ohne Zwiebeln", BEILAGE)
+    assert (wish.kind, wish.text, wish.note) == (
+        "unknown",
+        "mit Nudeln, gesund",
+        "ohne Zwiebeln",
+    )
+
+
+@pytest.mark.parametrize(
+    ("said", "note"),
+    [
+        ("ohne Zwiebeln und, dafür mit Nudeln", "ohne Zwiebeln"),
+        ("ohne Zwiebeln aber mit Nudeln", "ohne Zwiebeln"),
+        ("ohne Zwiebeln, und dafür mit Nudeln", "ohne Zwiebeln"),
+    ],
+)
+def test_a_joining_word_of_its_own_is_still_cut(said, note):
+    wish = wish_of(said, BEILAGE)
+    assert (wish.kind, wish.option, wish.note) == ("option", "Nudeln", note)
+
+
+@pytest.mark.parametrize(
+    ("text", "left"),
+    [
+        ("die Abbitte", "die Abbitte"),
+        ("ohne Koriander bitte!", "ohne Koriander"),
+        ("ohne Koriander, Bitte", "ohne Koriander"),
+    ],
+)
+def test_bitte_is_cut_only_as_a_word_of_its_own(text, left):
+    """The other pattern `_cut_tail` runs had the same missing word boundary."""
+    assert wishes._cut_tail(wishes._PLEASE_AT_END, text) == left
 
 
 def test_name_mit_klammern_gehoert_zum_namen():
