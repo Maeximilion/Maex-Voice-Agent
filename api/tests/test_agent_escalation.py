@@ -549,6 +549,7 @@ def test_an_incident_word_is_read_as_a_word_not_inside_another(said, incident):
         "Vergessen Sie es, tschüss.",
         "Vergessen Sie die Bestellung, tschüss.",
         "Nee, dann doch nicht.",
+        "Vergessen Sie es bitte.",
         "Ach, dann doch nicht, danke. Auf Wiederhören.",
         "Dann lieber nicht.",
         "Dann eben nicht.",
@@ -560,10 +561,14 @@ def test_an_incident_word_is_read_as_a_word_not_inside_another(said, incident):
         "Nein danke, dann lass ich es bleiben.",
         # A short "es", a curly apostrophe and "ß" as speech engines write them.
         "Nein danke, dann lass ich's.",
-        "Vergessen Sie’s, tschüß.",
+        "Vergessen Sie\u2019s, tschüß.",
         "Dann lassen wir's.",
         "Nein, vielen Dank, dann lasse ich es.",
         "Vergessen Sie es, tschau.",
+        # Disbelief at the time first, then the decline.
+        "Oh, so lange? Dann doch nicht.",
+        "Was, so lange? Dann lassen Sie es.",
+        "Zu lange? Dann lasse ich es.",
     ],
 )
 def test_a_plain_decline_is_one(sentence):
@@ -606,6 +611,24 @@ def test_a_plain_decline_is_one(sentence):
         "Nee, lass mal. Ach doch, okay, gerne.",
         "Nein danke, dann lasse ich es. Ach doch, ja, die Bestellung bitte.",
         "Lassen Sie es, bis gleich.",
+        # The gap sweep of the deep review: a pickup ahead, a question asked
+        # first, "mir" and "zu" that turn "lassen" round, a plea.
+        "Nee, lass mal, danke, bis dann.",
+        "Ach, doch nicht! Danke, bis dann.",
+        "Dauert das lange? Dann lasse ich es.",
+        "Dauert es lange? Dann lassen Sie es.",
+        "Lassen Sie mir das bitte.",
+        "Das lassen Sie mir mal, danke.",
+        "Das lass ich zu",
+        "Bitte doch nicht!",
+        "Nein, bitte doch nicht!",
+        # A correction cut off by a pause: its rest comes as the next turn.
+        "Lassen Sie, äh.",
+        "Vergessen Sie, äh.",
+        "Lassen Sie bitte.",
+        "Nein, doch nicht, äh.",
+        "Nee, doch nicht.",
+        "Nein, eben nicht.",
         # A question, with its mark, without a space after it, or lost.
         "Lasse ich es?",
         "Lasse ich es?!",
