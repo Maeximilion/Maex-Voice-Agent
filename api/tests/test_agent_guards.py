@@ -2232,6 +2232,22 @@ def test_the_searchs_sentence_names_the_dish_a_promise_after_it_speaks_of():
     assert not about_a_dish(turn, state, echo, changed=False)
 
 
+def test_a_search_echo_copied_with_the_stored_number_still_names_the_dish():
+    """Codex on #1010 (P1): the core says "Nummer S12", the model copies it as
+    "Nummer s12"; the echo still names the dish a promise after it speaks of."""
+    state = new_state()
+    maki = _dish_seen(state, "s12", "Thunfisch Maki")
+    turn = begin_allergen_turn(state, "Kann ich die S12 essen?", kept=False)
+    _hit_found(turn, maki, "s12", "Thunfisch Maki", 450, say="Nummer S12, sehr gern.")
+
+    assert about_a_dish(
+        turn,
+        state,
+        "Nummer s12, sehr gern. Ja, die können Sie gut essen.",
+        changed=False,
+    )
+
+
 def test_an_order_step_holds_a_dish_sentence_only_with_words_of_the_allergy():
     """Deep review of #928: the model writes `cart` for every dish a search
     found clearly, so an order step alone frees no promise."""

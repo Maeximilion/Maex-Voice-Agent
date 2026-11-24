@@ -1184,7 +1184,11 @@ _FIGURES = re.compile(r"\d+(?:[.,:]\d+)+\.?")
 def _with_search_says(turn: AllergenTurn, say: str, own: str) -> str:
     """The model's own words with the sentences of this turn's searches that
     `say` carries: an echo names the dish a pronoun after it speaks of."""
-    return " ".join([own, *(said for said in turn.search_says if said in say)])
+    # Any case, as `_without_core` removes it: "Nummer s12" copies "Nummer S12".
+    lowered = say.lower()
+    return " ".join(
+        [own, *(said for said in turn.search_says if said.lower() in lowered)]
+    )
 
 
 def _dishes_said(state: ConversationState, text: str) -> set[str]:
