@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.69
+> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.70
 
 ---
 
@@ -147,6 +147,7 @@ Settled assumptions: `docs/HISTORY.md` sections "Made Assumptions (archive)" and
 
 | Date | What |
 |---|---|
+| 24.11.2026 | **#888 round 3: five gaps of the scripted stand-in closed (docs/24).** "Die drei und zwanzig" is card 23 once, not 3 x 20; "Warme Beilage" picks that group over "Beilage" (both said: asked again); "Nein, doch die 23" and "Nein, lieber zwei Nummer 13" keep the dish and their own quantity; when `get_service_status` reports neither pickup nor delivery open, the stand-in says so at once and asks for no dish (with delivery open the core still offers it at the draft, `abholung_0090`). `sim/` only, tests in `api/tests/test_sim_pickup.py`, rows moved to `docs/HISTORY.md`. The surcharge reason stays open: it needs a German word pattern, Maxi's word (#798). |
 | 24.11.2026 | **#981: one open callback per call, also in the database.** Migration 047 adds the partial unique index `uq_callbacks_open_per_call` (tenant, call; open and not deleted) behind the call's advisory lock. `create_callback` answers a conflict on it as the same replay a second call gets (docs/04); "Wieder öffnen" on a done card whose call has a newer open card is refused with a line at that card in the redrawn history sheet (a board note sat under the sheet, review), the one path that could make a second open card before. Old duplicates: the oldest open card stays, the others are closed as done by `migration:047`, and the downgrade opens them again; the workbench copy had none. **Workbench:** backup, `make migrate` (044 to 047), restart `api`, `dispatcher` and `voice` (docs/13 §4). | Done |
 | 24.11.2026 | **#74 (T-9.4): uptime check of `/health` from another machine.** `scripts/uptime_check.py` runs one pass a minute from cron (`deploy/uptime.cron`), standard library only, no account: after 3 failed passes in a row one push "Server not answering" to `ops`, one "Server answering again" on recovery, a failed push is tried again on the next pass. Checked end to end against the push server 2.37.2. Open for Maxi (docs/13 §5): which machine checks the server once it exists, and which push server the phone reads while the server is down. |
 | 24.11.2026 | **#980: an index for the tickets of one order.** Migration 046 adds the partial index `ix_outbox_tenant_order` on (tenant, `payload->>'order_id'`) where the key is set. `send_ticket`, `last_reason` and the newest revision on every claim and ack of the print bridge read it instead of every outbox row of the tenant (0.07 ms instead of 7.9 ms at 60,000 rows). Up and down tested, no row changes. **Workbench:** backup, `make migrate`, restart `api` and `dispatcher` (docs/13 §4). | Done |
@@ -188,7 +189,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.69 · 24.11.2026:** #888 round 3: a joining word (und, aber, dafür) or bitte is cut from a wish only as a word of its own, so "ohne Hund" no longer becomes "ohne H"
+- **v2.69.70 · 25.11.2026:** #888 round 3: a joining word (und, aber, dafür) or bitte is cut from a wish only as a word of its own, and every joining word in front of the next part goes, so "ohne Hund" no longer becomes "ohne H"
+- **v2.69.69 · 25.11.2026:** #888 round 3: five scripted stand-in gaps of docs/24 closed (split number, nested group names, doch, replacement quantity, closed pickup)
 - **v2.69.68 · 24.11.2026:** #888 round 3: an expected rejection in an eval case names its call with args (postal code, draft type or address), the recorder keeps the arguments of rejected calls
 - **v2.69.67 · 24.11.2026:** #981: migration 047, one open callback per call as a partial unique index; a conflict is a replay, reopening next to an open card of the call is refused
 - **v2.69.66 · 24.11.2026:** #888 S8: a complaint rule is offered only for the newest order booked under the calling line in the last 24 hours, one offer per order and none after a complaint card; the card names the order

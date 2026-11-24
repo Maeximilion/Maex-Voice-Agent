@@ -165,6 +165,9 @@ class PickupScript:
         self._complete = False
         # The note for the whole order, once the core asked for one.
         self._order_note: str | None = None
+        # What `get_service_status` said when neither pickup nor delivery takes
+        # an order: every later sentence gets it again, no dish is asked for.
+        self.closed: str | None = None
 
     # -- Customer turn ------------------------------------------------------
 
@@ -176,6 +179,8 @@ class PickupScript:
     def on_customer(
         self, text: str, slots: dict[str, Any], patch: dict[str, Any]
     ) -> LLMTurn:
+        if self.closed:
+            return LLMTurn(say=self.closed, state_patch=patch or None)
         if self._same_open:
             self._same_open = False
             self._use_stored = _agrees(text)
@@ -209,8 +214,9 @@ class PickupScript:
                 # Quantity from the answer ("einmal die dreizehn", also without
                 # a marker: "zwei Pho Bo", "zwei Nummer dreizehn"), else from
                 # the question the suggestions belong to ("zwei Suppen") (Codex
-                # PR #133).
-                quantity = _stated_quantity(text, hit) or _quantity(
+                # PR #133). After a no the replacement says it: "Nein, lieber
+                # zwei Nummer 13" (Codex PR #178).
+                quantity = _stated_quantity(other or text, hit) or _quantity(
                     self._suggestion_query, hit
                 )
                 wish = self._add(
@@ -717,6 +723,18 @@ class PickupScript:
         item, hit, wish, question = self._group_for[0]
         said = set(_words(text))
         named = [g for g in wish["groups"] if set(_words(g)) <= said]
+        # "Warme Beilage" names "Beilage" too: the longer name is the one meant
+        # (Codex PR #178), unless the shorter one is said outside it as well
+        # ("Beilage oder Warme Beilage?" leaves both open).
+        named = [
+            g
+            for g in named
+            if not any(
+                set(_words(g)) < set(_words(o))
+                and not set(_words(g)) <= set(_cut(_words(text), _words(o)))
+                for o in named
+            )
+        ]
         rejected = _rejects(text) or "nicht" in said
         chosen = len(named) == 1 and not rejected
         dropped = rejected and not named
@@ -950,9 +968,8 @@ def _statement(say: str) -> str:
 
 def _correction_quantity(said: str) -> int | None:
     """The quantity said with a correction: marked ("zweimal", "2 x"), or bare
-    directly before the marker ("zwei Nummer 24", Codex PR #271). Not
-    `_stated_quantity`: that takes the "drei" of "die drei und zwanzig" for a
-    quantity, which is the number itself."""
+    directly before the marker ("zwei Nummer 24", Codex PR #271): a bare
+    number word anywhere else is the number itself ("die drei und zwanzig")."""
     marked = find_quantity(said)
     if marked:
         return marked
@@ -982,7 +999,8 @@ def _stated_quantity(query: str, hit: dict[str, Any] | None = None) -> int | Non
     """The quantity that was said, or None. By the domain's rule (numberwords):
     with a marker ("zweimal", "2 x") it always applies. If the sentence is the
     card number itself ("die 7", "die sieben", "die 23 a"), a leading number
-    word is a quantity only if it is not the number ("zwei Nummer 23"). Next to
+    word is a quantity only if the rest names the number without it ("zwei
+    Nummer 23", not "die drei und zwanzig"). Next to
     a name it is a quantity ("zwei Frühlingsrollen") - unless the dish that
     was found explains it: its own number with an article in front ("die 23,
     Frühlingsrollen") or a name that itself starts with the number ("Acht
@@ -1000,7 +1018,11 @@ def _stated_quantity(query: str, hit: dict[str, Any] | None = None) -> int | Non
         return None
     ref, _ = sole_item_number(query)
     if ref is not None:
-        return lead if lead != ref.value else None
+        # "die drei und zwanzig": the lead word starts the number itself, and
+        # without it the rest names another card or none (docs/24, PR #271).
+        rest, _ = sole_item_number(" ".join(words[at + 1 :]))
+        stands = lead != ref.value and rest is not None and rest.text == ref.text
+        return lead if stands else None
     if hit is not None:
         name = _words(hit["name"])
         if name and parse_cardinal(name[0]) == lead:
@@ -1014,6 +1036,19 @@ def _words(text: str) -> list[str]:
     # Folded as in the number word parser: "fuenf" and "fünf" are one word
     # (Codex PR #133, P2).
     return re.findall(r"[^\W_]+", fold(text))
+
+
+def _cut(words: list[str], name: list[str]) -> list[str]:
+    """The words without each place where `name` is said word for word."""
+    rest: list[str] = []
+    at = 0
+    while at < len(words):
+        if name and words[at : at + len(name)] == name:
+            at += len(name)
+        else:
+            rest.append(words[at])
+            at += 1
+    return rest
 
 
 def _option_question(item: CartItem, group: dict[str, Any]) -> str:
@@ -1059,7 +1094,7 @@ def _rejects(text: str) -> bool:
 # a dish ("keine davon, lieber ...", "weder noch, dann ...", "nein, vielen
 # Dank": courtesy alone is no replacement, Codex PR #178).
 _REJECTION_FILL = frozenset(
-    {"davon", "noch", "lieber", "sondern", "dann", "aber", "stattdessen"}
+    {"davon", "noch", "lieber", "sondern", "dann", "aber", "stattdessen", "doch"}
     | {"danke", "dank", "vielen", "schön", "schoen", "sehr", "bitte"}
 )
 
