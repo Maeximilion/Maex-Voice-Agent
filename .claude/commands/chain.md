@@ -44,9 +44,10 @@ Each item gets a fresh session (`start_session`, `context` "fresh", own
 worktree, the item's `model` and `effort`). The session builds its pull
 request through `/done` until CI is green and the first independent review is
 clean, fixes every finding of that first round itself (a P0 or P1 too), and
-ends with "PR #N ready, first review clean". Then it takes the next planned
-item the coordinator names (section 4, "Finisher takes next item"); it is
-archived only when its last item is merged and no item is left for it.
+ends with "PR #N ready, first review clean". Then it is done: one item per
+session (Maxi, 2026-11-24 evening, popup "One item per session"), archived
+by the coordinator once its pull request is merged, so the sidebar shows no
+merged pull request and no session grows over several items.
 
 **The ship lane** (Maxi, 2026-11-24, "One Sonnet ship lane"): one fresh Sonnet
 `medium` session, started in Maxi's turn together with the first build
@@ -187,20 +188,19 @@ before naming a base.
   Items should start like when I would be here"): sessions take the best option
   and list it in the PR under "Claude's choice, awaiting Maxi"; money, law,
   security design and production data wait for him. Planned items keep taking
-  free lanes. Since a note turn cannot start a session, a session that sends
-  "PR ready" waits in its turn for the coordinator's reply naming its next
-  planned item with a brief, cuts a new branch from `origin/main` and builds it
-  in the same session, one PR per item (Maxi, 2026-11-24, popup "Finisher takes
-  next item"). Context size never stops a finisher (Maxi, 2026-11-24: "Don't
-  stop the chain any more ... Fix it for future so you don't stop a running
-  chain"): no handover at 300k or 450k, no 80 percent line; it takes the next
-  item near its limit too and lets auto compaction carry it, so it commits and
-  pushes at every step and keeps its state in the PR and in files (seen
-  24.11.2026: #929 at 90 and #969 at 74 percent both stopped at "PR ready",
-  no build lane was left and no note turn could start one). If a finisher
-  stops anyway (a failure, a refusal), the coordinator hands its next item to
-  the next "PR ready" and sends Maxi one push notification that the chain
-  waits for his message to start a session. "Nothing new"
+  free lanes. Since a note turn cannot start a session, the coordinator starts
+  in every turn Maxi's message begins a fresh session for each planned item
+  that has no session yet and fits no lane now (one item per session, Maxi,
+  2026-11-24 evening, popup "One item per session"; it replaces the finisher
+  rule of that afternoon, which let one session gather several items, a big
+  context and two lane counts at once). Such a queued session reads its brief,
+  then waits with background sleeps of 50 minutes on the baton file
+  (`next-lane.txt`, section 5) and takes the lane when the file names it.
+  Context size never stops a session (Maxi, 2026-11-24: "Don't stop the chain
+  any more"): no handover at 300k or 450k; auto compaction carries it, so it
+  commits and pushes at every step and keeps its state in the PR and in files.
+  If no queued session is left while a lane is free, the coordinator sends
+  Maxi one push notification that the chain waits for his message. "Nothing new"
   while he is away means only work outside the plan. When the plan runs empty,
   the coordinator plans about 20 new items and goes on; a decisions issue such
   as #990 can add items when he answers it.
@@ -253,6 +253,11 @@ before naming a base.
   its next action (seen 24.11.2026: three Dependabot pull requests sat open and
   unqueued for seven hours across a compaction).
 - Open Dependabot pull requests go to the ship lane's queue whenever it idles.
+- Merged pull requests stay on the ship lane's sidebar row: the app binds each
+  pull request it ships, and auto mode refuses both its own `unbind_pr` and a
+  coordinator's message asking for it (24.11.2026, "Undermining Oversight").
+  So only Maxi clears them, with the x on its pull request bar; build sessions
+  need nothing, since they are archived after their merge.
 
 ## 5. Usage pacing (in every brief)
 
