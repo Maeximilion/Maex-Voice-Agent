@@ -251,7 +251,7 @@ The catalogue of fixed answers to a complaint, per tenant (D19, T-10.11, migrati
 | granted_say | TEXT | what the guest hears after the yes, the last sentence of the call; not blank |
 | active | BOOLEAN | false on a new row: a remedy is money, so a rule is switched on by someone |
 
-The yes writes `complaint.remedy_booked` to `audit_log` (rule id, `call_id`, `remedy_cents`), in the transaction of the card.
+The yes writes `complaint.remedy_booked` to `audit_log` (rule id, `call_id`, `remedy_cents`, `order_id` of the caller's order the remedy is for, #888 S8), in the transaction of the card. An order with such a row gets no second remedy (`complaint_rules.remedy_order`).
 
 ### `consent_log`
 One row per answer to a consent question of the agent (legal check L13, T-11.1, migration 010; the recording, L2, T-11.3). Since 15.11.2026 the agent asks no allergy question (Maxi, #736): naming the allergy is the consent, and older rows of that question stay as they are; the allergy itself is never in it.

@@ -8,13 +8,21 @@ wrongly heard offers money for a complaint nobody made.
 
 import re
 import uuid
+from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import Text, select
 from sqlalchemy.orm import Session
 
-from api.models import AuditLog, ComplaintRule
+from api.models import AuditLog, ComplaintRule, Order
 
 ACTION_REMEDY_BOOKED = "complaint.remedy_booked"
+# A rule books money for whoever says its words: it is offered only for an
+# order the calling line placed this long before the call, and once per
+# order (#888 S8, Claude's choice awaiting Maxi). Longer is kinder to a guest
+# who calls the next evening, shorter gives a stranger less to name.
+REMEDY_ORDER_WINDOW = timedelta(hours=24)
+# What the guest's yes made of an order and nobody took back (`create._ORDER_STANDS`).
+_ORDER_STANDS = ("confirmed", "approved", "handed_over")
 _WORD = re.compile(r"\w+")
 # A sentence that rules something out or only supposes it does not say what the
 # phrase says ("nicht kalt", "wenn es kalt ist"). Read outside the phrase, so a
@@ -54,15 +62,50 @@ def _spoken(text: str) -> str:
     return f" {' '.join(_WORD.findall(text.lower()))} "
 
 
+def remedy_order(
+    session: Session, tenant_id: uuid.UUID, phone: str | None, now: datetime
+) -> Order | None:
+    """The order a remedy can be for: the newest of the line `phone` (the
+    caller ID, never a number said in the call: that one can be anyone's)
+    that stands, placed within `REMEDY_ORDER_WINDOW` before `now`, with no
+    remedy booked for it yet (#888 S8). None sends the complaint to the team.
+    shortcut: two calls of one line at the same moment can both be offered a
+    remedy for the same order; the team sees both cards. A lock on the order
+    row in the booking transaction closes it, once a catalogue is live."""
+    if not phone:
+        return None
+    remedied = select(AuditLog.payload["order_id"].astext).where(
+        AuditLog.tenant_id == tenant_id,
+        AuditLog.action == ACTION_REMEDY_BOOKED,
+        AuditLog.payload["order_id"].astext.is_not(None),
+    )
+    return session.scalars(
+        select(Order)
+        .where(
+            Order.tenant_id == tenant_id,
+            Order.phone == phone,
+            Order.status.in_(_ORDER_STANDS),
+            Order.deleted_at.is_(None),
+            Order.created_at >= now - REMEDY_ORDER_WINDOW,
+            Order.created_at <= now,
+            Order.id.cast(Text).not_in(remedied),
+        )
+        .order_by(Order.created_at.desc())
+        .limit(1)
+    ).first()
+
+
 def note_remedy(
     session: Session,
     tenant_id: uuid.UUID,
     call_id: uuid.UUID,
     rule_id: uuid.UUID,
     remedy_cents: int,
+    order_id: uuid.UUID,
 ) -> None:
-    """The guest's yes to a rule, in `audit_log`. Not committed: it goes with
-    the card that books the remedy, or with its failure."""
+    """The guest's yes to a rule for `order_id`, in `audit_log`: the next
+    complaint about that order finds it (`remedy_order`). Not committed: it
+    goes with the card that books the remedy, or with its failure."""
     session.add(
         AuditLog(
             tenant_id=tenant_id,
@@ -70,6 +113,10 @@ def note_remedy(
             action=ACTION_REMEDY_BOOKED,
             entity="complaint_rule",
             entity_id=rule_id,
-            payload={"call_id": str(call_id), "remedy_cents": remedy_cents},
+            payload={
+                "call_id": str(call_id),
+                "remedy_cents": remedy_cents,
+                "order_id": str(order_id),
+            },
         )
     )

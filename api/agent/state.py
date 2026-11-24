@@ -78,6 +78,10 @@ class RemedyOffer(BaseModel):
     granted_say: str
     # The guest's sentence: the card needs it, and it is on no transcript.
     complaint: str
+    # The caller's order the remedy is for (#888 S8): its yes is booked for
+    # this order once, and the card names it (`callbacks.order_line`).
+    order_id: uuid.UUID
+    order: str
 
 
 class ConversationState(BaseModel):

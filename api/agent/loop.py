@@ -61,7 +61,7 @@ from api.core.envelope import SAY_ON_FAILURE
 from api.core.errors import SAY_TO_THE_TEAM, Conflict
 from api.core.logging import get_logger, log
 from api.core.time import to_local, utcnow
-from api.domain.callbacks import matching_rule, note_remedy
+from api.domain.callbacks import matching_rule, note_remedy, order_line, remedy_order
 
 # Re-exported: the agent's tests name it from here (#998 moved it).
 from api.domain.callbacks.create import SUMMARY_OPEN_ORDER as SUMMARY_OPEN_ORDER
@@ -1110,7 +1110,10 @@ class ConversationLoop:
         offers the rule in the words of its row and the model is not asked.
         None leaves the complaint with the team, as with an empty catalogue,
         no match or any doubt. The call ends with the remedy, so nothing else
-        may be open in it; and without a number nobody could carry it out."""
+        may be open in it; and without a number nobody could carry it out.
+        And only for an order the calling line placed in the last day, once
+        per order (`callbacks.remedy_order`, #888 S8): a rule books money for
+        whoever says its words."""
         if (
             state.stage != "start"
             or state.slots.keys() != {"phone"}
@@ -1125,6 +1128,11 @@ class ConversationLoop:
         rule = matching_rule(self._session, state.tenant_id, user_text)
         if rule is None:
             return None
+        order = remedy_order(
+            self._session, state.tenant_id, state.caller_phone, self._now or utcnow()
+        )
+        if order is None:
+            return None
         state.remedy_offer = RemedyOffer(
             rule_id=rule.id,
             name=rule.name,
@@ -1132,6 +1140,8 @@ class ConversationLoop:
             offer_say=rule.offer_say,
             granted_say=rule.granted_say,
             complaint=user_text,
+            order_id=order.id,
+            order=order_line(order),
         )
         guards.note_said(state, rule.offer_say)
         return TurnResult(state=state, say=[rule.offer_say])
@@ -1156,6 +1166,7 @@ class ConversationLoop:
                 state.call_id,
                 offer.rule_id,
                 offer.remedy_cents,
+                offer.order_id,
             )
             if self._complaint_card(state, offer, SUMMARY_REMEDY_BOOKED).ok:
                 return TurnResult(state=state, say=[offer.granted_say], ended=True)
@@ -2243,8 +2254,10 @@ def _transfer_reason(args: dict[str, Any]) -> str:
 
 
 def _remedy_card(card: str, offer: RemedyOffer) -> str:
-    """A card sentence with the rule's name and amount, both from its row."""
-    return card.format(remedy=f"{offer.name}, {spoken_euro(offer.remedy_cents)}")
+    """A card sentence with the rule's name and amount, both from its row,
+    and the order the remedy is for (#888 S8)."""
+    remedy = card.format(remedy=f"{offer.name}, {spoken_euro(offer.remedy_cents)}")
+    return f"{remedy} {offer.order}."
 
 
 def _tool_result_as_input(name: str, result: ToolResult, zone: tzinfo) -> str:
