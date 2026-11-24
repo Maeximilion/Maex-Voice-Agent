@@ -189,8 +189,16 @@ before naming a base.
   "PR ready" waits in its turn for the coordinator's reply naming its next
   planned item with a brief, cuts a new branch from `origin/main` and builds it
   in the same session, one PR per item (Maxi, 2026-11-24, popup "Finisher takes
-  next item"); past about 80 percent context it says so and the item goes to
-  the next finisher or to a fresh session in Maxi's next turn. "Nothing new"
+  next item"). Context size never stops a finisher (Maxi, 2026-11-24: "Don't
+  stop the chain any more ... Fix it for future so you don't stop a running
+  chain"): no handover at 300k or 450k, no 80 percent line; it takes the next
+  item near its limit too and lets auto compaction carry it, so it commits and
+  pushes at every step and keeps its state in the PR and in files (seen
+  24.11.2026: #929 at 90 and #969 at 74 percent both stopped at "PR ready",
+  no build lane was left and no note turn could start one). If a finisher
+  stops anyway (a failure, a refusal), the coordinator hands its next item to
+  the next "PR ready" and sends Maxi one push notification that the chain
+  waits for his message to start a session. "Nothing new"
   while he is away means only work outside the plan. When the plan runs empty,
   the coordinator plans about 20 new items and goes on; a decisions issue such
   as #990 can add items when he answers it.
