@@ -119,6 +119,11 @@ CASES = [
         lambda text: classify_wish(text, []),
         "mit x" + "\t" * LENGTH + "ohne y",
     ),
+    (
+        "classify_wish, tabs behind a joining word before an addition",
+        lambda text: classify_wish(text, []),
+        "ohne x und" + "\t" * LENGTH + "mit y",
+    ),
 ]
 
 
@@ -209,13 +214,15 @@ REFERENCE = {
         ["aber", "und", "Und", "dafür", "dafuer", "dann", "bitte", "Hund"],
     ),
     "bitte at the end": (
-        lambda text: re.sub(r"[\s,]*bitte[\s.!?]*$", "", text, flags=re.IGNORECASE),
+        lambda text: re.sub(r"[\s,]*\bbitte[\s.!?]*$", "", text, flags=re.IGNORECASE),
         lambda text: wishes._cut_tail(wishes._PLEASE_AT_END, text),
-        ["bitte", "Bitte", "und", "?"],
+        ["bitte", "Bitte", "und", "?", "Ab"],
     ),
-    # Without IGNORECASE, as it was: "Und" at the end stays.
+    # Without IGNORECASE, as it was: "Und" at the end stays. The word boundary
+    # here and above is newer than the CodeQL fix: "Hund" keeps its "und"
+    # (docs/24).
     "joining word before the next part": (
-        lambda text: re.sub(r"[\s,]*(?:dafür|dafuer|aber|und)[\s,]*$", "", text),
+        lambda text: re.sub(r"[\s,]*\b(?:dafür|dafuer|aber|und)[\s,]*$", "", text),
         lambda text: wishes._cut_tail(wishes._JOINER_AT_END, text),
         ["dafür", "dafuer", "aber", "und", "Und", "Aber", "Hund"],
     ),

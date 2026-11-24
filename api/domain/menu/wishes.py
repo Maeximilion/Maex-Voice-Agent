@@ -65,10 +65,11 @@ _TOKEN = re.compile(r"[^\W_]+|,")
 # match are taken off by `_separators_start` instead.
 #
 # "bitte" at the very end, and the word that joins the next part of a wish
-# ("ohne Zwiebeln, dafür" / "mit Nudeln, aber").
-_PLEASE_AT_END = re.compile(r"bitte[\s.!?]*$", re.IGNORECASE)
+# ("ohne Zwiebeln, dafür" / "mit Nudeln, aber"). Each only as a word of its
+# own: "ohne Hund" keeps its "und" (docs/24).
+_PLEASE_AT_END = re.compile(r"\bbitte[\s.!?]*$", re.IGNORECASE)
 # Lower case only, as the pattern it replaces was: "Und" at the end stays.
-_JOINER_AT_END = re.compile(r"(?:dafür|dafuer|aber|und)[\s,]*$")
+_JOINER_AT_END = re.compile(r"\b(?:dafür|dafuer|aber|und)[\s,]*$")
 # Joining words at the end of a part, one after the other ("mit Salami, aber").
 _GLUE_WORD = re.compile(r"aber|und|dafür|dafuer|dann|bitte", re.IGNORECASE)
 # Eine Menge gehoert zur Position, nie in den Hinweis ("zweimal", "2 x").
