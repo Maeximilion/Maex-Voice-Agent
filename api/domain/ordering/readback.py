@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from api.domain.menu.numberwords import spoken_card
 from api.domain.reservations.spoken import COUNTS
 from api.models import Address, Order
 
@@ -79,7 +80,8 @@ def _spoken_address(address: Address) -> str:
 
 def _spoken_line(line: SpokenLine) -> str:
     text = (
-        f"{spoken_times(line.quantity).capitalize()} Nummer {line.number} {line.name}"
+        f"{spoken_times(line.quantity).capitalize()} Nummer {spoken_card(line.number)} "
+        f"{line.name}"
     )
     if line.options:
         text += " mit " + " und ".join(o["option"] for o in line.options)

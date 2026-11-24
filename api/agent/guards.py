@@ -67,7 +67,7 @@ from api.agent.state import (
 from api.domain.menu.details import SAY_ALLERGENS_LEAD, say_allergens
 from api.domain.menu.items import option_key
 from api.domain.menu.normalize import normalize_query
-from api.domain.menu.numberwords import canonical_card, find_numbers
+from api.domain.menu.numberwords import canonical_card, find_numbers, spoken_card
 from api.domain.menu.pos_convert import allergens_named, names_an_allergen
 from api.domain.menu.search import CLEAR_MATCHES
 from api.domain.menu.wishes import (
@@ -1165,7 +1165,7 @@ def price_says(turn: AllergenTurn, state: ConversationState, say: str) -> list[s
 
 def _price_say(hit: dict[str, Any]) -> str:
     name, number = hit.get("name"), hit.get("number")
-    dish = f"Die {number}, {name}," if number else str(name)
+    dish = f"Die {spoken_card(number)}, {name}," if number else str(name)
     if hit.get("sold_out"):
         return f"{dish} ist heute leider aus."
     # "kostet einen Euro 50": `spoken_euro` writes a lone 1 as "ein".

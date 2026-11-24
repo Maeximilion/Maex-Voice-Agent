@@ -50,6 +50,7 @@ from api.core.time import utcnow
 from api.domain.delivery.address import address_row, same_address
 from api.domain.delivery.zones import check_delivery, postal_digits
 from api.domain.menu.items import is_sold_out, option_groups, option_key
+from api.domain.menu.numberwords import spoken_card
 
 # The same number lookup as search_menu ("7" finds "07", "23A" finds "23a").
 # Imported privately until PR #139 no longer touches search.py.
@@ -589,7 +590,9 @@ def _plan(
         if line.missing:
             blockers.append(
                 MISSING_OPTION.format(
-                    number=line.number, name=line.name, groups=", ".join(line.missing)
+                    number=spoken_card(line.number),
+                    name=line.name,
+                    groups=", ".join(line.missing),
                 )
             )
     if where.blocker:

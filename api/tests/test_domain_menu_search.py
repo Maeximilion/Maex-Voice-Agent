@@ -1014,7 +1014,7 @@ def test_category_word_with_two_hits_asks_back(session, sushi):
 
     assert result.match_type == "ambiguous"
     assert sorted(nummern(result)) == ["s1", "sm1"]
-    assert "Nummer s1" in result.say and "Nummer sm1" in result.say
+    assert "Nummer S1" in result.say and "Nummer SM1" in result.say
 
 
 @pytest.mark.parametrize(
@@ -1036,7 +1036,7 @@ def test_s12_heard_as_ist_zwoelf_asks_which_dish(session, sushi, said):
     assert result.match_type == "ambiguous"
     assert sorted(nummern(result)) == ["12", "s12"]
     assert "Nummer 12, Wan-Tan-Suppe" in result.say
-    assert "Nummer s12, Thunfisch Maki" in result.say
+    assert "Nummer S12, Thunfisch Maki" in result.say
 
 
 @pytest.mark.parametrize("said", ["Ist sieben.", "Das ist sieben.", "Nummer ist 7"])
@@ -1048,7 +1048,7 @@ def test_ist_number_with_only_the_s_dish_on_the_menu_asks_whether_it_is_meant(
     result = suche(session, sushi, said)
 
     assert result.match_type == "ambiguous" and nummern(result) == ["s07"]
-    assert result.say == "Meinen Sie Nummer s07, Gurken Maki?"
+    assert result.say == "Meinen Sie Nummer S07, Gurken Maki?"
 
 
 @pytest.mark.parametrize(
@@ -1080,7 +1080,7 @@ def test_ist_number_that_is_on_the_menu_in_neither_form_is_not_found(session, su
     with pytest.raises(NotFound) as err:
         suche(session, sushi, "Ist neunundneunzig.")
     assert err.value.say is not None
-    assert "99 oder s99" in err.value.say
+    assert "99 oder S99" in err.value.say
 
 
 @pytest.mark.parametrize("said", ["S 13", "S dreizehn", "Sushi 99", "Nummer 23g"])
@@ -1291,8 +1291,8 @@ def test_heard_suffix_behind_a_prefixed_number_asks_which_dish(session, sushi, s
 
     assert result.match_type == "ambiguous"
     assert sorted(nummern(result)) == ["s07", "s07a"]
-    assert "Nummer s07, Gurken Maki" in result.say
-    assert "Nummer s07a, Avocado Maki" in result.say
+    assert "Nummer S07, Gurken Maki" in result.say
+    assert "Nummer S07a, Avocado Maki" in result.say
 
 
 @pytest.mark.parametrize(
@@ -1316,7 +1316,7 @@ def test_category_word_without_hit_names_card_numbers(session, sushi):
     with pytest.raises(NotFound) as err:
         suche(session, sushi, "Sushi 99")
     assert err.value.say is not None
-    assert "s99 oder sm99" in err.value.say
+    assert "S99 oder SM99" in err.value.say
 
 
 def test_by_number_rejects_a_bare_str(session, sushi):

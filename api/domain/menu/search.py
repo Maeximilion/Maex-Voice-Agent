@@ -48,6 +48,7 @@ from api.domain.menu.numberwords import (
     canonical_card,
     fold,
     sole_item_number,
+    spoken_card,
 )
 from api.domain.menu.sold_out import alternatives
 from api.domain.menu.split import (
@@ -174,14 +175,14 @@ def _sold_out_say(session: Session, item: MenuItem, now: datetime) -> str:
     others = alternatives(session, item, now)
     if not others:
         return SAY_SOLD_OUT.format(name=item.name)
-    items = " oder ".join(f"Nummer {o.number} {o.name}" for o in others)
+    items = " oder ".join(f"Nummer {spoken_card(o.number)} {o.name}" for o in others)
     return (
         f"{SAY_SOLD_OUT.format(name=item.name)} {SAY_ALTERNATIVES.format(items=items)}"
     )
 
 
 def _ambiguous(session: Session, items: list[MenuItem], now: datetime) -> SearchResult:
-    names = [f"Nummer {i.number}, {i.name}" for i in items]
+    names = [f"Nummer {spoken_card(i.number)}, {i.name}" for i in items]
     if len(names) == 1:
         question = f"Meinen Sie {names[0]}?"
     else:
@@ -216,9 +217,9 @@ def say_understood(
     """
     names = [
         _with_wish(
-            f"Nummer {hit.number}"
+            f"Nummer {spoken_card(hit.number)}"
             if match_type == "exact_number"
-            else f"Nummer {hit.number} {hit.name}",
+            else f"Nummer {spoken_card(hit.number)} {hit.name}",
             wish,
         )
         for match_type, hit, wish in understood
@@ -803,7 +804,7 @@ def search_menu(
         if not items:
             raise NotFound(
                 f"Nummer {ref.text} nicht auf der Karte",
-                say=SAY_NO_SUCH_NUMBER.format(number=ref.text),
+                say=SAY_NO_SUCH_NUMBER.format(number=spoken_card(ref.text)),
             )
         if len(items) > 1 or ref.heard:
             # "7" and "07" on the same menu, "Sushi eins" with S1 and SM1:
