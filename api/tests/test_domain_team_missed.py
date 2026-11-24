@@ -21,7 +21,16 @@ from api.domain.callbacks.transfer import (
     SUMMARY_NOTE_TO_CLEAR,
 )
 from api.domain.calls import end_call
-from api.models import AuditLog, Call, Callback, Order, OutboxEvent, Reservation
+from api.models import (
+    AuditLog,
+    Call,
+    Callback,
+    MenuItem,
+    Order,
+    OrderItem,
+    OutboxEvent,
+    Reservation,
+)
 from api.schemas.callbacks import CreateCallbackRequest
 from api.schemas.calls import EndCallRequest
 from scripts.seed import seed
@@ -218,7 +227,8 @@ def _reservation(session, call: Call, *, status: str = "confirmed") -> Reservati
         party_size=4,
         # 19:30 in Berlin: the card shows the restaurant's clock (CLAUDE.md §8).
         reserved_for=datetime(2026, 9, 20, 17, 30, tzinfo=UTC),
-        # Can name the guest's health: never on a card (L13).
+        # Can name the guest's health: never on a card (L13), which leads
+        # with the kitchen marker for it (#969).
         note="Erdnussallergie",
         idempotency_key=uuid.uuid4().hex,
     )
@@ -261,7 +271,9 @@ def test_a_card_without_the_cores_summary_names_the_booking_that_stands(
     task = team_missed(session, tenant_id, "1760000000.1", rang=False, now=REPORTED)
 
     assert task is not None
-    assert task.summary == f"{SUMMARY_HUNG_UP} {SUMMARY_BOOKED} {TABLE_BOOKED}."
+    assert task.summary == (
+        f"{SUMMARY_HUNG_UP} {MARKER} {SUMMARY_BOOKED} {TABLE_BOOKED}."
+    )
     assert "Allergie" not in task.summary and "nicht bekannt" not in task.summary
 
 
@@ -278,7 +290,7 @@ def test_a_missed_leg_names_every_booking_of_the_call_behind_its_reason(
 
     assert task is not None
     assert task.summary == (
-        f"{SUMMARY_MISSED} Kunde wollte etwas stornieren. {SUMMARY_BOOKED} "
+        f"{SUMMARY_MISSED} {MARKER} Kunde wollte etwas stornieren. {SUMMARY_BOOKED} "
         f"{TABLE_BOOKED}; Bestellung zur Abholung, Name Schmidt, Code A17."
     )
     assert "Allergie" not in task.summary and "Nuesse" not in task.summary
@@ -298,7 +310,7 @@ def test_a_booking_that_does_not_stand_is_not_named(session, tenant_id, status):
     task = team_missed(session, tenant_id, "1760000000.1", now=REPORTED)
 
     assert task is not None
-    assert task.summary == f"{SUMMARY_MISSED} Anliegen nicht bekannt."
+    assert task.summary == f"{SUMMARY_MISSED} {MARKER} Anliegen nicht bekannt."
 
 
 def test_a_draft_next_to_a_standing_booking_is_left_out(session, tenant_id):
@@ -312,7 +324,9 @@ def test_a_draft_next_to_a_standing_booking_is_left_out(session, tenant_id):
     task = team_missed(session, tenant_id, "1760000000.1", now=REPORTED)
 
     assert task is not None
-    assert task.summary == f"{SUMMARY_MISSED} {SUMMARY_BOOKED} {TABLE_BOOKED}."
+    assert task.summary == (
+        f"{SUMMARY_MISSED} {MARKER} {SUMMARY_BOOKED} {TABLE_BOOKED}."
+    )
 
 
 def test_a_card_with_more_bookings_than_it_holds_names_them_all(session, tenant_id):
@@ -358,7 +372,7 @@ def test_the_cores_summary_is_followed_by_every_booking_of_the_call(session, ten
 
     assert task is not None
     assert task.summary == (
-        f"{SUMMARY_MISSED} {summary} {SUMMARY_BOOKED} {TABLE_BOOKED}; "
+        f"{SUMMARY_MISSED} {MARKER} {summary} {SUMMARY_BOOKED} {TABLE_BOOKED}; "
         "Bestellung zur Abholung, Name Schmidt, Code A17."
     )
 
@@ -750,3 +764,70 @@ def test_a_core_card_with_the_marker_only_inside_gets_it_in_front(session, tenan
 
     assert task is not None
     assert task.summary == f"{SUMMARY_MISSED} {MARKER} {summary}"
+
+
+# -- the marker from the database, when the line's memory has none (#969) -------
+
+
+@pytest.mark.parametrize("row", ["order", "reservation", "item"])
+def test_a_health_note_of_the_call_marks_the_card_without_the_lines_memory(
+    session, tenant_id, row
+):
+    """#969: `voice` restarted mid-call, or the report reached a process that
+    never saw the call, so the line knows of no allergy. The core wrote it on a
+    row of the call, a draft too: the card leads with the marker from there,
+    and never names the note (L13)."""
+    call = make_call(session, tenant_id, transfer_reason=None, outcome="error")
+    if row == "reservation":
+        _reservation(session, call, status="draft")
+    else:
+        order = _order(session, call, status="draft")
+        if row == "item":
+            order.note = None
+            dish = MenuItem(
+                tenant_id=tenant_id,
+                number="13",
+                name="Pho Bo",
+                category="Suppen",
+                price_cents=690,
+            )
+            session.add(dish)
+            session.flush()
+            session.add(
+                OrderItem(
+                    tenant_id=tenant_id,
+                    order_id=order.id,
+                    menu_item_id=dish.id,
+                    quantity=2,
+                    unit_price_cents=690,
+                    note="WICHTIG !!! Allergie: Erdnuesse",
+                )
+            )
+            session.commit()
+
+    task = team_missed(session, tenant_id, "1760000000.1", now=REPORTED)
+
+    assert task is not None
+    assert task.summary == f"{SUMMARY_MISSED} {MARKER} Anliegen nicht bekannt."
+
+
+def test_a_note_that_speaks_of_no_health_marks_nothing(session, tenant_id):
+    call = make_call(session, tenant_id, transfer_reason=None, outcome="error")
+    _order(session, call, status="draft").note = "Bitte klingeln"
+    session.commit()
+
+    task = team_missed(session, tenant_id, "1760000000.1", now=REPORTED)
+
+    assert task is not None
+    assert SUMMARY_NOTE_TO_CLEAR not in task.summary
+
+
+def test_a_health_note_of_another_call_marks_nothing(session, tenant_id):
+    make_call(session, tenant_id, transfer_reason=None, outcome="error")
+    other = make_call(session, tenant_id, sid="1760000000.2", transfer_reason=None)
+    _order(session, other, status="draft")
+
+    task = team_missed(session, tenant_id, "1760000000.1", now=REPORTED)
+
+    assert task is not None
+    assert SUMMARY_NOTE_TO_CLEAR not in task.summary

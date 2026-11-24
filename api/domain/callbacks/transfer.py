@@ -24,12 +24,16 @@ from api.core.time import utcnow
 from api.domain.callbacks.create import SUMMARY_MAX, booked, create_callback
 from api.domain.customers.contact import note_contact
 from api.domain.customers.phone import number_or_none
+from api.domain.menu.wishes import HEALTH_NOTE
 from api.domain.status.hours import load_hours, open_window_at
 from api.domain.status.staff_changes import team_phone_at
 from api.models import (
     AuditLog,
     Call,
     Callback,
+    Order,
+    OrderItem,
+    Reservation,
     ServiceConfig,
     Tenant,
 )
@@ -187,7 +191,7 @@ def team_missed(
                     SUMMARY_MISSED if rang else SUMMARY_HUNG_UP,
                     _marked(
                         summary or _without_the_cores_card(session, call),
-                        kitchen_note=kitchen_note,
+                        kitchen_note=kitchen_note or _health_noted(session, call),
                     ),
                 )
                 if part
@@ -207,6 +211,35 @@ def _marked(card: str | None, *, kitchen_note: bool) -> str | None:
     if not kitchen_note or (card and card.startswith(marker)):
         return card
     return f"{marker} {card or ''}".strip()
+
+
+def _health_noted(session: Session, call: Call) -> bool:
+    """Does a row of the call carry a note about the guest's health
+    (`wishes.HEALTH_NOTE`, the note the safety net makes the core write)? The
+    marker when the line's memory has none: `voice` restarted in the call, or
+    the report reached a process that never saw it (#969). Any row of the
+    call, a draft or a cancelled one too: the guest spoke of it either way.
+    Only the core writes the notes of a call's rows; the team's corrections
+    keep or drop one and type none (`ordering/correction.py`), and a table the
+    team enters belongs to no call (D30). The note itself never reaches the
+    card (L13).
+    shortcut: an allergy said before any draft leaves no row, so no marker;
+    a per-call flag on `calls` would cover it, at the price of a migration."""
+    orders = select(Order.id).where(
+        Order.tenant_id == call.tenant_id, Order.call_id == call.id
+    )
+    noted = (
+        select(Order.id).where(Order.id.in_(orders), Order.note.op("~*")(HEALTH_NOTE)),
+        select(OrderItem.id).where(
+            OrderItem.order_id.in_(orders), OrderItem.note.op("~*")(HEALTH_NOTE)
+        ),
+        select(Reservation.id).where(
+            Reservation.tenant_id == call.tenant_id,
+            Reservation.call_id == call.id,
+            Reservation.note.op("~*")(HEALTH_NOTE),
+        ),
+    )
+    return any(session.scalars(query.limit(1)).first() for query in noted)
 
 
 def _without_the_cores_card(session: Session, call: Call) -> str | None:

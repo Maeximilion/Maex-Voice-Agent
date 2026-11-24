@@ -50,7 +50,7 @@ from sqlalchemy.orm import Session
 
 from api.agent import recording
 from api.agent.consent import recording_answer, stops_recording
-from api.agent.escalation import takes_for_a_person
+from api.agent.escalation import arms_the_net, takes_for_a_person
 from api.agent.guards import names_dish, note_said
 from api.agent.llm import LLMClient, Usage, cost_cents
 from api.agent.loop import SAY_HUMAN_ANSWER, SAY_NOT_A_PERSON, ConversationLoop
@@ -188,6 +188,10 @@ class _LiveCall:
     # Its log is written, or being written: taken under the lock by the one
     # caller of `_finish` (`_claim`).
     finished: bool = False
+    # The guest spoke of their health where no core turn hears it: the answer
+    # in mode shadow, or words said into a protected sentence (#970). Only
+    # this flag is kept, for the card's kitchen marker; never the words.
+    health_heard: bool = False
 
 
 class CallHandler:
@@ -539,7 +543,14 @@ class CallHandler:
     def _talked_over(self, live: _LiveCall, text: str, *, ending: bool) -> None:
         """Into a read-back or another protected sentence, or into the last
         sentence before the call ends (`ending`): no turn, and what was said
-        to the guest stands. Only the withdrawal counts."""
+        to the guest stands. Only the withdrawal counts, and an allergy among
+        the words, for the kitchen marker of a missed team leg (#970)."""
+        if not live.health_heard and arms_the_net(text):
+            live.health_heard = True
+            if ending:
+                # Into the sentences before a transfer: the line kept what
+                # the card needs already, without it.
+                self._keep_named_phone(live)
         if live.state.recording != "on" or not stops_recording(text):
             return
         recording.withdraw(live.session, live.state, self._now)
@@ -558,6 +569,9 @@ class CallHandler:
             if takes_for_a_person(text):
                 # Always a truthful answer (L1), and a person is on the way.
                 self._port.say(live.session_id, SAY_NOT_A_PERSON)
+            # No core hears the answer: the card of a leg nobody takes still
+            # leads with the kitchen marker (#970).
+            live.health_heard = live.health_heard or arms_the_net(text)
             self._to_the_team_after_the_question(live, recording_answer(text))
             return
         bind_call_id(str(live.call_id))
@@ -925,7 +939,7 @@ class CallHandler:
         if phone == live.state.caller_phone:
             phone = None
         summary = live.state.handoff_summary
-        kitchen_note = bool(live.state.allergy_said)
+        kitchen_note = bool(live.state.allergy_said) or live.health_heard
         if not phone and not summary and not kitchen_note:
             return
         with self._lock:

@@ -31,7 +31,7 @@ from api.agent.recording import (
     SAY_WHAT_CAN_I_DO,
 )
 from api.config import Settings, settings
-from api.domain.callbacks.transfer import SUMMARY_HUNG_UP
+from api.domain.callbacks.transfer import SUMMARY_HUNG_UP, SUMMARY_NOTE_TO_CLEAR
 from api.domain.calls import recordings
 from api.models import Callback, ConsentLog, Recording, Reservation, ServiceConfig
 from api.telephony import handler as handler_module
@@ -1047,6 +1047,48 @@ def test_shadow_a_caller_who_hangs_up_on_the_question_leaves_a_card(
     assert card.summary.startswith(SUMMARY_HUNG_UP)
     assert the_call(session, SID).outcome == "callback"
     assert not port.transfers(SID)
+
+
+@pytest.mark.parametrize(
+    ("said", "marked"),
+    [
+        ("Ja. Ich habe eine Nussallergie, ich will bestellen.", True),
+        ("Nein, ich will bestellen.", False),
+    ],
+)
+def test_shadow_an_allergy_in_the_answer_marks_the_missed_card(
+    session, tenant, shadow, said, marked
+):
+    """#970: no core turn runs in mode shadow, so only the line can hear the
+    allergy in the answer to the question; the card of the team leg nobody
+    answered leads with the kitchen marker and never names the allergy (L13)."""
+    _, handler = shadow_call(session, tenant)
+    handler.on_user_turn(SID, said)
+    handler.on_call_ended(SID)
+
+    assert handler.on_team_missed(SID) is True
+
+    [card] = cards(session)
+    assert (SUMMARY_NOTE_TO_CLEAR in card.summary) is marked
+    assert "Nuss" not in card.summary
+
+
+def test_shadow_an_allergy_said_into_the_transfer_sentence_marks_the_card(
+    session, tenant, shadow
+):
+    """#970: a recorded leg keeps the ear on while the sentences before the
+    transfer play; an allergy said into them comes after the line kept what
+    the card needs, and still marks it."""
+    _, handler = shadow_call(session, tenant)
+    handler.on_user_turn(SID, "Ja, gerne.")
+    handler.on_talked_over(SID, "Ich habe eine Nussallergie.")
+    handler.on_call_ended(SID)
+
+    assert handler.on_team_missed(SID) is True
+
+    [card] = cards(session)
+    assert SUMMARY_NOTE_TO_CLEAR in card.summary
+    assert "Nuss" not in card.summary
 
 
 def test_shadow_a_withheld_number_leaves_no_card(session, tenant, shadow):
