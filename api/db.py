@@ -3,12 +3,15 @@
 import time
 from collections.abc import Generator, Iterator
 from contextlib import contextmanager
-from typing import Any
+from contextvars import ContextVar
+from dataclasses import dataclass
 
-from sqlalchemy import Connection, create_engine, event
+from sqlalchemy import create_engine, event
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 from api.config import settings
+from api.core.errors import SAY_ON_FAILURE, OutOfTime
 
 # pool_pre_ping: eine vom Server gekappte Verbindung (DB-Neustart, Timeout) wird
 # erkannt und ersetzt, statt als Fehler bis zum Agenten durchzuschlagen.
@@ -79,65 +82,84 @@ def bounded_sessions(
             cursor.execute(f"set statement_timeout = {ms}")
         dbapi_connection.commit()
 
-    sessions = sessionmaker(
+    @event.listens_for(bounded, "before_cursor_execute")
+    def _within_turn(_conn, cursor, *_args) -> None:  # type: ignore[no-untyped-def]
+        # Before every statement, so waits that add up stop at the deadline
+        # too, and a statement after a commit inside the tool is bounded alike.
+        turn = _turn.get()
+        if turn is None:
+            return
+        left = int((turn.deadline - time.monotonic()) * 1000)
+        if left < ms:
+            # Never 0, which Postgres reads as no bound at all.
+            cursor.execute(f"set local statement_timeout = {max(1, left)}")
+            turn.lowered = True
+
+    return sessionmaker(
         bind=bounded, autoflush=False, expire_on_commit=False, info={_BOUND: ms}
     )
 
-    @event.listens_for(sessions, "after_begin")
-    def _within(session: Session, _transaction, connection) -> None:  # type: ignore[no-untyped-def]
-        # A tool that committed goes on in a new transaction: still bounded.
-        if _DEADLINE in session.info:
-            _set_local(connection, session.info)
-
-    return sessions
-
 
 _BOUND = "statement_timeout_ms"
-_DEADLINE = "statement_deadline"
-_LOWERED = "statement_timeout_lowered"
+# Postgres' code for a statement its timeout cancelled.
+_QUERY_CANCELED = "57014"
 
 
-def _set_local(connection: Connection, info: dict[str, Any]) -> None:
-    left = int((info[_DEADLINE] - time.monotonic()) * 1000)
-    # Never 0, which Postgres reads as no bound at all.
-    ms = max(1, min(info[_BOUND], left))
-    if ms < info[_BOUND]:
-        connection.exec_driver_sql(f"set local statement_timeout = {ms}")
-        info[_LOWERED] = True
+@dataclass
+class _Turn:
+    deadline: float
+    lowered: bool = False
+
+
+# Per thread: a call's statements on its own thread, nothing of another call.
+_turn: ContextVar[_Turn | None] = ContextVar("turn_deadline", default=None)
 
 
 @contextmanager
 def bounded_by(session: Session, seconds_left: float | None) -> Iterator[None]:
-    """The statements inside wait at most `seconds_left`, a wait on a lock
-    included, and never longer than the session's own bound
-    (`bounded_sessions`): a guest whose turn has 0.3 s left is not kept on the
-    line for 2 s (Codex on PR #298). Past it the statement fails like at the
-    bound, and the caller's rollback (`telephony/handler.py`) undoes the bound
-    with the transaction.
+    """The statements inside wait, all together and a wait on a lock
+    included, no longer than `seconds_left`, and each no longer than the
+    session's own bound (`bounded_sessions`): a guest whose turn has 0.3 s
+    left is not kept on the line for 2 s (Codex on PR #298). A statement cut
+    by that raises `OutOfTime`, the structured error of a tool, and the
+    caller rolls back (`agent/dispatch.py`), which lifts the lowered bound
+    with the transaction; on a clean exit the bound is lifted here.
 
-    Transaction-local: a commit or rollback inside gives the next transaction
-    the time still left, and the bound is lifted again on the way out. A
-    session without a bound of its own (the HTTP tools, the text phone, the
+    A session without a bound of its own (the HTTP tools, the text phone, the
     evals) and a turn without a deadline stay as they are; so does a turn with
     more time left than the bound, which costs no statement then."""
     if seconds_left is None or _BOUND not in session.info:
         yield
         return
-    session.info[_DEADLINE] = time.monotonic() + seconds_left
+    turn = _Turn(time.monotonic() + seconds_left)
+    token = _turn.set(turn)
     try:
-        # Without a transaction yet, its begin sets the bound (`_within`).
-        if session.in_transaction():
-            _set_local(session.connection(), session.info)
         yield
+    except OperationalError as exc:
+        _out_of_time(turn, exc)
+        raise
     finally:
-        del session.info[_DEADLINE]
-        lowered = session.info.pop(_LOWERED, False)
-    # Only after a clean exit: a failed transaction takes no statement, and
-    # the rollback that follows it undoes the bound anyway.
-    if lowered and session.in_transaction():
-        session.connection().exec_driver_sql(
-            f"set local statement_timeout = {session.info[_BOUND]}"
-        )
+        _turn.reset(token)
+    # A read leaves its transaction open with the lowered bound: the next
+    # statements of the call get the line's bound again. This statement runs
+    # under the lowered bound itself, and may be cut by it like the others.
+    if turn.lowered and session.in_transaction():
+        try:
+            session.connection().exec_driver_sql(
+                f"set local statement_timeout = {session.info[_BOUND]}"
+            )
+        except OperationalError as exc:
+            _out_of_time(turn, exc)
+            raise
+
+
+def _out_of_time(turn: _Turn, exc: OperationalError) -> None:
+    """A statement the lowered bound cancelled raises the tool's `OutOfTime`;
+    any other failure stays what it was, for the handler's outage path."""
+    if turn.lowered and getattr(exc.orig, "sqlstate", None) == _QUERY_CANCELED:
+        raise OutOfTime(
+            "a statement ran into the turn's deadline", say=SAY_ON_FAILURE
+        ) from exc
 
 
 def get_db() -> Generator[Session]:

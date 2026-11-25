@@ -21,6 +21,7 @@ ERROR_CODES = (
     "below_minimum",
     "conflict",
     "service_unavailable",
+    "out_of_time",
 )
 
 
@@ -85,6 +86,14 @@ class TeamDecides(Conflict):
 
 class ServiceUnavailable(AppError):
     code = "service_unavailable"
+
+
+class OutOfTime(AppError):
+    """A tool's statement ran into what was left of the guest's turn on the
+    phone line (`db.bounded_by`): the core hands the call over like a model
+    that answered too late (`agent/loop.py`)."""
+
+    code = "out_of_time"
 
 
 class Unauthorized(InvalidInput):

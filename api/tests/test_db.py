@@ -1,5 +1,8 @@
 """Tests für api/db.py gegen eine echte Postgres (DATABASE_URL)."""
 
+import threading
+import time
+
 import pytest
 from fastapi import Depends
 from fastapi.testclient import TestClient
@@ -7,6 +10,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from api import db as db_module
+from api.core.errors import OutOfTime
 from api.db import SessionLocal, engine, get_db
 from api.main import app
 
@@ -146,17 +150,28 @@ def test_a_turn_with_little_time_left_lowers_the_bound_until_the_tool_is_done(
 
 @pytest.mark.parametrize("left", [0.0, -3.0])
 def test_a_turn_past_its_deadline_gives_the_tool_no_time_at_all(bounded, left):
-    """Never 0, which Postgres reads as no bound."""
-    from sqlalchemy.exc import OperationalError
-
+    """Never 0, which Postgres reads as no bound; the tool gets the structured
+    error of a turn that is over."""
     with bounded() as db:
         with (
-            pytest.raises(OperationalError, match="statement timeout"),
+            pytest.raises(OutOfTime),
             db_module.bounded_by(db, left),
         ):
             db.execute(text("select pg_sleep(0.1)"))
         db.rollback()
         assert _timeout(db) == "200ms"
+
+
+def test_waits_that_add_up_stop_at_the_deadline(bounded):
+    """Each statement gets only what is left: two waits of 0.15 s do not both
+    fit into 0.25 s (own deep review)."""
+    with bounded() as db:
+        started = time.monotonic()
+        with pytest.raises(OutOfTime), db_module.bounded_by(db, 0.25):
+            db.execute(text("select pg_sleep(0.15)"))
+            db.execute(text("select pg_sleep(0.15)"))
+        assert time.monotonic() - started < 0.29
+        db.rollback()
 
 
 def test_a_tool_that_commits_keeps_the_turns_bound_in_its_next_transaction(bounded):
@@ -169,27 +184,46 @@ def test_a_tool_that_commits_keeps_the_turns_bound_in_its_next_transaction(bound
 
 
 def test_the_rollback_after_a_tool_that_ran_out_of_time_lifts_its_bound(bounded):
-    """The statement fails like at the line's bound, and the rollback of the
-    failure path leaves the session as it was: the call's end is still
-    written (`telephony/handler.py`)."""
-    from sqlalchemy.exc import OperationalError
-
+    """The rollback of the caller (`agent/dispatch.py`) leaves the session as
+    it was: the call's next statements have the line's bound again."""
     with bounded() as db:
-        with (
-            pytest.raises(OperationalError, match="statement timeout"),
-            db_module.bounded_by(db, 0.05),
-        ):
+        with pytest.raises(OutOfTime), db_module.bounded_by(db, 0.05):
             db.execute(text("select pg_sleep(1)"))
         db.rollback()
         assert _timeout(db) == "200ms"
 
 
-def test_more_time_left_than_the_bound_costs_no_statement(bounded):
+def test_a_wait_at_the_lines_own_bound_stays_a_database_error(bounded):
+    """More time left than the bound: the bound is not lowered, and a
+    statement at the bound fails as before, for the handler's outage path."""
+    from sqlalchemy.exc import OperationalError
+
     with bounded() as db:
-        db.execute(text("select 1"))
-        with db_module.bounded_by(db, 5.0):
+        with (
+            pytest.raises(OperationalError, match="statement timeout"),
+            db_module.bounded_by(db, 5.0),
+        ):
             assert _timeout(db) == "200ms"
-            assert db_module._LOWERED not in db.info
+            db.execute(text("select pg_sleep(1)"))
+        db.rollback()
+
+
+def test_the_deadline_holds_only_on_the_thread_of_the_tool(bounded):
+    """A statement of another thread, on another session of the line, keeps
+    the line's bound while the tool runs (the handler can get events of a
+    call on two threads, docs/24)."""
+    seen = []
+    with bounded() as db, db_module.bounded_by(db, 0.1):
+        db.execute(text("select 1"))
+
+        def other() -> None:
+            with bounded() as mine:
+                seen.append(_timeout(mine))
+
+        worker = threading.Thread(target=other)
+        worker.start()
+        worker.join()
+    assert seen == ["200ms"]
 
 
 @pytest.mark.parametrize("left", [0.0, None])

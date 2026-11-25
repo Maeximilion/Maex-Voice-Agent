@@ -58,7 +58,7 @@ from api.agent.state import (
 )
 from api.config import settings
 from api.core.envelope import SAY_ON_FAILURE
-from api.core.errors import SAY_TO_THE_TEAM, Conflict
+from api.core.errors import SAY_TO_THE_TEAM, Conflict, OutOfTime
 from api.core.logging import get_logger, log
 from api.core.time import to_local, utcnow
 from api.domain.callbacks import (
@@ -972,6 +972,10 @@ class ConversationLoop:
                     call.args,
                     seconds_left=self._left_in_turn(turn_started),
                 )
+                if result.error_code == OutOfTime.code:
+                    # The tool ran into the turn's deadline (`db.bounded_by`):
+                    # the guest has waited long enough, as after a late answer.
+                    return self._too_slow(state, user_text, open_table)
             if (
                 turn.tool_call.name == "search_menu"
                 and _found_nothing(result)

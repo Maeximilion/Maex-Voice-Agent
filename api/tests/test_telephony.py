@@ -37,6 +37,7 @@ from api.agent.loop import (
 )
 from api.agent.state import ConversationState
 from api.config import settings
+from api.core.envelope import SAY_ON_FAILURE
 from api.domain.callbacks.create import SAY_NOTED, SUMMARY_BOOKED
 from api.domain.callbacks.transfer import (
     SUMMARY_HUNG_UP,
@@ -1681,7 +1682,8 @@ def test_a_tool_waits_on_a_lock_no_longer_than_the_turn_has_left(
 ):
     """With 9.75 s of a 10 s turn spent on the model, a tool that waits on a
     lock gives up within the quarter second left, not at the line's 2 s
-    bound, and the guest goes to the team (Codex on PR #298, docs/24)."""
+    bound, and the guest goes to the team as after a late answer, with the
+    outage sentence (Codex on PR #298, docs/24)."""
     clock = Clock()
     model = _LateModel(scripted(session, tenant)(session), clock)
     port = FakeTelephony()
@@ -1705,12 +1707,12 @@ def test_a_tool_waits_on_a_lock_no_longer_than_the_turn_has_left(
         started = time.monotonic()
         handler.on_user_turn("s-1", "Auf den Namen Mueller.")
         took = time.monotonic() - started
-        assert port.says("s-1")[-1] == SAY_OUTAGE
+        assert port.says("s-1")[-1] == SAY_ON_FAILURE
         assert port.transfers("s-1") == [TEAM_PHONE]
     holder.dispose()
     assert took < 1.0
     handler.on_call_ended("s-1")
-    assert _logged(session, "s-1").outcome == "error"
+    assert _logged(session, "s-1").outcome == "transferred"
     assert session.scalars(select(Reservation)).all() == []
 
 
