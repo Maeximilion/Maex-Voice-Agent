@@ -63,6 +63,9 @@ SUMMARY_MISSED = "Ans Team weitergeleitet, dort hat niemand abgenommen."
 # Mode shadow with the recording question: the caller hung up before the line
 # handed the call on, and the team never rang (#252 no. 9).
 SUMMARY_HUNG_UP = "Aufgelegt, bevor das Team klingelte."
+# The dialplan's `h` (#888 round 3): the caller hung up after the line handed
+# the call on and before a team leg answered, while it rang or before.
+SUMMARY_LEFT = "Ans Team weitergeleitet, der Gast hat aufgelegt, bevor jemand abnahm."
 SUMMARY_BY_REASON = {
     "cancellation": "Kunde wollte etwas stornieren.",
     None: "Anliegen nicht bekannt.",
@@ -122,12 +125,16 @@ def team_missed(
     now: datetime | None = None,
     rang: bool = True,
     kitchen_note: bool = False,
+    left: bool = False,
 ) -> CallbackTask | None:
     """Nobody answered the team leg of a call: a callback card, the team's only
     notice of the call then (docs/20 §5, T-10.8). None when there is none to
     write: the call is unknown, or there is no number to call back. `rang`
     False: there was no team leg, the caller hung up before the line handed
     the call on (mode `shadow` with the recording question, #252 no. 9).
+    `left`: the caller hung up after the line handed the call on and before a
+    team leg answered, while it rang or before (the dialplan's `h`, #888
+    round 3); the card says so instead of that nobody answered.
     `kitchen_note`: the guest spoke of an allergy in the call; the card leads
     its text with the marker the core's cards carry, once (#956).
 
@@ -191,7 +198,7 @@ def team_missed(
             summary=" ".join(
                 part
                 for part in (
-                    SUMMARY_MISSED if rang else SUMMARY_HUNG_UP,
+                    _what_happened(rang=rang, left=left),
                     _marked(
                         summary or _without_the_cores_card(session, call),
                         kitchen_note=kitchen_note or _health_noted(session, call),
@@ -203,6 +210,12 @@ def team_missed(
         now=now,
         actor=ACTOR_TELEPHONY,
     )
+
+
+def _what_happened(*, rang: bool, left: bool) -> str:
+    if not rang:
+        return SUMMARY_HUNG_UP
+    return SUMMARY_LEFT if left else SUMMARY_MISSED
 
 
 def _marked(card: str | None, *, kitchen_note: bool) -> str | None:

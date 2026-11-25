@@ -353,9 +353,10 @@ class Voice:
         with self._lock:
             return self._endings.pop(call_id, "")
 
-    def missed(self, call_id: str) -> bool:
-        """Nobody answered the team leg: True once the callback card is written."""
-        return self._events.on_team_missed(call_id)
+    def missed(self, call_id: str, *, left: bool = False) -> bool:
+        """Nobody answered the team legs, or (`left`) the caller hung up before
+        one did: True once the callback card is written."""
+        return self._events.on_team_missed(call_id, left=left)
 
     def recording_stopped(self, call_id: str) -> bool:
         """The team stopped the recording of a team leg: True once it is logged."""
