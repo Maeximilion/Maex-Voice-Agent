@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.96
+> Status: 26.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.97
 
 ---
 
@@ -178,6 +178,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.97 · 26.11.2026:** chain.md: a session start also works in a side-sessions-event turn after Maxi's, never in a child's message turn; a merged lane is refilled at the next such turn (chain item 28)
 - **v2.69.96 · 25.11.2026:** #888 round 3 item 21 (#990, Maxi): an operator sign-in or step-up with a passkey that holds counts on that passkey alone (checked before the password, recorded only after it) and skips the account's and the address's waits, so who knows only the account name can no longer keep the operator out (#927); codes still wait
 - **v2.69.95 · 25.11.2026:** #888 round 3: on a tool hop the model still sees the question the guest's words answer, as `answered_say` next to `guest_said`, so an answer not yet written into `slots` before a tool call keeps its question (Codex PR #291; the real-model comparison waits for the workbench model, #1050)
 - **v2.69.94 · 25.11.2026:** #888 round 3: the scripted stand-in answers "Warum kostet das mehr?" with the option's `reason` from the menu through a narrow why-clause pattern (Maxi, 25.11.2026) and searches what follows the clause, so a dish named with it is still ordered; the docs/24 row moved to HISTORY
