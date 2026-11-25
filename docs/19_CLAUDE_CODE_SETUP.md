@@ -175,7 +175,7 @@ Lives in the repository as `scripts/claude_user_hooks/sync-main.sh`, tested by `
 install -b -S .bak -m 755 scripts/claude_user_hooks/sync-main.sh ~/.claude/hooks/sync-main.sh
 ```
 
-`install` keeps the copy before the update as `sync-main.sh.bak`. Ubuntu then takes it from the Windows copy with the restore loop of section 5. Undo: `mv ~/.claude/hooks/sync-main.sh.bak ~/.claude/hooks/sync-main.sh`.
+`install` keeps the copy before the update as `sync-main.sh.bak`. Installed this way on Windows and on Ubuntu with #1021 (25.11.2026); Ubuntu takes later updates from the Windows copy with the restore loop of section 5. Undo: `mv ~/.claude/hooks/sync-main.sh.bak ~/.claude/hooks/sync-main.sh`.
 
 ### model-router.sh
 
