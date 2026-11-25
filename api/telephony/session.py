@@ -153,6 +153,9 @@ class CallSession:
         # One entry per sentence that is queued on the line and not reported as
         # played: may it be interrupted?
         self._outstanding: list[bool] = []
+        # The text of each queued sentence the line has not reported as
+        # played, by its mark: what a barge-in cuts off (`on_cut_off`).
+        self._unplayed: list[tuple[int, str]] = []
         self._playing_since: float | None = None
         # When what is queued ends, by the length of its audio.
         self._playing_until: float | None = None
@@ -389,7 +392,7 @@ class CallSession:
                 and heard.ended_at >= self._playing_since
                 and len(heard.text.split()) >= BARGE_IN_WORDS
             ):
-                self._stop_playback()
+                self._barge_in()
             return
         self._utterance_due = self._utterance_began = None
         held, self._silence_held = self._silence_held, None
@@ -422,7 +425,7 @@ class CallSession:
             # Everything still playing may be interrupted, or the line above
             # had dropped the utterance. What was said before the answer began
             # to play is the next turn and does not stop it.
-            self._stop_playback()
+            self._barge_in()
         self._turn(lambda: self._events.on_user_turn(self.session_id, heard.text))
 
     def _on_key(self, at: float, digit: str) -> None:
@@ -431,7 +434,7 @@ class CallSession:
         if self._playing_since is not None and at >= self._playing_since:
             # A key that was pressed before the answer was on the line stops
             # nothing, like speech.
-            self._stop_playback()
+            self._barge_in()
         if digit == END_KEY and not self._digits:
             # A hash alone hands nothing over and is no sign of the caller:
             # the silence counts on, as for noise (#675).
@@ -449,6 +452,9 @@ class CallSession:
                 self._digits_due = at + self._keypad_gap_seconds
 
     def _on_played(self, at: float, mark: int) -> None:
+        # Every sentence up to `mark` was heard to its end, also one with
+        # another still playing behind it.
+        self._unplayed = [(m, text) for m, text in self._unplayed if m > mark]
         if mark != self._mark or not self._outstanding:
             return  # an older sentence, or one that was dropped by a flush
         protected = not all(self._outstanding)
@@ -499,6 +505,7 @@ class CallSession:
             2 * self._sample_rate
         )
         self._outstanding.append(interruptible)
+        self._unplayed.append((self._mark, text))
         if not interruptible:
             self._protected_until = math.inf
         self._silence_due = self._silence_held = None
@@ -599,8 +606,19 @@ class CallSession:
             return None
         return self._playing_until + PLAYED_GRACE_SECONDS
 
+    def _barge_in(self) -> None:
+        """The caller talked over what may be interrupted: it is dropped, and
+        the core learns what the caller did not hear to its end, before their
+        words: they answer only what they heard (Codex PR #291)."""
+        unheard = " ".join(text for _, text in self._unplayed)
+        self._stop_playback()
+        # No turn: the core says nothing to it, and the silence and the
+        # utterance the ear owes count on as they stood.
+        self._events.on_cut_off(self.session_id, unheard)
+
     def _stop_playback(self) -> None:
         self._outstanding = []
+        self._unplayed = []
         self._playing_since = self._playing_until = None
         self._line.flush()
         if self._tape is not None:

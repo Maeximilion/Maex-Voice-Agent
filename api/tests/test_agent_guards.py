@@ -471,7 +471,7 @@ def test_a_cut_keeps_only_the_sentences_the_guest_heard():
     """The guest talked over the second of two queued sentences (Codex PR
     #291): their next words answer the first one, not a question they never
     heard to its end. The whole sentence stays what was said."""
-    state = ConversationState()
+    state = new_state()
     note_said(state, "Gern. Für wie viele Personen?")
 
     note_cut(state, "Für wie viele Personen?")
@@ -484,7 +484,7 @@ def test_a_cut_of_the_whole_sentence_leaves_no_last_say():
     """Nothing heard to its end: no sentence the guest answers. A cut that does
     not end the sentence the state kept (older sentences cut with it) leaves
     none either, and an empty cut changes nothing."""
-    state = ConversationState()
+    state = new_state()
     note_said(state, "Möchten Sie noch etwas trinken?")
     note_cut(state, "")
     assert state.last_say == "Möchten Sie noch etwas trinken?"

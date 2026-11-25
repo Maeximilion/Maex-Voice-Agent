@@ -3021,9 +3021,11 @@ def test_a_question_talked_over_is_no_sentence_the_guest_answers(session, tenant
     assert port.says("s-1")[-1] == state.readback
 
 
-def test_a_cut_on_an_unknown_call_is_ignored(session, tenant):
-    handler = handler_for(session, tenant, FakeTelephony())
+def test_a_cut_on_an_unknown_call_goes_to_the_team(session, tenant):
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
     handler.on_cut_off("lost-1", "Sind Sie noch da?")
+    assert port.transfers("lost-1") == [settings.team_phone]
 
 
 def test_a_yes_into_the_read_back_with_no_allergy_makes_no_turn(session, tenant):

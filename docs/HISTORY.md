@@ -1955,3 +1955,11 @@ Fixed in one PR of #888 round 3 (`sim/scripted_order.py`, `sim/scripted_llm.py`,
 | "doch" between a rejection and its replacement (`sim/scripted_order.py` `_replacement`) | Codex PR #178 (P2, after the fully worked round, rule 24.09.2026: recorded, not blocking): "Nein, doch die 23." is searched as "doch die 23.", which is not read as the one card number; per Codex the search finds nothing and the guest has ... | with T-2.4 or the next sim change |
 | Quantity of a replacement that is one of the offered dishes (`sim/scripted_order.py` `on_customer`, question branch) | Codex PR #178 (P2 on the merged head, rule 24.09.2026: recorded, not blocking): "Nein, lieber zwei Nummer 13" on "Meinen Sie Nummer 12 oder Nummer 13?" picks the 13 from the part after the rejection, but reads the quantity from the whole ... | with T-2.4 or the next sim change |
 | Scripted model takes a whole pickup order while pickup is closed (`sim/scripted_order.py`) | Eval suite T-5.2: at closing time or on the closed day the stand-in asks for dishes, name and phone and only `draft_order` says "Abholung ist gerade leider nicht möglich"; the outcome is right (nothing booked), the conversation is long. | with T-2.4 |
+
+## Open Points from Reviews (archive, barge-in row fixed 25.11.2026)
+
+Fixed in one PR of #888 round 3: after a barge-in the session reports the sentences the line did not play to their end (`CallEvents.on_cut_off`), and `guards.note_cut` keeps in `last_say` only the sentences heard to their end, or none; a read-back cut off is no read-back. Tests in `api/tests/test_agent_guards.py`, `api/tests/test_telephony_session.py` and `api/tests/test_telephony.py`.
+
+| Point | Why still open | When due |
+|---|---|---|
+| `last_say` holds the whole sentence even when the caller talked over it (`agent/guards.py` `note_said`, `telephony/handler.py` `_turn`) | Codex on PR #291 (14.10.2026, P2): an interruptible sentence is stored before it is played, so after a barge-in the model reads the guest's words as the answer to words never heard. | With the barge-in work of the voice layer (T-10.x) |

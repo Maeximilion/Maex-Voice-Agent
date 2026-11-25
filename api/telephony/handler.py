@@ -51,7 +51,7 @@ from sqlalchemy.orm import Session
 from api.agent import recording
 from api.agent.consent import recording_answer, stops_recording
 from api.agent.escalation import arms_the_net, takes_for_a_person
-from api.agent.guards import names_dish, note_said
+from api.agent.guards import names_dish, note_cut, note_said
 from api.agent.llm import LLMClient, Usage, cost_cents
 from api.agent.loop import SAY_HUMAN_ANSWER, SAY_NOT_A_PERSON, ConversationLoop
 from api.agent.outcome import CLOSING_STAGES, call_outcome, call_usage, log_usage
@@ -361,6 +361,11 @@ class CallHandler:
             self._guarded(
                 live, lambda: self._talked_over(live, text, ending=ending is not None)
             )
+
+    def on_cut_off(self, session_id: str, unheard: str) -> None:
+        live = self._lookup(session_id)
+        if live is not None:
+            self._guarded(live, lambda: note_cut(live.state, unheard))
 
     def on_voice_failure(self, session_id: str) -> None:
         """Ear or mouth failed: the outage sentence, as far as it can still be

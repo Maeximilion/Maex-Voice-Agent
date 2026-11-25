@@ -108,6 +108,14 @@ class CallEvents(Protocol):
         leg."""
         ...
 
+    def on_cut_off(self, session_id: str, unheard: str) -> None:
+        """The caller talked over what may be interrupted, and playback was
+        dropped: `unheard` is the queued sentences the line did not play to
+        their end, joined by a space, in order. Reported before the words
+        that cut it off reach the core as a turn: they answer only what was
+        heard (Codex PR #291)."""
+        ...
+
     def on_voice_failure(self, session_id: str) -> None:
         """The voice layer itself failed on this call: the ear or the mouth
         raised, or the ear makes nothing of the caller's speech. A hosted

@@ -327,6 +327,8 @@ class _Core:
 
     def on_talked_over(self, session_id: str, text: str) -> None: ...
 
+    def on_cut_off(self, session_id: str, unheard: str) -> None: ...
+
     def on_call_ended(
         self,
         session_id: str,

@@ -256,6 +256,32 @@ def note_said(state: ConversationState, say: str) -> None:
     }
 
 
+def note_cut(state: ConversationState, unheard: str) -> None:
+    """Call when the guest talked over the end of what `note_said` took:
+    `unheard` is the sentences the line did not play to their end, as they
+    were queued (`telephony/session.py`). The guest's next words answer only
+    what they heard: `last_say` keeps that part, or nothing, and a read-back
+    they did not hear to its end is none (rule 3; Codex PR #291). A sentence
+    cut in its middle counts as unheard: how far it got is not known. A cut
+    that does not end the kept sentence took older ones with it: nothing of
+    this one was heard. `last_said` stays what was said: the sentence to say
+    again (`loop._still_open`) and the core's own words in it.
+
+    Nothing else `note_said` decides needs undoing: a sentence that asks for
+    the guest's number or names a dish is never interruptible
+    (`telephony/handler.py` `_turn`)."""
+    if not unheard:
+        return
+    said = state.last_said or ""
+    heard = said[: -len(unheard)].rstrip() if said.endswith(unheard) else ""
+    state.last_say = last_words(heard) if heard else None
+    state.readback_heard = (
+        state.readback_heard
+        and state.readback is not None
+        and read_out(heard, state.readback)
+    )
+
+
 # What a model may never claim about allergens (L17, E14), and the fixed
 # sentence the prompt gives it for such a question, which hands over in any
 # call (Codex PR #369). A word that names an allergen's absence itself
