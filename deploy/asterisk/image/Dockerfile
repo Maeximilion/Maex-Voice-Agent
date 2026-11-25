@@ -42,7 +42,9 @@ RUN curl -fsSL -o asterisk.tar.gz \
 # unloaded from memory, and libssl linked to asteriskssl, which reaches it by
 # dlsym only.
 COPY patches/ /patches/
-RUN for p in /patches/*.patch; do patch -p1 < "$p"; done \
+# `|| exit 1`: a loop's status is its last command's, so a patch that stopped
+# applying after a version bump would pass unseen.
+RUN for p in /patches/*.patch; do patch -p1 < "$p" || exit 1; done \
     && sed -i -e 's/ASTSSL_LIBS:=$(OPENSSL_LIB)/ASTSSL_LIBS:=-Wl,--no-as-needed $(OPENSSL_LIB) -Wl,--as-needed/g' main/Makefile
 # No sounds or music on hold: the dialplan plays only the announcements of
 # `voice` (/announcements) and tones. BUILD_NATIVE off: the image runs on

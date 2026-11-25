@@ -41,8 +41,14 @@ jobs:
             python3 scripts/ci_changes.py < "$RUNNER_TEMP/files" | tee -a "$GITHUB_OUTPUT"
           else
             echo "image=true" | tee -a "$GITHUB_OUTPUT"
-            # On main the Asterisk build follows the merge's own files too.
-            git diff --no-renames --name-only HEAD^1 HEAD | python3 scripts/ci_changes.py \
+            # On main the Asterisk build follows the push's own files too: all of
+            # them, as a stack merge pushes several merge commits at once. Its base
+            # can lie outside the checkout's depth, so it is fetched (two trees are
+            # all a diff needs); a diff that still fails gives an empty list, which
+            # builds, and never fails this step, with or without pipefail.
+            base="${{ github.event.before }}"
+            git fetch -q --no-tags --depth=1 origin "$base" 2>/dev/null || true
+            { git diff --no-renames --name-only "$base" HEAD || true; } | python3 scripts/ci_changes.py \
               | grep '^asterisk=' | tee -a "$GITHUB_OUTPUT"
           fi
 
