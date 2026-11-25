@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.75
+> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.76
 
 ---
 
@@ -178,6 +178,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.76 · 25.11.2026:** /chain: no queued sessions; planned items keep their order and get a session only when a lane is free (Maxi)
 - **v2.69.75 · 25.11.2026:** /chain: a build session never ends a turn while CI or Codex run (auto_archive_on_close is refused in auto mode, the coordinator archives); a session with a background task gets "merged #N: stop" before it is archived; merged PRs on the ship lane are cleared by Maxi with the x (Maxi)
 - **v2.69.74 · 25.11.2026:** #888 round 3: splitting a sentence into positions keeps the words of the growing part instead of reading it again at every separator, so that cut costs linear time on a long sentence; the card checks after it in search.py stay a docs/24 row
 - **v2.69.73 · 25.11.2026:** deep review of #972: the Asterisk image check meets a really frozen voice, starts Asterisk as the product does, checks the dialplan's modules by whole name, fails a late crash; a failed patch stops the image build; docs/24 rows for cold-cache rebuilds and the 22.12.0 wire contract
