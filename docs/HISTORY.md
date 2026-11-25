@@ -2543,7 +2543,7 @@ Fixed in one PR of #888 round 3: the Whisper and Piper loaders and `EARS`, `MOUT
 
 ## Open Points from Reviews (archive, model-asked transfer row checked 26.11.2026)
 
-Checked in one PR of #888 round 3 (item 17): the loop part was fixed by #655 (13.10.2026), which runs the model's `transfer_to_team` through the core's own handover (`api/agent/loop.py` `_handoff`): a transfer that finds nobody leaves a callback under the number known, or asks for one; a team leg nobody answers leaves the card through the dialplan (#1046). A test now pins every reason a model may give. The stand-in no longer answers a failed transfer with a handover sentence (`sim/scripted_llm.py` `_after_failure`).
+Checked and closed in one PR of #888 round 3 (item 17): the loop part was fixed by #655 (13.10.2026), which runs the model's `transfer_to_team` through the core's own handover (`api/agent/loop.py` `_handoff`): a transfer that finds nobody leaves a callback under the number known, or asks for one; a team leg nobody answers leaves the card through the dialplan (#1046). A test now pins every reason a model may give. Its deep review closed three more gaps: a handover sent next to an order the core refuses (`cart`) is still carried out instead of dropped; the end of the understanding ladder asks for a number to call back like every other handover, unless the number is what failed; the stand-in answers a transfer that found nobody (`available: false`, or failed) by handing the call to the core again instead of a handover sentence (`sim/scripted_llm.py` `_after_tool`, `_after_failure`), and answers a price question with two dishes found with the search's question.
 
 | Point | Why still open | When due |
 |---|---|---|

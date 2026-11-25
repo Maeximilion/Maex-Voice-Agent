@@ -477,7 +477,8 @@ class ScriptedLLM:
             number, self._price_for = self._price_for, None
             hits = data.get("results") or []
             if name == "search_menu" and hits and "price_cents" in hits[0]:
-                if hits[0].get("sold_out") and say:
+                # Two dishes found ("7" and "07"): the search asks which (rule 2).
+                if (hits[0].get("sold_out") or len(hits) > 1) and say:
                     return LLMTurn(say=say)
                 euros, cents = divmod(hits[0]["price_cents"], 100)
                 return LLMTurn(say=f"Die {number} kostet {euros},{cents:02d} Euro.")
@@ -601,6 +602,9 @@ class ScriptedLLM:
             return LLMTurn(say=say or "Zu der Zeit ist leider nichts frei.")
         if name == "create_reservation":
             return LLMTurn(say=data["readback"])
+        if name == "transfer_to_team" and not data.get("available"):
+            # Nobody there: as after a failed tool, the core carries it out.
+            return self._after_failure(None)
         return LLMTurn(say=say or SAY_HANDOVER)
 
     def _after_opening_search(

@@ -296,6 +296,34 @@ def test_every_transfer_of_the_model_that_finds_nobody_leaves_a_callback(
     assert session.get(Call, state.call_id).transfer_reason is None
 
 
+@pytest.mark.parametrize("now", [NOW, OPEN_NOW])
+def test_a_refused_cart_does_not_drop_the_transfer_next_to_it(session, state, now):
+    """Deep review of #888 round 3 item 17: an order the core does not take
+    stops the answer, but not the handover sent with it. Dropped, the model
+    was told only of the order and announced the team with nothing behind it
+    (#655). The order in the state stays the one the core took."""
+    state.slots["phone"] = CALLER
+    unknown = [{"menu_item_id": str(uuid.uuid4()), "quantity": 1}]
+    transfer = ToolCall(name="transfer_to_team", args={"reason": "human_requested"})
+    llm = FakeLLM(
+        [
+            LLMTurn(tool_call=transfer, cart=unknown),
+            LLMTurn(say="Ich verbinde Sie mit dem Team."),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "system", now=now, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Ich hätte gern jemanden vom Team")
+
+    assert result.ended is True and len(llm.calls) == 1
+    assert state.cart == []
+    if now is NOW:
+        assert state.stage == "callback"
+        assert session.scalars(select(Callback)).one().reason == "human_requested"
+    else:
+        assert state.stage == "transferred"
+
+
 def test_a_transfer_of_the_model_without_team_or_number_asks_for_one(session, state):
     llm = _model_asks_for_the_team()
     loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
@@ -460,8 +488,28 @@ def test_ladder_erschoepft_eskaliert_ohne_dass_das_modell_selbst_zaehlt(session,
 
     results = [loop.run_turn(state, "Am Dingsbums um irgendwann") for _ in range(6)]
 
-    assert [r.ended for r in results[:5]] == [False] * 5
-    assert results[5].ended is True
+    assert [r.ended for r in results] == [False] * 6
+    # Nobody there and no number given: the core asks for one to call back
+    # instead of hanging up (deep review of #888 round 3 item 17, rule 5).
+    assert results[5].say[-1] == SAY_CALLBACK_NUMBER
+    result = loop.run_turn(state, "0721 5551234")
+    assert result.ended is True and state.stage == "callback"
+    card = session.scalars(select(Callback)).one()
+    assert (card.phone, card.reason) == ("+497215551234", "not_understood")
+
+
+def test_a_ladder_that_ends_on_the_phone_number_asks_for_it_no_more(session, state):
+    """The number itself is what the guest could not give: asked once more,
+    the call would only go round again (`_callback_without_number`)."""
+    turns = [LLMTurn(say="Wie bitte?", understanding_failure="phone") for _ in range(6)]
+    loop = ConversationLoop(
+        session, FakeLLM(turns), "system", now=NOW, clock=clock_from([0] * 7)
+    )
+
+    results = [loop.run_turn(state, "Am Dingsbums um irgendwann") for _ in range(6)]
+
+    assert [r.ended for r in results] == [False] * 5 + [True]
+    assert results[5].say[-1] == SAY_NOBODY_REACHABLE
     assert state.stage == "ended"
 
 
