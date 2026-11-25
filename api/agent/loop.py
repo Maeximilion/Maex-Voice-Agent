@@ -966,7 +966,12 @@ class ConversationLoop:
                 result = refused
             else:
                 call = _marked_callback(state, _card_without_allergy(state, call))
-                result = self._dispatch(state, call.name, call.args)
+                result = self._dispatch(
+                    state,
+                    call.name,
+                    call.args,
+                    seconds_left=self._left_in_turn(turn_started),
+                )
             if (
                 turn.tool_call.name == "search_menu"
                 and _found_nothing(result)
@@ -1470,8 +1475,16 @@ class ConversationLoop:
         return to_local(self._now or utcnow(), self._zone)
 
     def _dispatch(
-        self, state: ConversationState, name: str, args: dict[str, Any]
+        self,
+        state: ConversationState,
+        name: str,
+        args: dict[str, Any],
+        *,
+        seconds_left: float | None = None,
     ) -> ToolResult:
+        """`seconds_left` only for the model's own tool calls: the core's
+        handovers and cards are how a turn past its deadline still reaches
+        the team, and keep the line's bound (rule 5)."""
         return dispatch(
             self._session,
             state.call_id,
@@ -1481,6 +1494,7 @@ class ConversationLoop:
             now=self._now,
             # A draft the guest dropped is never replayed (#952).
             pending_order=state.order_id,
+            seconds_left=seconds_left,
         )
 
     def _table_to_team(

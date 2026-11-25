@@ -1,8 +1,11 @@
 """Datenbankzugang: eine Engine je Prozess, eine Session je Request."""
 
-from collections.abc import Generator
+import time
+from collections.abc import Generator, Iterator
+from contextlib import contextmanager
+from typing import Any
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import Connection, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from api.config import settings
@@ -76,7 +79,65 @@ def bounded_sessions(
             cursor.execute(f"set statement_timeout = {ms}")
         dbapi_connection.commit()
 
-    return sessionmaker(bind=bounded, autoflush=False, expire_on_commit=False)
+    sessions = sessionmaker(
+        bind=bounded, autoflush=False, expire_on_commit=False, info={_BOUND: ms}
+    )
+
+    @event.listens_for(sessions, "after_begin")
+    def _within(session: Session, _transaction, connection) -> None:  # type: ignore[no-untyped-def]
+        # A tool that committed goes on in a new transaction: still bounded.
+        if _DEADLINE in session.info:
+            _set_local(connection, session.info)
+
+    return sessions
+
+
+_BOUND = "statement_timeout_ms"
+_DEADLINE = "statement_deadline"
+_LOWERED = "statement_timeout_lowered"
+
+
+def _set_local(connection: Connection, info: dict[str, Any]) -> None:
+    left = int((info[_DEADLINE] - time.monotonic()) * 1000)
+    # Never 0, which Postgres reads as no bound at all.
+    ms = max(1, min(info[_BOUND], left))
+    if ms < info[_BOUND]:
+        connection.exec_driver_sql(f"set local statement_timeout = {ms}")
+        info[_LOWERED] = True
+
+
+@contextmanager
+def bounded_by(session: Session, seconds_left: float | None) -> Iterator[None]:
+    """The statements inside wait at most `seconds_left`, a wait on a lock
+    included, and never longer than the session's own bound
+    (`bounded_sessions`): a guest whose turn has 0.3 s left is not kept on the
+    line for 2 s (Codex on PR #298). Past it the statement fails like at the
+    bound, and the caller's rollback (`telephony/handler.py`) undoes the bound
+    with the transaction.
+
+    Transaction-local: a commit or rollback inside gives the next transaction
+    the time still left, and the bound is lifted again on the way out. A
+    session without a bound of its own (the HTTP tools, the text phone, the
+    evals) and a turn without a deadline stay as they are; so does a turn with
+    more time left than the bound, which costs no statement then."""
+    if seconds_left is None or _BOUND not in session.info:
+        yield
+        return
+    session.info[_DEADLINE] = time.monotonic() + seconds_left
+    try:
+        # Without a transaction yet, its begin sets the bound (`_within`).
+        if session.in_transaction():
+            _set_local(session.connection(), session.info)
+        yield
+    finally:
+        del session.info[_DEADLINE]
+        lowered = session.info.pop(_LOWERED, False)
+    # Only after a clean exit: a failed transaction takes no statement, and
+    # the rollback that follows it undoes the bound anyway.
+    if lowered and session.in_transaction():
+        session.connection().exec_driver_sql(
+            f"set local statement_timeout = {session.info[_BOUND]}"
+        )
 
 
 def get_db() -> Generator[Session]:

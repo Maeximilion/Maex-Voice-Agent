@@ -125,6 +125,85 @@ def test_the_bound_holds_on_every_connection_after_a_rollback(bounded):
         assert db.scalar(text("show statement_timeout")) == "0"
 
 
+def _timeout(db: Session) -> str:
+    return db.scalar(text("show statement_timeout"))
+
+
+@pytest.mark.parametrize("open_first", [True, False])
+def test_a_turn_with_little_time_left_lowers_the_bound_until_the_tool_is_done(
+    bounded, open_first
+):
+    """The tool's statements wait no longer than the turn has left, its own
+    transaction begun inside or not; the next statements of the call have
+    the line's bound again (Codex on PR #298)."""
+    with bounded() as db:
+        if open_first:
+            db.execute(text("select 1"))
+        with db_module.bounded_by(db, 0.1):
+            assert 1 <= int(_timeout(db).removesuffix("ms")) <= 100
+        assert _timeout(db) == "200ms"
+
+
+@pytest.mark.parametrize("left", [0.0, -3.0])
+def test_a_turn_past_its_deadline_gives_the_tool_no_time_at_all(bounded, left):
+    """Never 0, which Postgres reads as no bound."""
+    from sqlalchemy.exc import OperationalError
+
+    with bounded() as db:
+        with (
+            pytest.raises(OperationalError, match="statement timeout"),
+            db_module.bounded_by(db, left),
+        ):
+            db.execute(text("select pg_sleep(0.1)"))
+        db.rollback()
+        assert _timeout(db) == "200ms"
+
+
+def test_a_tool_that_commits_keeps_the_turns_bound_in_its_next_transaction(bounded):
+    with bounded() as db:
+        with db_module.bounded_by(db, 0.1):
+            db.execute(text("select 1"))
+            db.commit()
+            assert int(_timeout(db).removesuffix("ms")) <= 100
+        assert _timeout(db) == "200ms"
+
+
+def test_the_rollback_after_a_tool_that_ran_out_of_time_lifts_its_bound(bounded):
+    """The statement fails like at the line's bound, and the rollback of the
+    failure path leaves the session as it was: the call's end is still
+    written (`telephony/handler.py`)."""
+    from sqlalchemy.exc import OperationalError
+
+    with bounded() as db:
+        with (
+            pytest.raises(OperationalError, match="statement timeout"),
+            db_module.bounded_by(db, 0.05),
+        ):
+            db.execute(text("select pg_sleep(1)"))
+        db.rollback()
+        assert _timeout(db) == "200ms"
+
+
+def test_more_time_left_than_the_bound_costs_no_statement(bounded):
+    with bounded() as db:
+        db.execute(text("select 1"))
+        with db_module.bounded_by(db, 5.0):
+            assert _timeout(db) == "200ms"
+            assert db_module._LOWERED not in db.info
+
+
+@pytest.mark.parametrize("left", [0.0, None])
+def test_sessions_without_a_bound_and_turns_without_a_deadline_stay_as_they_are(
+    bounded, left
+):
+    """The HTTP tools, the text phone and the evals have no bound to lower,
+    and a turn with no deadline leaves the line's bound alone."""
+    with SessionLocal() as db, db_module.bounded_by(db, left):
+        assert _timeout(db) == "0"
+    with bounded() as db, db_module.bounded_by(db, None):
+        assert _timeout(db) == "200ms"
+
+
 @pytest.mark.parametrize(("ms", "seconds"), [(200, "2"), (2000, "2"), (2500, "3")])
 def test_a_bounded_session_gives_up_on_a_silent_network(bounded_db, ms, seconds):
     """A database that stops answering at the network level never reaches its
