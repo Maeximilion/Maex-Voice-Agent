@@ -2499,3 +2499,11 @@ step of the next chain (section 1) and of `/start` is to read the newest open
 such issue and ask its decisions as closed popups (`AskUserQuestion`,
 recommendation first, at most four per popup); his answers go into the issue
 and to the items they change, then the issue is closed.
+
+## Open Points from Reviews (archive, eval runs row fixed 25.11.2026)
+
+Fixed in one PR of #888 round 3 (migration 048, `evals/runner.py` `record`): every run of `python -m evals.runner` is kept as one row in `eval_runs`.
+
+| Point | Why still open | When due |
+|---|---|---|
+| Store eval runs in `eval_runs` (T-5.1) | docs/08 §3 asks for it; the table needs a migration, and PR #139 is renumbering 003/004. | with the migration after PR #139, latest before G2 |

@@ -266,6 +266,8 @@ def previous_run(
     report_dir: Path, model: str, tags: list[str]
 ) -> dict[str, Any] | None:
     """Jüngster **bestandene** Report mit demselben Modell und denselben Tags."""
+    # shortcut: the baseline comes from the JSON reports, not from `eval_runs`;
+    # read the table instead when a machine's reports get lost (docs/08 §3).
     if not report_dir.is_dir():
         return None
     key = _filter_key(model, tags)

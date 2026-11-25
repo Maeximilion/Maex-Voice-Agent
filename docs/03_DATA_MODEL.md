@@ -562,15 +562,22 @@ Written by the import `scripts/seed_zones.py` (T-6.9) and, since 17.11.2026, by 
 | source | TEXT | `roleplay` / `real_call` / `handcrafted` |
 
 ### `eval_runs`
-| Feld | Typ | Bemerkung |
+Built with migration 048 (25.11.2026, docs/08 §3): `python -m evals.runner` writes one row per run into the stack's database after its report. No `tenant_id`: the cases are synthetic (docs/09 L14), so a row holds no guest data and belongs to no restaurant.
+
+| Field | Type | Note |
 |---|---|---|
-| id | UUID PK | |
-| at | TIMESTAMPTZ | |
-| prompt_version / model | TEXT | |
-| passed / failed | INT | |
-| accuracy | NUMERIC | |
-| details | JSONB | je Fall: erwartet, bekommen, Abweichung |
-| git_sha | TEXT | |
+| id | UUID PK | `gen_random_uuid()` |
+| at | TIMESTAMPTZ NOT NULL | start of the run, the stamp of its report files |
+| model | TEXT NOT NULL | `scripted` or the model's name |
+| prompt_version | TEXT NOT NULL | `agent/prompt.py` `PROMPT_VERSION` |
+| suite | TEXT NOT NULL | the case folder's name: `cases`, `targets` |
+| tags | TEXT[] NOT NULL | the tag filter of the run, `{}` for all |
+| passed / failed | INT NOT NULL | CHECK `ck_eval_runs_counts` (both >= 0); a case with `pending` counts as it ended |
+| accuracy | NUMERIC(5,4) NOT NULL | passed over total, CHECK `ck_eval_runs_accuracy` (0 to 1) |
+| verdict | TEXT NOT NULL | `bestanden` or `durchgefallen` (CHECK `ck_eval_runs_verdict`) |
+| details | JSONB NOT NULL | the whole JSON report: every case with its result and differences (no expected or received state beyond the differences), the hard metrics, the comparison run |
+| git_sha | TEXT | the commit `make eval` passes from the host, with `-dirty` when the checkout had changes not committed (the container runs the checkout as it is); NULL outside `make` |
+| created_at / updated_at | TIMESTAMPTZ NOT NULL | the rule of all tables; `created_at` is when the row was written, at the end of the run |
 
 ---
 
@@ -596,6 +603,7 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | n8n executions | 7 days | `EXECUTIONS_DATA_PRUNE=true`, `EXECUTIONS_DATA_MAX_AGE=168` on the service `n8n` (`docker-compose.yml`, T-11.7); n8n's own default is 336 hours |
 | Backups | rolling 30 days | retention of `scripts/backup.sh` (labelled dumps included) and a lifecycle rule on the storage; the `_before_restore_` copy of a restore is dropped by hand within `BACKUP_KEEP_DAYS` (docs/13 §4); an erasure ledger outside the database and its backups is replayed after a restore (T-9.3) |
 | A customer that leaves (#576) | at the removal of its stack, after the export | `scripts/remove_stack.py` removes database, volumes, folder (local backups included) and site file; the export goes to the restaurant and is then deleted by hand; one line without personal data in `<root>/offboarding/removed.jsonl` is the proof (docs/13 §8). Off-site copies run out with the rolling 30 days of the backups (Maxi's decision 9 of 15.11.2026) |
+| `eval_runs` | none: a row holds synthetic cases only (L14) and no tenant; a case from a real call (docs/08 §5) needs a period here before its first run is recorded | rows stay until removed by hand (migration 048) |
 | `audit_log` | 12 months, `RETENTION_AUDIT_LOG_DAYS` (365) | daily job deletes the entries; they carry no names, phone numbers or notes |
 | Request log of data subjects (`docs/09_OPERATIONS_LEGAL.md` §1 U2) | Accepted 02.11.2026 under Maxi's delegation (docs/09 §1): `verification_note` is stripped 3 months after the request is answered, `RETENTION_REQUEST_DETAILS_MONTHS` (1 to 12); the row without it stays until the end of the third calendar year after the year of the answer, `RETENTION_REQUEST_LOG_YEARS` (1 to 10), then the row is deleted. Reasoning: the details are needed only to answer and to defend the answer if the requester complains; the thin row is the proof of the one-month deadline (Art. 12(3), accountability Art. 5(2)) for as long as a claim can arise (regular limitation of 3 years, § 195 BGB, which under § 199(1) BGB starts at the end of the year in which the claim arose). A request nobody answered keeps everything: its deadline is still running | table `data_subject_requests`; daily job (steps `request_details` and `request_rows`, T-11.8). `delete_after` is fixed at the answer, so a changed year setting holds for requests answered after it, and it is read on the tenant's calendar. The erasure ledger (U7) is a separate list of row ids without personal data and is not touched by this period |
 | Device sessions of the operations view (`gui_sessions`, a browser's user agent), device cookies (`gui_devices`, no personal data) and failed sign-ins per client address (`gui_login_failures`) | a session 30 days after its last use (`SESSION_DAYS`), a device cookie 400 days after its last sign-in (`DEVICE_DAYS`), an address one day after its last failure once no wait runs (#570) | daily job deletes the rows; a signed-out device's session row goes at once |
@@ -653,7 +661,8 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 045 | The callback reason `order_open` (CHECK `ck_callbacks_reason` widened, #977): the cards written so far with the fixed read-back sentence move to it; the downgrade gives them back as `not_understood` |
 | 046 | Partial index `ix_outbox_tenant_order` on (tenant, `payload->>'order_id'`) where that key is set (#980), for the tickets of one order (`send_ticket`, `last_reason`, the newest revision on the print bridge's claim and ack): at 60,000 outbox rows the newest-revision lookup went from a 7.9 ms sequential scan to 0.07 ms; up and down change no row |
 | 047 | Partial unique index `uq_callbacks_open_per_call` on (tenant, call) where `status = 'open'` and not deleted (#981). Before it, a second or later open card of a call (the oldest by `created_at` stays open) is closed as done by `migration:047` with the time of the migration, under a SHARE ROW EXCLUSIVE lock of `callbacks`; the downgrade drops the index and opens exactly those again. The workbench copy (24.11.2026, 3 open cards) had none |
-| planned, next free number | `eval_cases`, `eval_runs` |
+| 048 | Table `eval_runs`, one row per eval run (docs/08 §3, T-5.1); a new table only, up changes no row; down drops it with every stored run, the JSON reports in `evals/reports/` stay |
+| planned, next free number | `eval_cases` |
 
 ### Operator database (#571, docs/23 §5)
 
