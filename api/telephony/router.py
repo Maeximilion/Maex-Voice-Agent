@@ -11,7 +11,9 @@
 - `/calls/{call_id}/missed`: nobody answered the team legs, at the team's
   number and at TEAM_PHONE. A callback card is written; "noted" once it is,
   "none" otherwise, and the dialplan tells the caller which (docs/20 §5,
-  T-10.8).
+  T-10.8). With `left=1` from the dialplan's `h`: the caller hung up after the
+  call was handed to the team and before a leg answered, maybe before
+  TEAM_PHONE was tried; the card says so, and nobody is told anything.
 - `/calls/{call_id}/recording/stop`: the team pressed the stop key on a recorded
   team leg, and the dialplan stopped and deleted the file. "stopped" once the
   withdrawal is logged, "none" otherwise (docs/20 §5, T-11.3).
@@ -112,11 +114,11 @@ def ending(call_id: str, request: Request) -> str:
 
 
 @router.post("/calls/{call_id}/missed", response_class=PlainTextResponse)
-def missed(call_id: str, request: Request) -> str:
+def missed(call_id: str, request: Request, left: bool = False) -> str:
     voice = _voice(request.app)
     if not voice.authorized(request.headers.get("authorization")):
         raise HTTPException(status_code=401)
-    return "noted" if voice.missed(call_id) else "none"
+    return "noted" if voice.missed(call_id, left=left) else "none"
 
 
 @router.post("/calls/{call_id}/recording/stop", response_class=PlainTextResponse)

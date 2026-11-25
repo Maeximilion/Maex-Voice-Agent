@@ -338,7 +338,7 @@ class _Core:
         line_failed: bool = False,
     ) -> None: ...
 
-    def on_team_missed(self, session_id: str) -> bool:
+    def on_team_missed(self, session_id: str, *, left: bool = False) -> bool:
         return False
 
     def on_recording_stopped(self, session_id: str) -> bool:

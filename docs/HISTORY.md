@@ -1981,7 +1981,7 @@ Fixed in one PR of #888 round 3 (`api/db.py` `bounded_by`, `api/agent/dispatch.p
 
 ## Open Points from Reviews (archive, hang-up while the team rings fixed 25.11.2026)
 
-Fixed in one PR of #888 round 3 (`deploy/asterisk/conf/extensions.conf`, extension `h`; test in `api/tests/test_telephony_voice.py`, run on the pinned Asterisk 22.11.0 with the dialplan harness): a caller who hangs up while a leg of the team rings is reported to `voice` like a leg nobody answered, and the team gets the callback card. Claude's choice for rule 5, awaiting Maxi (#1032).
+Fixed in one PR of #888 round 3 (`deploy/asterisk/conf/extensions.conf`, extension `h`; `left` through `api/telephony/router.py` to `callbacks.team_missed`; tests in `api/tests/test_telephony_voice.py`, `test_telephony.py` and `test_domain_team_missed.py`; run on Asterisk 22.11.0 and the own 22.12.0 image with the dialplan harness): a caller who hangs up after the call was handed to the team and before a team leg answered is reported to `voice` with `left=1`, and the team gets a callback card that says the guest hung up. Claude's choice for rule 5, awaiting Maxi (#1032); workbench drill #1045.
 
 | Point | Why still open | When due |
 |---|---|---|

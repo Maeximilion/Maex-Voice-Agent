@@ -121,8 +121,9 @@ class Core:
         self.seen.append(("recording_stopped", session_id))
         return self.stopped
 
-    def on_team_missed(self, session_id: str) -> bool:
+    def on_team_missed(self, session_id: str, *, left: bool = False) -> bool:
         self.seen.append(("missed", session_id))
+        self.left = left
         return self.card_written
 
     card_written = True
@@ -685,6 +686,18 @@ def test_the_missed_door_says_noted_only_for_a_written_card(phone, written, answ
 
     assert (response.status_code, response.text) == (200, answer)
     assert ("missed", CALL) in core.seen
+    assert core.left is False
+
+
+def test_the_missed_door_passes_on_a_caller_who_left(phone):
+    """`h` reports with `left=1` (#888 round 3): the card says the caller hung
+    up before the team answered."""
+    client, core = phone
+
+    response = client.post(f"/calls/{CALL}/missed?left=1", headers=basic(TOKEN))
+
+    assert (response.status_code, response.text) == (200, "noted")
+    assert core.left is True
 
 
 def test_the_stop_door_wants_the_token(phone):
@@ -893,23 +906,59 @@ def test_the_dialplan_reports_every_missed_leg_and_waits_out_the_row():
     assert "CURLOPT(httptimeout)=4" in missed[:report]
 
 
-def test_a_caller_who_hangs_up_while_the_team_rings_gets_a_card():
-    """T-10.8 open point (rule 5): Asterisk runs `h` once the caller is gone.
-    A team leg rang and none answered: the same report as `missed`, once,
-    and nothing played. No report for a call the team never rang, for an
-    answered leg, or after `missed` asked already."""
-    team = _extension("team")
-    rang = team.index("same => n,Set(RANG=yes)")
-    assert rang < next(i for i, s in enumerate(team) if "Dial(" in s)
-    missed = _extension("missed")
-    asked = next(i for i, s in enumerate(missed) if s.endswith(",Set(RANG=asked)"))
-    assert asked < next(i for i, s in enumerate(missed) if "/missed" in s)
-    gone = _extension("h")
-    assert gone[0] == (
-        'exten => h,1,GotoIf($["${RANG}" != "yes" | "${DIALSTATUS}" = "ANSWER"]?end)'
+def _context_of(name: str) -> str:
+    """The context an extension of the dialplan stands in."""
+    context = ""
+    for line in DIALPLAN.read_text(encoding="utf-8").splitlines():
+        if line.startswith("["):
+            context = line[1 : line.index("]")]
+        elif line.startswith(f"exten => {name},1,"):
+            return context
+    raise AssertionError(f"no extension {name}")
+
+
+def test_a_caller_who_leaves_before_the_team_answers_gets_a_card():
+    """T-10.8 open point (rule 5), #888 round 3: Asterisk runs `h` of the
+    channel's context once the dialplan ends. A call handed to the team whose
+    caller left before a leg answered gets the report of `missed`, marked
+    `left`, once, with nothing played. No report for a call never handed to
+    the team, after an answered leg, or after `missed` reported."""
+    steps = [s.strip() for s in _steps()]
+    # Every path into `team` marks the call handed: right behind the AI's own
+    # hangup, where the AI leg's ANSWER is dropped too, and when `voice` was
+    # not reached. Nothing before that mark leads to `team`.
+    hangup = steps.index('same => n,GotoIf($["${ENDING}" = "hangup"]?done,1)')
+    assert steps[hangup + 1 : hangup + 3] == [
+        "same => n,Set(HANDED=yes)",
+        "same => n,Set(DIALSTATUS=)",
+    ]
+    first = _extension("s")
+    assert not [
+        s
+        for s in first[: first.index(steps[hangup])]
+        if re.search(r"\bteam,1|toteam", s)
+    ]
+    unreached = _extension("unreached")
+    assert unreached.index("same => n,Set(HANDED=yes)") < unreached.index(
+        "same => n,Goto(team,1)"
     )
+    missed = _extension("missed")
+    assert missed[0] == "exten => missed,1,Set(HANDED=asked)"
+    gone = _extension("h")
+    assert _context_of("h") == _context_of("team") == _context_of("s") == "ai"
+    assert gone[0] == (
+        'exten => h,1,GotoIf($["${HANDED}" != "yes" | "${DIALSTATUS}" = "ANSWER"]?end)'
+    )
+    # The same credentials, timeouts, POST and filter as `missed`.
     report = next(i for i, s in enumerate(gone) if "/missed" in s)
-    assert "CURLOPT(httptimeout)=4" in " ".join(gone[:report])
+    reported = next(i for i, s in enumerate(missed) if "/missed" in s)
+    assert gone[1:report] == missed[1:reported]
+    assert gone[report] == missed[reported].replace("/missed,", "/missed?left=1,")
+    assert (
+        gone[report + 1]
+        == missed[reported + 1]
+        == ("same => n,Set(CARD=${FILTER(a-z,${CARD})})")
+    )
     assert not [s for s in gone if "Playback(" in s or "Dial(" in s]
     for line in gone:
         if "Log(" in line:

@@ -146,11 +146,13 @@ class CallEvents(Protocol):
         the team only once this returns (#674)."""
         ...
 
-    def on_team_missed(self, session_id: str) -> bool:
-        """Nobody answered the team leg of a call we handed on, after its end
+    def on_team_missed(self, session_id: str, *, left: bool = False) -> bool:
+        """Nobody answered the team legs of a call we handed on, after its end
         was reported: a callback card for the team (docs/20 §5, T-10.8). True
         only once the card is written, so the caller may hear that the
-        restaurant calls back. Never raises."""
+        restaurant calls back. `left`: the caller hung up after the handover
+        and before a leg answered, and the card says so (#888 round 3). Never
+        raises."""
         ...
 
     def on_recording_stopped(self, session_id: str) -> bool:

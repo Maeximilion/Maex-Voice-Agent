@@ -17,6 +17,7 @@ from api.domain.callbacks import create_callback, team_missed, transfer
 from api.domain.callbacks.create import SUMMARY_BOOKED
 from api.domain.callbacks.transfer import (
     SUMMARY_HUNG_UP,
+    SUMMARY_LEFT,
     SUMMARY_MISSED,
     SUMMARY_NOTE_TO_CLEAR,
 )
@@ -197,6 +198,23 @@ def test_the_reason_of_the_transfer_names_the_card(
     assert task is not None
     assert task.reason == reason
     assert said in task.summary
+
+
+def test_a_caller_who_left_before_the_team_answered_says_so_on_its_card(
+    session, tenant_id
+):
+    """The dialplan's `h` (#888 round 3): the caller hung up while the team
+    rang or before it did. The card says so, not that the team let it ring
+    out, and the call is a callback like any other card."""
+    call = make_call(session, tenant_id, transfer_reason=None)
+
+    task = team_missed(session, tenant_id, "1760000000.1", left=True, now=REPORTED)
+
+    assert task is not None
+    assert task.summary == f"{SUMMARY_LEFT} Anliegen nicht bekannt."
+    assert "niemand abgenommen" not in task.summary
+    session.refresh(call)
+    assert call.outcome == "callback"
 
 
 def test_a_call_the_team_never_rang_says_so_on_its_card(session, tenant_id):

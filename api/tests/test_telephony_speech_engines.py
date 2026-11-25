@@ -214,7 +214,7 @@ def test_a_call_on_the_engines_of_the_service(mouth, monkeypatch):
         def on_recording_stopped(self, session_id):
             return False
 
-        def on_team_missed(self, session_id):
+        def on_team_missed(self, session_id, *, left=False):
             return False
 
         def on_voice_failure(self, session_id): ...

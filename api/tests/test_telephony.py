@@ -41,6 +41,7 @@ from api.core.envelope import SAY_ON_FAILURE
 from api.domain.callbacks.create import SAY_NOTED, SUMMARY_BOOKED
 from api.domain.callbacks.transfer import (
     SUMMARY_HUNG_UP,
+    SUMMARY_LEFT,
     SUMMARY_MISSED,
     SUMMARY_NOTE_TO_CLEAR,
 )
@@ -746,7 +747,7 @@ def test_fake_stops_feeding_turns_once_the_line_is_gone():
         def on_call_ended(self, session_id, speech=None, **_):
             self.events.append(("end", session_id))
 
-        def on_team_missed(self, session_id):
+        def on_team_missed(self, session_id, *, left=False):
             return False
 
         def on_recording_stopped(self, session_id):
@@ -2090,6 +2091,23 @@ def test_a_team_leg_nobody_answered_becomes_a_callback_card(session, tenant):
     [card] = session.scalars(select(Callback)).all()
     assert (card.phone, card.reason) == ("+497215551234", "complaint")
     assert the_call(session, sid).outcome == "callback"
+
+
+def test_a_caller_who_left_before_the_team_answered_gets_a_card_that_says_so(
+    session, tenant
+):
+    """The dialplan's `h` reports a caller gone before a team leg answered
+    (#888 round 3): the same card, its text names what happened."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    sid = port.play(COMPLAINT, handler)
+
+    assert handler.on_team_missed(sid, left=True) is True
+
+    [card] = session.scalars(select(Callback)).all()
+    assert (card.phone, card.reason) == ("+497215551234", "complaint")
+    assert card.summary.startswith(SUMMARY_LEFT)
+    assert SUMMARY_MISSED not in card.summary
 
 
 def test_an_allergen_question_keeps_its_card_when_nobody_answers(session, tenant):
