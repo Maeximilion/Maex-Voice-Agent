@@ -79,6 +79,9 @@ class Core:
     def on_talked_over(self, session_id: str, text: str) -> None:
         self.calls.append(("talked_over", text))
 
+    def on_unheard(self, session_id: str, unheard: str) -> None:
+        self.calls.append(("unheard", unheard))
+
     def on_call_ended(
         self, session_id: str, speech=None, *, caller_hung_up=False, line_failed=False
     ):
@@ -602,6 +605,56 @@ def test_two_words_stop_a_sentence_that_may_be_interrupted(call):
     assert call.line.kinds().count("flush") == 1
 
 
+def test_a_barge_in_tells_the_core_what_was_not_heard(call):
+    """The core measures the caller's next words against the sentence they
+    answer (`last_say`, Codex PR #291): it learns which of its sentences the
+    caller talked over, before the turn. A sentence the line reported as
+    played was heard, also when one behind it is still playing."""
+    call.core.replies["Einen Tisch"] = [
+        ("say", "Gern.", True),
+        ("say", "Für wie viele Personen?", True),
+    ]
+    call.start(GREETING)
+    call.played()
+    call.said("Einen Tisch", after=1.0)
+    call.s.played(call.line.mark - 1)
+    call.s.drain()
+    call.partial("zu viert")
+    assert call.line.kinds()[-1] == "flush"
+    assert call.core.calls[-1] == ("unheard", "Für wie viele Personen?")
+    call.said("Zu viert bitte", after=1.0)
+    assert call.core.turns()[-1] == "Zu viert bitte"
+    assert call.core.count("unheard") == 1
+
+
+def test_a_key_or_a_finished_word_reports_the_cut_too(call):
+    call.core.replies["Was gibt es"] = [("say", "Wir haben viele Gerichte.", True)]
+    call.start(GREETING)
+    call.played()
+    call.said("Was gibt es", after=1.0)
+    call.key("2")
+    assert call.core.calls[-1] == ("unheard", "Wir haben viele Gerichte.")
+    call.wait(GAP + 0.1)
+    call.played()
+    call.said("Was gibt es", after=1.0)
+    call.said("Nein", after=1.0)
+    assert call.core.calls[-2:] == [
+        ("unheard", "Wir haben viele Gerichte."),
+        ("turn", "Nein"),
+    ]
+
+
+def test_a_sentence_played_to_its_end_is_no_cut(call):
+    call.core.replies["Was gibt es"] = [("say", "Wir haben viele Gerichte.", True)]
+    call.start(GREETING)
+    call.played()
+    call.said("Was gibt es", after=1.0)
+    call.played(after=2.0)
+    call.said("Die dreiundzwanzig bitte", after=1.0)
+    assert call.core.count("unheard") == 0
+    assert call.core.turns()[-1] == "Die dreiundzwanzig bitte"
+
+
 def test_an_utterance_the_ear_never_finishes_is_a_failure(call):
     """The caller talks over a sentence, playback is dropped, and then the ear
     owes the finished utterance. If it never comes, nothing else would ever
@@ -782,6 +835,9 @@ def test_what_was_said_before_the_answer_began_does_not_stop_it(call):
     assert call.core.turns() == ["Die 23", "Und die 13"]
     assert "flush" not in call.line.kinds()
     assert call.line.played()[-2:] == ["Nummer 23.", "Nummer 13."]
+    # The second sentence was said before the guest heard the answer to the
+    # first: the core learns that before the turn (Codex PR #291).
+    assert call.core.calls[-2:] == [("unheard", "Nummer 23."), ("turn", "Und die 13")]
 
 
 def test_speech_that_began_before_the_answer_does_not_stop_it(call):

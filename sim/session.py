@@ -46,6 +46,9 @@ class Turn:
     tools: list[dict[str, Any]] = field(default_factory=list)
     state: dict[str, Any] = field(default_factory=dict)
     ended: bool = False
+    # The case's customer line this turn answered, counted from 1; set by
+    # `sim.replay.replay`, where a line the ear did not hear has no turn.
+    line: int = 0
 
 
 def resolve_tenant(session: Session, name: str | None) -> Tenant:
