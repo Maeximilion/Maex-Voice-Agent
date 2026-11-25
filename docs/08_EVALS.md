@@ -140,7 +140,7 @@ Danach:
 - `"repeat_confirm": true` schickt den letzten `confirm` des Modells nach dem Gespräch ein zweites Mal, wie eine Plattform nach einem Timeout. Ein zweites Ja im Transkript käme nie an: das Replay endet mit der Bestätigung. Unabhängig davon zählt jeder Abgleich, ob ein Vorgang mehr als einmal bestätigt wurde (`audit_log` und Outbox); das ist immer rot.
 - Die Evalkarte trägt Allergene für 23 und 24; die 13 hat bewusst keine (Allergiefrage ohne gepflegten Wert).
 
-- Noch offen: den Lauf in `eval_runs` speichern (Tabelle nach docs/03 §Migrationsreihenfolge, Nummer nach PR #139).
+- **Built 25.11.2026 (#888 round 3, migration 048):** every run of `python -m evals.runner` ends with one row in `eval_runs` (docs/03 §Stufe 4) in the database of `DATABASE_URL`, the stack's, not the scratch one: model, prompt version, case folder, tags, passed and failed, accuracy, verdict, the whole JSON report and the commit `make eval` passes with `--git-sha`. Best effort like the README record of §4: a database not migrated to 048 or out of reach prints a warning and costs the row, never the verdict. The baseline of the regression rule still comes from the JSON reports (shortcut: the reports stay the source, switch `previous_run` to the table when the reports of a machine get lost).
 
 Aufruf:
 ```bash

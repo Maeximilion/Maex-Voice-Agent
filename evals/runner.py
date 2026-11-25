@@ -37,10 +37,12 @@ from pathlib import Path
 from typing import Any, cast
 
 from sqlalchemy import CursorResult, create_engine, update
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from api.agent.dispatch import dispatch
 from api.agent.llm import LLMClient, Usage
+from api.agent.prompt import PROMPT_VERSION
 from api.config import settings
 from api.core.time import business_day, business_day_bounds_utc
 from api.domain.menu.importer import Plan, apply, parse
@@ -49,6 +51,7 @@ from api.models import (
     Address,
     Customer,
     DeliveryZone,
+    EvalRun,
     MenuItem,
     RecognitionObjection,
     ServiceConfig,
@@ -423,10 +426,13 @@ def run(
     stamp: datetime | None = None,
     cases: list[dict[str, Any]] | None = None,
     hear: Callable[[str], str | None] | None = None,
+    record_url: str | None = None,
+    git_sha: str | None = None,
 ) -> RunReport:
     """Ein ganzer Lauf. `db_url` setzt eine migrierte Datenbank von aussen (Tests).
     `cases` plays these instead of the folder's, `hear` the lines as an ear heard
-    them (`evals/voice.py`, `sim.replay.replay`)."""
+    them (`evals/voice.py`, `sim.replay.replay`). `record_url` names the
+    database that keeps the run in `eval_runs` (docs/08 §3), with `git_sha`."""
     tags = sorted(tags or [])
     # Without an explicit folder every case folder gets its own report folder: a
     # run over targets/ must never become the baseline of the CI suite.
@@ -462,7 +468,43 @@ def run(
     )
     report.decide()
     write(report, report_dir, stamp)
+    if record_url:
+        record(report, record_url, at=stamp, suite=cases_dir.name, git_sha=git_sha)
     return report
+
+
+def record(
+    report: RunReport, url: str, *, at: datetime, suite: str, git_sha: str | None
+) -> None:
+    """One row in `eval_runs` for the run. Best effort, like the README record
+    of `make eval`: a database not migrated to 048 or out of reach costs the row
+    and a warning, never the verdict; the JSON report is already written."""
+    engine = create_engine(url)
+    try:
+        with Session(engine) as session:
+            session.add(
+                EvalRun(
+                    at=at,
+                    model=report.model,
+                    prompt_version=PROMPT_VERSION,
+                    suite=suite,
+                    tags=report.tags,
+                    passed=report.passed,
+                    failed=report.total - report.passed,
+                    accuracy=round(report.accuracy, 4),
+                    verdict=report.verdict,
+                    details=report.to_json(),
+                    git_sha=git_sha or None,
+                )
+            )
+            session.commit()
+    except SQLAlchemyError as exc:
+        print(
+            f"warning: the run was not recorded in eval_runs: {type(exc).__name__}",
+            file=sys.stderr,
+        )
+    finally:
+        engine.dispose()
 
 
 def default_report_dir(cases_dir: Path) -> Path:
@@ -492,6 +534,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--keep-db", action="store_true", help="Wegwerf-Datenbank nicht löschen"
     )
+    # The api container sees no .git: `make eval` passes the commit from the host.
+    parser.add_argument(
+        "--git-sha", default="", help="commit of the run, for eval_runs"
+    )
     return parser
 
 
@@ -505,6 +551,8 @@ def main(argv: list[str] | None = None) -> int:
             model=args.model,
             report_dir=args.report_dir,
             keep_db=args.keep_db,
+            record_url=settings.database_url,
+            git_sha=args.git_sha or None,
         )
     except (CaseError, UsageError) as exc:
         print(f"Eval nicht gestartet: {exc}", file=sys.stderr)

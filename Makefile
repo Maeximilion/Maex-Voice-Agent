@@ -27,11 +27,12 @@ fmt:
 
 # The runner works in the api container, which sees neither .git nor .github/: the run is
 # recorded here on the host, after it (docs/08 §4). Best effort: a failed record
-# prints a warning, and the target exits with the eval's own code.
+# prints a warning, and the target exits with the eval's own code. The runner keeps
+# the run in the table eval_runs itself, with the commit passed from here (docs/08 §3).
 PYTHON ?= python3
 define eval_and_record
 	@start=$$(date +%s); \
-	docker compose exec api python -m evals.runner $(1) $(if $(TAGS),--tags $(TAGS),) $(if $(MODEL),--model $(MODEL),); \
+	docker compose exec api python -m evals.runner $(1) --git-sha "$$(git rev-parse HEAD 2>/dev/null)" $(if $(TAGS),--tags $(TAGS),) $(if $(MODEL),--model $(MODEL),); \
 	code=$$?; \
 	$(PYTHON) scripts/readme_assets.py auto-record --suite $(2) --since $$start \
 		|| echo "warning: the eval run was not recorded (docs/08 §4)" >&2; \

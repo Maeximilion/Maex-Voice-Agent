@@ -562,15 +562,21 @@ Written by the import `scripts/seed_zones.py` (T-6.9) and, since 17.11.2026, by 
 | source | TEXT | `roleplay` / `real_call` / `handcrafted` |
 
 ### `eval_runs`
-| Feld | Typ | Bemerkung |
+Built with migration 048 (25.11.2026, docs/08 §3): `python -m evals.runner` writes one row per run into the stack's database after its report. No `tenant_id`: the cases are synthetic (docs/09 L14), so a row holds no guest data and belongs to no restaurant.
+
+| Field | Type | Note |
 |---|---|---|
-| id | UUID PK | |
-| at | TIMESTAMPTZ | |
-| prompt_version / model | TEXT | |
-| passed / failed | INT | |
-| accuracy | NUMERIC | |
-| details | JSONB | je Fall: erwartet, bekommen, Abweichung |
-| git_sha | TEXT | |
+| id | UUID PK | `gen_random_uuid()` |
+| at | TIMESTAMPTZ NOT NULL | start of the run, the stamp of its report files |
+| model | TEXT NOT NULL | `scripted` or the model's name |
+| prompt_version | TEXT NOT NULL | `agent/prompt.py` `PROMPT_VERSION` |
+| suite | TEXT NOT NULL | the case folder's name: `cases`, `targets` |
+| tags | TEXT[] NOT NULL | the tag filter of the run, `{}` for all |
+| passed / failed | INT NOT NULL | CHECK `ck_eval_runs_counts` (both >= 0); a case with `pending` counts as it ended |
+| accuracy | NUMERIC(5,4) NOT NULL | passed over total, CHECK `ck_eval_runs_accuracy` (0 to 1) |
+| verdict | TEXT NOT NULL | `bestanden` or `durchgefallen` (CHECK `ck_eval_runs_verdict`) |
+| details | JSONB NOT NULL | the whole JSON report: every case with its differences, the hard metrics, the comparison run |
+| git_sha | TEXT | the commit `make eval` passes from the host; empty outside `make` |
 
 ---
 
@@ -653,7 +659,8 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 045 | The callback reason `order_open` (CHECK `ck_callbacks_reason` widened, #977): the cards written so far with the fixed read-back sentence move to it; the downgrade gives them back as `not_understood` |
 | 046 | Partial index `ix_outbox_tenant_order` on (tenant, `payload->>'order_id'`) where that key is set (#980), for the tickets of one order (`send_ticket`, `last_reason`, the newest revision on the print bridge's claim and ack): at 60,000 outbox rows the newest-revision lookup went from a 7.9 ms sequential scan to 0.07 ms; up and down change no row |
 | 047 | Partial unique index `uq_callbacks_open_per_call` on (tenant, call) where `status = 'open'` and not deleted (#981). Before it, a second or later open card of a call (the oldest by `created_at` stays open) is closed as done by `migration:047` with the time of the migration, under a SHARE ROW EXCLUSIVE lock of `callbacks`; the downgrade drops the index and opens exactly those again. The workbench copy (24.11.2026, 3 open cards) had none |
-| planned, next free number | `eval_cases`, `eval_runs` |
+| 048 | Table `eval_runs`, one row per eval run (docs/08 §3, T-5.1); a new table only, up changes no row; down drops it with every stored run, the JSON reports in `evals/reports/` stay |
+| planned, next free number | `eval_cases` |
 
 ### Operator database (#571, docs/23 §5)
 

@@ -17,6 +17,7 @@ from api.models.customers import (
     DeliveryZone,
     RecognitionObjection,
 )
+from api.models.evals import EvalRun
 from api.models.floor_plan import DiningTable, FloorArea, TableCombination
 from api.models.menu import ItemAlias, ItemAllergen, ItemOption, MenuItem
 from api.models.orders import Order, OrderItem
@@ -50,6 +51,7 @@ __all__ = [
     "DataSubjectRequest",
     "DeliveryZone",
     "DiningTable",
+    "EvalRun",
     "FloorArea",
     "GuiAccount",
     "GuiDevice",
