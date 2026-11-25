@@ -737,6 +737,9 @@ def test_fake_stops_feeding_turns_once_the_line_is_gone():
         def on_talked_over(self, session_id, text):
             pass
 
+        def on_unheard(self, session_id, unheard):
+            pass
+
         def on_voice_failure(self, session_id):
             pass
 
@@ -3047,6 +3050,34 @@ def test_an_allergy_said_into_the_farewell_marks_the_open_order_card(session, te
     assert SUMMARY_READBACK_UNANSWERED in card.summary
     assert card.summary.startswith(SUMMARY_NOTE_TO_CLEAR)
     assert "Erdnuss" not in card.summary
+
+
+def test_a_question_talked_over_is_no_sentence_the_guest_answers(session, tenant):
+    """Codex PR #291: the guest talked over "Sind Sie noch da?" asked while the
+    read-back waits. The question goes from `last_say` to `unheard_say`, and
+    the guest's "Ja" still books nothing: the draft is read out again first
+    (rule 3)."""
+    port = FakeTelephony()
+    handler = _order_read_back(session, tenant, port)
+    handler.on_silence("s-1")
+    asked = port.says("s-1")[-1]
+    state = handler._live["s-1"].state
+    assert state.last_say == asked
+
+    handler.on_unheard("s-1", asked)
+
+    assert state.last_say is None and state.unheard_say == asked
+    assert state.last_said == asked and not state.readback_heard
+    handler.on_user_turn("s-1", "Ja")
+    assert state.stage == "readback_pending" and state.readback_heard
+    assert port.says("s-1")[-1] == state.readback
+
+
+def test_a_cut_on_an_unknown_call_goes_to_the_team(session, tenant):
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    handler.on_unheard("lost-1", "Sind Sie noch da?")
+    assert port.transfers("lost-1") == [settings.team_phone]
 
 
 def test_a_yes_into_the_read_back_with_no_allergy_makes_no_turn(session, tenant):

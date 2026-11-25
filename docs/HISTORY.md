@@ -1957,6 +1957,13 @@ Fixed in one PR of #888 round 3 (`sim/scripted_order.py`, `sim/scripted_llm.py`,
 | Quantity of a replacement that is one of the offered dishes (`sim/scripted_order.py` `on_customer`, question branch) | Codex PR #178 (P2 on the merged head, rule 24.09.2026: recorded, not blocking): "Nein, lieber zwei Nummer 13" on "Meinen Sie Nummer 12 oder Nummer 13?" picks the 13 from the part after the rejection, but reads the quantity from the whole ... | with T-2.4 or the next sim change |
 | Scripted model takes a whole pickup order while pickup is closed (`sim/scripted_order.py`) | Eval suite T-5.2: at closing time or on the closed day the stand-in asks for dishes, name and phone and only `draft_order` says "Abholung ist gerade leider nicht möglich"; the outcome is right (nothing booked), the conversation is long. | with T-2.4 |
 
+## Open Points from Reviews (archive, barge-in row fixed 25.11.2026)
+
+Fixed in one PR of #888 round 3: before the caller's words become a turn, the session reports the sentences they had not heard to their end (`CallEvents.on_unheard`: cut off by a barge-in, or not yet playing when they spoke), and `guards.note_unheard` keeps in `last_say` only what was heard, or none, and the rest in `unheard_say` for the model and the allergy readers; a read-back cut off is no read-back. Tests in `api/tests/test_agent_guards.py`, `api/tests/test_telephony_session.py`, `api/tests/test_telephony.py` and `api/tests/test_recording_consent.py`.
+
+| Point | Why still open | When due |
+|---|---|---|
+| `last_say` holds the whole sentence even when the caller talked over it (`agent/guards.py` `note_said`, `telephony/handler.py` `_turn`) | Codex on PR #291 (14.10.2026, P2): an interruptible sentence is stored before it is played, so after a barge-in the model reads the guest's words as the answer to words never heard. | With the barge-in work of the voice layer (T-10.x) |
 ## Open Points from Reviews (archive, identifier order checked 25.11.2026)
 
 Checked in one PR of #888 round 3 on the own Asterisk 22.12.0 image (#1026): `pjsip show identifiers` lists `ip` first with and without the line; the line only moved `username` and `anonymous` behind `header`, `request_uri` and `auth_username`, and none of them can take the only endpoint, which has `identify_by=ip`. The `[global]` block is gone, and `api/tests/test_asterisk_pjsip_conf.py` keeps `identify_by=ip` on every endpoint.
