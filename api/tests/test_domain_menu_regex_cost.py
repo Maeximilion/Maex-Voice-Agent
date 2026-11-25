@@ -132,6 +132,20 @@ CASES = [
         wishes._without_glue,
         "ohne x" + " und." * (CHAIN_LENGTH * 2),
     ),
+    # split.py, _split: every piece that opens no position attaches to the part
+    # before, and the words of that growing part were folded again at every
+    # separator (docs/24). 10,000 pieces took about 30 s and 9 s before, a
+    # tenth of a second after.
+    (
+        "split_positions, a chain of attached pieces",
+        split_positions,
+        "die 23" + " und süß" * (LENGTH // 2),
+    ),
+    (
+        "cut_at_separators, a chain of wishes",
+        split.cut_at_separators,
+        "die 23" + ", mit x" * (LENGTH // 2),
+    ),
 ]
 
 
@@ -321,3 +335,30 @@ AGAINST_EDGES = [
 @pytest.mark.parametrize("text", AGAINST_EDGES)
 def test_against_allergic_matches_the_old_pattern(text):
     assert list(wishes._against_allergic(text)) == _old_against(text)
+
+
+def _words(text):
+    return split._WORD.findall(split.fold(text))
+
+
+def test_split_words_of_a_joined_part_are_the_words_of_its_pieces():
+    # `_split` keeps the words of the growing part instead of folding it
+    # again; that is only the same when every run of pieces, joined with its
+    # separators, has exactly the words of its pieces and separators in a row.
+    atoms = [*_FILLER, "und", "Und", "UND", "sowie", "23", "0,5", "8, 50", "ß"]
+    atoms += ["Süß", "İ", "Σ", "drei", "zwanzig", "hundert", "äh"]
+    rng = random.Random(1)
+    joined_runs = 0
+    for _ in range(SENTENCES_PER_OPERATION):
+        text = "".join(rng.choice(atoms) for _ in range(rng.randint(0, 12)))
+        pieces = split._SEPARATOR.split(text)
+        separators = split._SEPARATOR.findall(text)
+        for start in range(len(pieces)):
+            joined = pieces[start]
+            words = _words(joined)
+            for sep, piece in zip(separators[start:], pieces[start + 1 :], strict=True):
+                joined += sep + piece
+                words += _words(sep) + _words(piece)
+                assert words == _words(joined), repr(text)
+                joined_runs += 1
+    assert joined_runs >= SENTENCES_WITH_AN_EFFECT_AT_LEAST

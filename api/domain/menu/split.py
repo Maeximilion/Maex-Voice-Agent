@@ -130,9 +130,13 @@ def _split(text: str, *, by_position: bool = True) -> list[str]:
     """
     pieces = _SEPARATOR.split(text)
     separators = _SEPARATOR.findall(text)
-    parts = [pieces[0]]
+    # The last part grows with every piece that attaches; folding it whole
+    # again at each separator cost quadratic time. A separator always ends a
+    # word on both sides and `fold` works per character, so the words of the
+    # joined part are the words of its pieces and separators in a row.
+    parts = [[pieces[0]]]
+    left = _WORD.findall(fold(pieces[0]))
     for sep, piece in zip(separators, pieces[1:], strict=True):
-        left = _WORD.findall(fold(parts[-1]))
         right = _WORD.findall(fold(piece))
         # A pause at the "und" ("drei und äh zwanzig", "drei äh und zwanzig")
         # does not split the number into the 3 and the 20: the sentence stays
@@ -180,10 +184,13 @@ def _split(text: str, *, by_position: bool = True) -> list[str]:
         )
         attached = not _opens_position(piece) if by_position else _modifies(piece)
         if number_joined or attached:
-            parts[-1] += sep + piece
+            parts[-1] += (sep, piece)
+            left += _WORD.findall(fold(sep))
+            left += right
         else:
-            parts.append(piece)
-    return parts
+            parts.append([piece])
+            left = right
+    return ["".join(part) for part in parts]
 
 
 def _opens_position(part: str) -> bool:
