@@ -436,14 +436,18 @@ class CallHandler:
                 rang=False,
             )
 
-    def on_team_missed(self, session_id: str) -> bool:
+    def on_team_missed(self, session_id: str, *, left: bool = False) -> bool:
         with self._lock:
             self._forget_old_named_phones()
             phone, summary, kitchen_note, _ = self._named_phones.pop(
                 session_id, (None, None, False, 0.0)
             )
         return self._card(
-            session_id, phone=phone, summary=summary, kitchen_note=kitchen_note
+            session_id,
+            phone=phone,
+            summary=summary,
+            kitchen_note=kitchen_note,
+            left=left,
         )
 
     def team_phone(self) -> str:
@@ -879,6 +883,7 @@ class CallHandler:
         summary: str | None = None,
         kitchen_note: bool = False,
         rang: bool = True,
+        left: bool = False,
     ) -> bool:
         """A callback card for a call the team did not take (`team_missed`), in
         a session of its own: our leg's may be closed. Never raises."""
@@ -894,6 +899,7 @@ class CallHandler:
                 now=self._now or utcnow(),
                 rang=rang,
                 kitchen_note=kitchen_note,
+                left=left,
             )
         except Exception as exc:  # noqa: BLE001 - a lost card costs no call
             # The type only: a message can carry the guest's number.

@@ -94,7 +94,7 @@ class Core:
         self.calls.append(("recording_stopped",))
         return False
 
-    def on_team_missed(self, session_id: str) -> bool:
+    def on_team_missed(self, session_id: str, *, left: bool = False) -> bool:
         self.calls.append(("team_missed",))
         return False
 
