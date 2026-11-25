@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.85
+> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.86
 
 ---
 
@@ -178,6 +178,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.86 · 25.11.2026:** /chain and /ship: a turn never ends on a pending CI, Codex or evals wait (exit 2 waits again, exit 3 gets one scoped @codex review); after PR ready the build session pushes no more; the coordinator checks codex_review.py and gh pr checks on every waiting note (Maxi)
 - **v2.69.85 · 25.11.2026:** README refresh: Documentation lists docs/24, HISTORY, design, superpowers and vorlagen, docs/21 described as the working rules in force, eval-nummern make target and the /project and /chain commands (item 26 of chain #888)
 - **v2.69.84 · 25.11.2026:** #888 round 3: words said before the caller heard the end of a sentence (a barge-in, or speech before the answer began to play) no longer answer it: `last_say` keeps only what was heard, the rest goes to the model as `unheard_say`, an answer to an allergy question talked over is still kept, and a read-back cut off is no read-back (Codex PR #291; two timing cases left in docs/24)
 - **v2.69.83 · 25.11.2026:** #888 round 3: an eval case can assert what the agent does in the turn of one customer line (`expected.turns`: a tool call by name or by its arguments, a sentence by pattern), and the judge names the turn that failed; the `pflichtoption` cases check that the meat is asked for when left open and not asked again when named
