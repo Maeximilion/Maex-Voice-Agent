@@ -155,7 +155,7 @@ Maxi switches off the plugin sets `data`, `productivity`, `pdf-viewer` and `engi
 
 ### Auto compaction for an overnight chain (both systems)
 
-The handover thresholds of 300k and 450k stay for normal sessions (`CLAUDE.md` "Session End"). For a chain Maxi starts with the option "no handover limit" (`.claude/commands/chain.md` section 5a, Maxi 2026-11-18), auto compaction at about 550k tokens takes over. Checked against the Claude Code docs on 2026-11-18:
+The handover thresholds of 300k and 450k stay for normal sessions (`CLAUDE.md` "Session End"). For a chain (`.claude/commands/chain.md` section 4: no handover in any chain session since Maxi 2026-11-24; first set 2026-11-18 as the option "no handover limit"), auto compaction at about 550k tokens takes over. Checked against the Claude Code docs on 2026-11-18:
 
 - The user-level key is `"autoCompactWindow": 550000` (tokens, 100000 to 1000000, or `"auto"`) in the top level of `~/.claude/settings.json`; it can sit in any settings file. The environment variable `CLAUDE_CODE_AUTO_COMPACT_WINDOW=550000` does the same, as does `--settings '{"autoCompactWindow": 550000}'` for one session started from a terminal. `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` (1 to 100, percent of the window) also lowers the point but cannot raise it; the token value is the clearer one for a 1M window.
 - Without it a session of the 1M window compacts at 97 percent (`get_usage` `autoCompactsAtPercent`, 2026-11-18).
