@@ -90,3 +90,4 @@ date,task,session,model,calls,first,at_first_edit,last,peak
 2026-11-25,#888-r3-last-say,2a5e380a-cadf-45ce-839a-d4edd6c4c643,claude-opus-5-5,138,106657,182617,339872,339872
 2026-11-25,#888-r3-identifier-order,9ec77431-8d49-42aa-a720-b7d7453d9edd,claude-opus-5-5,41,106388,130267,186063,186063
 2026-11-25,#888-r3-turn-assertions,5447d4db-b4ae-4114-9bba-6e9f5f53d82d,claude-opus-5-5,86,106853,183507,269659,269659
+2026-11-25,#888-r3-eval-runs,983dcc0a-a308-46a4-b6c1-8a12122d3ea4,claude-opus-5-5,58,104796,158169,217743,217743
