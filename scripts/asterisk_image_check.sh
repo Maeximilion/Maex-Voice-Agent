@@ -25,7 +25,9 @@ fi
 root=$(cd "$(dirname "$0")/.." && pwd)
 conf=$root/deploy/asterisk/conf
 alpine=$(sed -n 's/^FROM \([^ ]*\) AS build$/\1/p' "$root/deploy/asterisk/image/Dockerfile")
-dial=$(grep -m1 -o 'Dial(WebSocket/[^ ]*' "$conf/extensions.conf")
+# Comments skipped: the product's own line, never an old one quoted above it.
+# `|| true`: under `set -e` an empty grep would end the check before its message.
+dial=$(grep -v '^[[:space:]]*;' "$conf/extensions.conf" | grep -m1 -o 'Dial(WebSocket/[^ ]*' || true)
 if [ -z "$dial" ] || [ -z "$alpine" ]; then
     echo "asterisk_image_check: no media Dial in extensions.conf or no base image" >&2
     exit 2
@@ -66,7 +68,9 @@ fail() {
     echo "FAIL  $1"
     failed=1
 }
-cli() { docker exec "$tag-ast" asterisk -rx "$1" 2>/dev/null; }
+# Bounded: a deadlocked loader or a lock left held (#2121) would hang the
+# question until the CI job's 30 minutes, without the check's message.
+cli() { timeout 20 docker exec "$tag-ast" asterisk -rx "$1" 2>/dev/null; }
 alive() { [ "$(docker inspect -f '{{.State.Running}}' "$tag-ast" 2>/dev/null)" = true ]; }
 lines() { docker logs "$tag-ast" 2>&1 | grep -c "$1" || true; }
 
@@ -86,7 +90,7 @@ for _ in $(seq 1 60); do
 done
 if [ "$booted" = no ]; then
     docker logs "$tag-ast" 2>&1 | tail -20
-    fail "Asterisk did not boot within 60 s"
+    fail "Asterisk did not boot"
     exit 1
 fi
 echo "      $(cli 'core show version' | head -1)"
