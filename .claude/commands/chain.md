@@ -126,7 +126,7 @@ The brief is the session's only context. It has, in this order:
    the same files and the base is not merged yet (`/done` step 7c).
 7. "Wait inside the turn for tests, CI and Codex; do not end the turn with a
    status line." A child's ended turn does not always wake the coordinator
-   (item 12). Add: "Every wait that returns 'not done yet' (`codex_review.py`
+   (item 12). Add: "Every wait that returns 'not done yet' (`scripts/codex_review.py`
    exit 2) or 'stalled' (exit 3) is answered in the same turn: wait again, or
    one scoped `@codex review` on a stalled head, then wait again. 'CI green,
    Codex still running' is a stall to check, never a state to sleep on:
