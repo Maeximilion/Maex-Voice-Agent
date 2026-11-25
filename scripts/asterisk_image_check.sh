@@ -75,12 +75,15 @@ alive() { [ "$(docker inspect -f '{{.State.Running}}' "$tag-ast" 2>/dev/null)" =
 lines() { docker logs "$tag-ast" 2>&1 | grep -c "$1" || true; }
 
 docker network create "$tag" >/dev/null
-# Started as the product starts it (docker-compose.yml): through the image's
-# entrypoint, which hands the runtime folders to the asterisk user, and with
-# the drop to that user. The configuration is copied in, not mounted: the
+# Started as the product starts it (the service in docker-compose.yml, kept
+# equal by api/tests/test_asterisk_image_check.py): through the image's
+# entrypoint, which hands the runtime folders to the asterisk user, with the
+# service's command and its rights only. The configuration is copied in, not mounted: the
 # entrypoint owns /etc/asterisk too, which a read-only mount would refuse.
-docker create --name "$tag-ast" --network "$tag" "$image" \
-    /usr/sbin/asterisk -f -n -U asterisk >/dev/null
+docker create --name "$tag-ast" --network "$tag" \
+    --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
+    --cap-add SETUID --cap-add SETGID --security-opt no-new-privileges:true \
+    "$image" /usr/sbin/asterisk -f -T -n -U asterisk -p >/dev/null
 docker cp "$work/." "$tag-ast:/etc/asterisk/"
 docker start "$tag-ast" >/dev/null
 booted=no
@@ -100,6 +103,7 @@ echo "      $(cli 'core show version' | head -1)"
 # autoload=yes a missing one stops neither the boot nor the healthcheck. A
 # module that loaded and declined is listed as "Not Running".
 for module in chan_websocket res_websocket_client res_http_websocket chan_pjsip \
+    res_pjsip_session res_pjsip_sdp_rtp res_pjsip_outbound_authenticator_digest \
     res_pjsip_outbound_registration res_pjsip_acl res_pjsip_endpoint_identifier_ip \
     res_resolver_unbound res_rtp_asterisk pbx_config bridge_simple bridge_native_rtp \
     app_dial app_exec app_stack app_verbose app_mixmonitor app_playback app_system \

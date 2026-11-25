@@ -5,7 +5,8 @@ ci.yml. `image=false` when every file lies in docs/, .claude/, scripts/ or is
 Markdown at the top level, else `image=true`: ci.yml skips docker-smoke and
 voice-image on false, since those images build ./api only. `asterisk=true` when
 a file reaches the own Asterisk image or its check (deploy/asterisk/image/,
-deploy/asterisk/conf/, the check script or ci.yml), else false: the job
+deploy/asterisk/conf/, the check script, ci.yml, or docker-compose.yml,
+whose service `asterisk` gives the check its command and rights), else false: the job
 asterisk-image compiles Asterisk, minutes a pull request should spend only when
 it can change the result. An empty list prints true for both, so a broken diff
 never skips them; `--no-renames` keeps the old side of a moved file.
@@ -19,7 +20,8 @@ import sys
 OUTSIDE_IMAGE = re.compile(r"^(docs/|\.claude/|scripts/|[^/]+\.md$)")
 ASTERISK_IMAGE = re.compile(
     r"^(deploy/asterisk/image/|deploy/asterisk/conf/"
-    r"|scripts/asterisk_image_check\.sh$|\.github/workflows/ci\.yml$)"
+    r"|scripts/asterisk_image_check\.sh$|\.github/workflows/ci\.yml$"
+    r"|docker-compose\.yml$)"
 )
 
 

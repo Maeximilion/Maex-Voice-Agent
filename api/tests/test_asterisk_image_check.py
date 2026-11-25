@@ -6,6 +6,7 @@ product's own media Dial is what it dials, every failure must end CHANUNAVAIL
 with Asterisk up, and a crash fails the check.
 """
 
+import itertools
 import os
 import re
 import shutil
@@ -384,7 +385,7 @@ def test_asterisk_starts_with_the_products_command_and_rights(tmp_path):
     args = (state / "create").read_text().split()
     command = service["command"]
     assert args[-len(command) :] == command
-    pairs = set(zip(args, args[1:]))
+    pairs = set(itertools.pairwise(args))
     for flag, key in (
         ("--cap-drop", "cap_drop"),
         ("--cap-add", "cap_add"),
