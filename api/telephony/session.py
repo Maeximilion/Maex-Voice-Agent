@@ -434,7 +434,7 @@ class CallSession:
             # shortcut: a final the ear reports only after the whole answer
             # was played is taken as said after it; and keys typed before the
             # answer began are handed over later, when it may have been heard.
-            self._tell_unheard(everything=True)
+            self._tell(self._not_heard(everything=True))
         self._turn(lambda: self._events.on_user_turn(self.session_id, heard.text))
 
     def _on_key(self, at: float, digit: str) -> None:
@@ -621,9 +621,6 @@ class CallSession:
         unheard = self._not_heard(everything=False)
         self._stop_playback()
         self._tell(unheard)
-
-    def _tell_unheard(self, *, everything: bool) -> None:
-        self._tell(self._not_heard(everything=everything))
 
     def _not_heard(self, *, everything: bool) -> str:
         """The queued sentences the caller had not heard to their end: those
