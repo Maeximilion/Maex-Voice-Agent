@@ -183,7 +183,12 @@ before naming a base.
      and waiting items finish first (Maxi: "first the Active and Waiting Items
      should be done because of the lane order and then the next priority is a
      planned item");
-  2. to the next planned item in queue order.
+  2. to a planned item that changes the chain itself (`chain.md`, the chain
+     dashboard, the chain memories), before any other planned item (Maxi,
+     2026-11-25: "planned items for the chain like chain.md changes should be
+     Priority first when a lane gets free"); the ship lane takes their pull
+     requests first too;
+  3. to the next planned item in queue order.
   The planned item gets a fresh session in a turn Maxi's message began. In
   every other turn the app and auto mode refuse a start (25.11.2026: "Start
   sessions only on the user's own words" in a child's message turn, and
