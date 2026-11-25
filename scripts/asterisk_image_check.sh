@@ -40,6 +40,8 @@ cleanup() {
     rm -rf "$work"
 }
 trap cleanup EXIT
+# dash runs the EXIT trap on a signal only through an exit of its own.
+trap 'exit 130' INT TERM
 
 sed 's/${VOICE_MEDIA_TOKEN}/check-token/' "$conf/websocket_client.conf" > "$work/websocket_client.conf"
 printf '[options]\n' > "$work/asterisk.conf"
@@ -102,7 +104,9 @@ echo "      $(cli 'core show version' | head -1)"
 # Every module the product's dialplan, features.conf and pjsip.conf use
 # (api/tests/test_asterisk_image_check.py keeps the list complete): with
 # autoload=yes a missing one stops neither the boot nor the healthcheck. A
-# module that loaded and declined is listed as "Not Running".
+# module that loaded and declined is listed as "Not Running"; `like` also
+# lists longer names (format_wav_gsm for format_wav), so the line must start
+# with the module's own.
 for module in chan_websocket res_websocket_client res_http_websocket chan_pjsip \
     res_pjsip_session res_pjsip_sdp_rtp res_pjsip_outbound_authenticator_digest \
     res_pjsip_outbound_registration res_pjsip_acl res_pjsip_endpoint_identifier_ip \
@@ -110,7 +114,8 @@ for module in chan_websocket res_websocket_client res_http_websocket chan_pjsip 
     app_dial app_exec app_stack app_verbose app_mixmonitor app_playback app_system \
     func_callerid func_curl func_env func_logic func_strings \
     codec_ulaw codec_alaw codec_resample format_wav format_sln format_pcm; do
-    if cli "module show like $module" | grep -Eq '[0-9][[:space:]]+Running[[:space:]]'; then
+    if cli "module show like $module" |
+        grep -Eq "^$module\.so[[:space:]].*[0-9][[:space:]]+Running[[:space:]]"; then
         echo "PASS  $module runs"
     else
         fail "$module does not run"
@@ -149,15 +154,21 @@ for voice in refused unresolved frozen; do
         fail "voice $voice: $ended of $calls Dials ended CHANUNAVAIL"
         continue
     fi
+    # A frozen `voice` holds each Dial for the connection timeout, and not
+    # much longer (#1979): three readable durations in that window, or the
+    # check met no frozen `voice`, or the caller waits too long for the team.
+    took=
     if [ "$voice" = frozen ]; then
-        short=$(docker logs "$tag-ast" 2>&1 | sed -n 's/.*check ended CHANUNAVAIL after \([0-9]*\) ms.*/\1/p' |
-            tail -n 3 | awk -v min="$timeout_ms" '$1 < min { print; exit }')
-        if [ -n "$short" ]; then
-            fail "voice frozen: a Dial ended after $short ms, under the connection timeout of $timeout_ms ms"
+        took=$(docker logs "$tag-ast" 2>&1 |
+            sed -n 's/.*check ended CHANUNAVAIL after \([0-9][0-9]*\) ms.*/\1/p' | tail -n 3 | xargs)
+        if ! printf '%s\n' "$took" | awk -v min="$timeout_ms" -v max=$((timeout_ms * 3)) \
+            'NF != 3 { exit 1 } { for (i = 1; i <= 3; i++) if ($i < min || $i > max) exit 1 }'; then
+            fail "voice frozen: Dials took $took ms, not between $timeout_ms and $((timeout_ms * 3)) ms each"
             continue
         fi
+        took=" ($took ms)"
     fi
-    echo "PASS  voice $voice: 3 failed media connections, each CHANUNAVAIL, Asterisk up"
+    echo "PASS  voice $voice: 3 failed media connections, each CHANUNAVAIL, Asterisk up$took"
 done
 
 if alive; then

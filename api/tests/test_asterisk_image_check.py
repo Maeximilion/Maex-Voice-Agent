@@ -71,7 +71,7 @@ case "$1" in
     if [ -z "${DIES:-}" ]; then
       i=0
       while [ "$i" -lt "$calls" ]; do
-        echo "NOTICE: check ended CHANUNAVAIL after ${FAKE_MS:-4000} ms"; i=$((i + 1))
+        echo "NOTICE: check ended CHANUNAVAIL after ${FAKE_MS-4000} ms"; i=$((i + 1))
       done
     fi
     [ -e "$state/next" ] && echo "NOTICE: check next call runs"
