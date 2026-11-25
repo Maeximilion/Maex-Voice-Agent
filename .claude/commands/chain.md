@@ -7,7 +7,7 @@ Run $ARGUMENTS as a chain. This session is the coordinator: it plans, starts ses
 
 A chain is Maxi saying `/chain` or "chain", or naming two or more tasks, issues or plan pull requests to work off (17.11). It runs until every item is merged or Maxi says stop, the same whether he is there or away (25.11: "The chain should work until the chain is done especialy when i say i am afk!"). A single task is no chain.
 
-Newest rule wins; a real doubt goes to the open decisions issue as a question. Maxi's full quotes: `docs/HISTORY.md` "chain.md (archive, replaced 25.11.2026)". Item sessions follow `.claude/chain/brief-common.md`. `~/.claude/chain/` is runtime state only: `round.md` (this round's ids and links), `next-lane.txt` (baton), `notes.txt` (log and news), decision write-ups.
+Newest rule wins; a real doubt goes to the open decisions issue as a question. Maxi's full quotes: `docs/HISTORY.md` "Chain command (archive, replaced 25.11.2026)". Item sessions follow `.claude/chain/brief-common.md`. `~/.claude/chain/` is runtime state only: `round.txt` (this round's ids and links), `next-lane.txt` (baton), `notes.txt` (log and news), decision write-ups.
 
 ## 1. The coordinator loop
 
@@ -26,8 +26,8 @@ Newest rule wins; a real doubt goes to the open decisions issue as a question. M
 
 **Brief,** the session's only context, in this order:
 
-1. `Route: <model-id> <effort>` as the first line (hook `route_advice.sh`).
-2. "Read `.claude/chain/brief-common.md` and `~/.claude/chain/round.md` first."
+1. `Route: <model-id> <effort>` as the first line (hook `.claude/hooks/route_advice.sh`).
+2. "Read `.claude/chain/brief-common.md` and `~/.claude/chain/round.txt` first."
 3. Background, two sentences or more: the chain, the plan link, what is merged, what runs in parallel in which folder.
 4. The task: item with issue and finding ids; "a finding is a claim, check it against the code"; the `xhigh` triggers it touches.
 5. Where the code lives: the scout's map, caveats kept. Scout: one Explore agent per item, `model` haiku, foreground, all in parallel, before the starts (23.11); Graphify connector first; at most 300 words: file and line of each named function, callers, linked tests, graph `commitSha` against `HEAD`, caveats. A late map follows by message.
@@ -40,7 +40,7 @@ Newest rule wins; a real doubt goes to the open decisions issue as a question. M
 **Ship lane** (24.11, "One Sonnet ship lane"): one fresh Sonnet `medium` session, started with the first build sessions, not counted as a lane. Brief: `Route: claude-sonnet-5-5 medium`, chain and plan link, "merge only on ship #N, one at a time", the merge gate of `CLAUDE.md` "Merging a PR into `main`", its milestones, the Sonnet usage row, no handover.
 
 - Per "ship #N": merge `origin/main` in, get CI, Codex and evals on the new head, fix that round, merge, message "merged #N" first, nothing in between (24.11), then archive the build session named in "ship #N" (25.11, popup "Ship lane archives it"; refused: say so in "merged #N").
-- Owns the branch of every PR it ships; never ends a turn on a pending wait (`ship.md` step 2). A P1 in an `xhigh` path: the coordinator switches it to Opus and back.
+- Owns the branch of every PR it ships; never ends a turn on a pending wait (`.claude/commands/ship.md` step 2). A P1 in an `xhigh` path: the coordinator switches it to Opus and back.
 - Before "queue empty": `gh pr list` for ready chain PRs (25.11: queued messages arrive late).
 - Merged PRs stay on its bar until Maxi clears them with the x (25.11); no `unbind_pr` (refused), no allow rule for it.
 - Idle: open Dependabot PRs go to its queue. Context over 300k: a fresh ship lane in Maxi's next turn; the old one finishes its PR.
@@ -96,6 +96,6 @@ Newest rule wins; a real doubt goes to the open decisions issue as a question. M
 
 ## 5. The end of a chain
 
-When the last item is merged (18.11): the reviews the plan asks for (security audit, UI review) as read-only sessions, one issue each; a triage of the issues left open; Maxi's decisions in one record on the plan issue; the fix items as the next chain at once (questions as one bundle, the rest start without waiting). A merged migration: the workbench migration last, backup first (`.claude/rules/migrations.md`), run by Claude. Close the finished issues, report merged PRs, open decisions, usage.
+When the last item is merged (18.11): the reviews the plan asks for (security audit, UI review) as read-only sessions, one issue each; a triage of the issues left open; Maxi's decisions in one record on the plan issue; the fix items as the next chain at once (questions as one bundle, the rest start without waiting). A merged migration: the workbench migration last, backup first (the migration path rule), run by Claude. Close the finished issues, report merged PRs, open decisions, usage.
 
 Ending while Maxi is away (24.11): the open decisions go into one issue "Decisions for Maxi after chain ..." (choice, PR, option taken, alternative, recommendation), linked on the plan issue; the next chain and `/start` ask it as popups first, answers go into the issue and the items, then it is closed.

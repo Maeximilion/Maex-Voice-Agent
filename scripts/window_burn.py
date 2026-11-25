@@ -8,7 +8,7 @@ found in the transcripts. Requests come from `wake_cost.rows` and are priced wit
 `wake_cost.cost`. Cost units weight tokens by type (cache read 0.1, writes 1.25 or
 2.0, output 5), NOT by model price, so a per-model fit of percent points per cost
 unit absorbs the price difference; read the weights as points per million units.
-Findings: the PR that added this script, `docs/HISTORY.md` "chain.md (archive, replaced 25.11.2026)", section 5.
+Findings: the PR that added this script, `docs/HISTORY.md` "Chain command (archive, replaced 25.11.2026)", section 5.
 """
 
 from __future__ import annotations

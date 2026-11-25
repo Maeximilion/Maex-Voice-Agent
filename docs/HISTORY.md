@@ -1979,7 +1979,7 @@ Fixed in one PR of #888 round 3 (`api/db.py` `bounded_by`, `api/agent/dispatch.p
 |---|---|---|
 | A tool's wait on a lock is bounded at 2 s, not by what is left of the turn (`telephony/app.py` `DB_TIMEOUT_MS`, `db.bounded_sessions`) | Codex on `879f51e` (PR #298, P2), 15.10.2026: with 9.5 s of a 10 s turn spent on the model, a tool that waits on a row lock keeps the guest up to 2 s past the deadline; with `turn_deadline_seconds=1` more directly. | Before the first test call with real guests (T-10.7) |
 
-## chain.md (archive, replaced 25.11.2026)
+## Chain command (archive, replaced 25.11.2026)
 
 Moved unchanged from `.claude/commands/chain.md` by the rewrite of chain item 25 (#888 round 3), so every quote of Maxi's keeps its full wording and context. The rules in force live in `.claude/commands/chain.md` and `.claude/chain/brief-common.md`, one line each with its date. Where two rules below disagree, the newer one won; the open doubts went to #1032.
 

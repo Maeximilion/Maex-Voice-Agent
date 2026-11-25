@@ -51,6 +51,7 @@ ALLOWED_CLAUDE_FILES = (
     ".claude/hooks/sync_main.sh",
     ".claude/hooks/merge_gate.sh",
     ".claude/settings.json",
+    ".claude/chain/brief-common.md",
 )
 # Felder, die Compose erst beim Start aus anderen Quellen zusammenfuehrt. Was sie
 # hereinholen, steht nicht im rohen YAML - der Waechter ist dort blind und sagt das,

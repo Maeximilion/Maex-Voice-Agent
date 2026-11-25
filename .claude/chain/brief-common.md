@@ -1,6 +1,6 @@
 # Chain: rules for every item session
 
-Every build or queued session of a chain reads this file and `~/.claude/chain/round.md` first. `round.md` is written by the coordinator for the running round: its session id, the ship lane's id, the plan link, the decisions issue, the reserve item (missing: your brief names them). The coordinator's side: `.claude/commands/chain.md`. Maxi's full quotes: `docs/HISTORY.md` "chain.md (archive, replaced 25.11.2026)". You build one item, the ship lane merges it; you never merge.
+Every build or queued session of a chain reads this file and `~/.claude/chain/round.txt` first. `round.txt` is written by the coordinator for the running round: its session id, the ship lane's id, the plan link, the decisions issue, the reserve item (missing: your brief names them). The coordinator's side: `.claude/commands/chain.md`. Maxi's full quotes: `docs/HISTORY.md` "Chain command (archive, replaced 25.11.2026)". You build one item, the ship lane merges it; you never merge.
 
 ## Queued (only if your brief says so)
 - Do no work yet. Loop: one background `sleep 3000` (50 minutes, never 60 or more), then read `~/.claude/chain/next-lane.txt` and `~/.claude/chain/notes.txt`. Never end a turn without that sleep running.
