@@ -180,7 +180,7 @@ hash 30 times, then at most 30 times per 5 minutes, about 2 seconds of scrypt (6
 measured) instead of roughly 650 runs a second. Every attempt counts there, a known name too, so the
 wait tells no names; a right sign-in forgets its /48 as it does its address. The price: while a
 spray holds the operator's own /48, a new browser there waits too; a browser with the device
-cookie counts alone and signs in. Left open: an attacker with many /48s (a /32) or many IPv4
+cookie counts alone and signs in, and so does a passkey that holds (#990, below). Left open: an attacker with many /48s (a /32) or many IPv4
 addresses still meets a fresh count in each. An unknown name still costs the dummy hash, so the
 answer time tells no names. Every attempt forgets the counters a day after their last
 failure, by the index on `last_failed_at` (migration op007).
@@ -199,10 +199,16 @@ migrations `db/dashboard/`; docs/11). Sign-in with name, password and a TOTP cod
 code in one form, one answer for every refusal; the waits per account, per address and per known
 browser (a device cookie, as in §6, so a guesser cannot keep the operator out of a known
 browser; who knows only the account name can keep the account-wide wait running with three
-wrong passwords every five minutes, so every browser without the device cookie waits too,
-passkey included, and right after a break-glass reset, which forgets every device cookie, every
-browser is such a new one: the trade-off §6 accepts for the customer login, #927; a passkey or
-recovery code that skips the account wait is a decision for the §11 audit); sessions
+wrong passwords every five minutes, #927, so a sign-in with a passkey that holds counts on that
+passkey alone and skips the waits of the account, the address and its /48 (Maxi, #990: the
+passkey is checked under the account's row before the password, and looked for again before the
+session opens, so one removed meanwhile opens nothing): a passkey cannot be guessed, and a stolen
+authenticator guessing the password meets its own wait ladder. A passkey that does not hold, a
+TOTP code and a recovery code count as before, so a browser without the device cookie and
+without a passkey still waits during such a burst, as does every browser right after a
+break-glass reset, which removes every passkey and forgets every device cookie: the trade-off §6
+accepts for the customer login; a recovery code that skips the account wait stays a decision for
+the §11 audit, #1032); sessions
 `__Host-ops_session` (`SameSite=Strict`) with the 30 minutes and 12 hours, where only the
 operator's own requests (`Sec-Fetch-Site` absent, `none` or `same-origin`) move the idle clock, so
 a customer stack on the same site cannot keep a session alive with image loads (#888 A4); the

@@ -15,7 +15,7 @@ from alembic import command
 from fastapi import Depends
 from fastapi.responses import PlainTextResponse
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, inspect, select, text
+from sqlalchemy import create_engine, delete, inspect, select, text
 from sqlalchemy.orm import sessionmaker
 
 from api.dashboard import access, cli, passkeys, push
@@ -30,7 +30,7 @@ from api.dashboard.models import (
     OperatorPasskey,
     OperatorSession,
 )
-from api.domain.access.hashing import token_hash
+from api.domain.access.hashing import token_hash, verify_secret
 from api.tests.passkey_device import Device
 from api.tests.test_dashboard_login import (
     PASSWORD,
@@ -627,10 +627,12 @@ def test_garbage_in_a_passkey_sign_in_never_fails_the_server(
 
 def test_three_failed_passkey_sign_ins_bring_the_wait(client, factors, clock):
     device = _with_passkey(client, factors, clock)
+    """Passkeys that do not hold count on the account and the address; one
+    that holds counts on its own and passes their wait (#990)."""
     for _ in range(3):
         _refused(client, _passkey_sign_in(client, device, verified=False))
-    _refused(client, _passkey_sign_in(client, device), web.WAIT.format(minutes=1))
-    clock.at += timedelta(minutes=1, seconds=1)
+    wait = web.WAIT.format(minutes=1)
+    _refused(client, _passkey_sign_in(client, device, verified=False), wait)
     assert _passkey_sign_in(client, device).status_code == 303
 
 
@@ -2311,3 +2313,105 @@ def test_a_first_passkey_registered_while_a_code_step_up_waited_refuses_it(
     assert not _operator(client, sessions, clock).fresh(clock.at)
     assert _audited(sessions, "operator.stepped_up") == []
     assert pushes == ["maxi: new passkey 'Owner key'"]
+
+
+# --- #958, #990: a passkey skips the wait a guesser keeps running ---
+
+GUESS = "not the password at all"
+
+
+def _guesser_keeps_the_account_waiting(clock) -> None:
+    """Three wrong passwords from a browser of its own, which knows only the
+    account name (#927): the account's wait runs, and so does the address's,
+    since the test client sends every browser from the same address."""
+    guesser = TestClient(web.app)
+    for _ in range(3):
+        answer = _sign_in(guesser, "000000", password=GUESS)
+        assert answer.status_code == 401
+    answer = _sign_in(guesser, "000000", password=GUESS)
+    assert web.WAIT.format(minutes=1) in answer.text
+
+
+def test_a_passkey_signs_in_from_a_new_browser_while_a_guesser_keeps_the_wait(
+    client, factors, clock, sessions
+):
+    """Maxi, #990: who knows only the account name kept every browser without
+    the device cookie waiting, the passkey included. A passkey that holds
+    counts on its own, as a device cookie does, and signs in."""
+    device = _with_passkey(client, factors, clock)
+    client.cookies.clear()  # a new browser: no device cookie either
+    _guesser_keeps_the_account_waiting(clock)
+    assert _passkey_sign_in(client, device).status_code == 303
+    signed = _audited(sessions, "operator.signed_in")
+    assert signed[-1].detail["factor"] == "passkey"
+
+
+def test_a_code_from_a_new_browser_still_meets_the_wait(client, factors, clock):
+    """A TOTP code is six digits a guesser can try, so it skips nothing."""
+    _with_passkey(client, factors, clock)
+    client.cookies.clear()
+    _guesser_keeps_the_account_waiting(clock)
+    answer = _sign_in(client, _code(factors.totp_secret, clock.at))
+    _refused(client, answer, web.WAIT.format(minutes=1))
+
+
+def test_a_passkey_that_does_not_hold_meets_the_wait(client, factors, clock):
+    """Junk in the passkey field, or a device without user verification, must
+    not open a way past the wait for password guesses."""
+    device = _with_passkey(client, factors, clock)
+    client.cookies.clear()
+    _guesser_keeps_the_account_waiting(clock)
+    wait = web.WAIT.format(minutes=1)
+    _refused(client, _passkey_sign_in(client, device, verified=False), wait)
+    _refused(client, _passkey_sign_in(client, device, origin=EVIL_ORIGIN), wait)
+
+
+def test_wrong_passwords_with_a_right_passkey_wait_on_the_passkey(
+    client, factors, clock, sessions
+):
+    """A stolen authenticator gets the waits of its own ladder for guessing the
+    password, not a free run; a right sign-in forgets its count."""
+    device = _with_passkey(client, factors, clock)
+    for _ in range(3):
+        _refused(client, _passkey_sign_in(client, device, password=GUESS))
+    wait = web.WAIT.format(minutes=1)
+    _refused(client, _passkey_sign_in(client, device), wait)
+    clock.at += timedelta(minutes=1, seconds=1)
+    assert _passkey_sign_in(client, device).status_code == 303
+    client.cookies.clear()
+    for _ in range(2):
+        _refused(client, _passkey_sign_in(client, device, password=GUESS))
+    assert _passkey_sign_in(client, device).status_code == 303
+    failed = _audited(sessions, "operator.sign_in_failed")
+    assert {row.detail["reason"] for row in failed} == {"password"}
+
+
+def test_the_passkey_ladder_leaves_the_account_and_address_counts_alone(
+    client, factors, clock
+):
+    """The passkey's failures are its own: a code sign-in from another new
+    browser does not wait for them."""
+    device = _with_passkey(client, factors, clock)
+    for _ in range(3):
+        _refused(client, _passkey_sign_in(client, device, password=GUESS))
+    other = TestClient(web.app)
+    clock.at += timedelta(seconds=30)
+    assert _sign_in(other, _code(factors.totp_secret, clock.at)).status_code == 303
+
+
+def test_a_passkey_removed_while_the_password_was_checked_opens_nothing(
+    client, factors, clock, sessions, monkeypatch
+):
+    """The passkey is checked before the password now, so a removal can land
+    in between: the sign-in looks for it again under the account's row."""
+    device = _with_passkey(client, factors, clock)
+
+    def the_passkey_goes_meanwhile(password, stored):
+        with sessions() as db:
+            db.execute(delete(OperatorPasskey))
+            db.commit()
+        return verify_secret(password, stored)
+
+    monkeypatch.setattr(access, "verify_secret", the_passkey_goes_meanwhile)
+    _refused(client, _passkey_sign_in(client, device))
+    assert _audited(sessions, "operator.signed_in")[-1].detail["factor"] == "totp"
