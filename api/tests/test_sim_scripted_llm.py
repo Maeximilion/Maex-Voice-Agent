@@ -497,3 +497,32 @@ def test_below_the_minimum_asks_for_more_dishes():
 def test_the_stand_in_reads_a_price_question_for_one_card_number(said, number):
     found = _PRICE_QUESTION.search(said)
     assert (found.group(1) if found else None) == number
+
+
+@pytest.mark.parametrize(
+    ("data", "say", "heard"),
+    [
+        # Closed: the status sentence says all.
+        ({"is_open": False}, "Wir haben gerade geschlossen.", "geschlossen."),
+        # Open for dining in only: a status about delivery gets the pickup line.
+        (
+            {"is_open": True},
+            "Lieferung ist gerade pausiert.",
+            "pausiert. Abholung ist gerade leider nicht möglich.",
+        ),
+        ({"is_open": True}, None, "Abholung ist gerade leider nicht möglich."),
+    ],
+)
+def test_a_closed_pickup_names_the_pickup(llm, data, say, heard):
+    """docs/24, T-5.2: with neither pickup nor delivery open the stand-in says
+    so at once, and later sentences get the same answer, never a dish search."""
+    llm.next_turn("", START, "Ich moechte etwas zum Abholen bestellen.")
+    status = {**data, "pickup_enabled": False, "delivery_enabled": False}
+    turn = llm.next_turn(
+        "", START, tool_result("get_service_status", data=status, say=say)
+    )
+    assert turn.tool_call is None
+    assert turn.say.endswith(heard)
+    again = llm.next_turn("", START, "Die 23.")
+    assert again.tool_call is None
+    assert again.say.endswith(heard)
