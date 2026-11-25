@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.70
+> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.71
 
 ---
 
@@ -189,7 +189,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.70 · 25.11.2026:** #888 round 3: sync_main.sh warns on a clean main with unpushed commits; the user-level sync-main.sh moved to scripts/claude_user_hooks/ and never fast-forwards over an ignored file
+- **v2.69.71 · 25.11.2026:** #888 round 3: sync_main.sh warns on a clean main with unpushed commits; the user-level sync-main.sh moved to scripts/claude_user_hooks/ and never fast-forwards over an ignored file
+- **v2.69.70 · 25.11.2026:** deep review of #997: after a refusal for a dish, a retry that names an allergen ("Ja, die ist ohne Erdnüsse") or speaks of the guest's health or tolerance is held again unless the turn's order text names the allergen, a refused sentence with an allergen the dish's own text licenses keeps the strict retry, words of tolerance hold a first answer next to an order step too, and "allergiefrei" goes to the team like "allergenfrei"; the negated licensed allergen left by #798 is #1022
 - **v2.69.69 · 25.11.2026:** #888 round 3: five scripted stand-in gaps of docs/24 closed (split number, nested group names, doch, replacement quantity, closed pickup)
 - **v2.69.68 · 24.11.2026:** #888 round 3: an expected rejection in an eval case names its call with args (postal code, draft type or address), the recorder keeps the arguments of rejected calls
 - **v2.69.67 · 24.11.2026:** #981: migration 047, one open callback per call as a partial unique index; a conflict is a replay, reopening next to an open card of the call is refused
