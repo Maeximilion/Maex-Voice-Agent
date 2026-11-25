@@ -625,8 +625,9 @@ waited past the session's 10 s. On the processor the ear's limit is the 120 s of
 there took 4 to 5 s for 25 s of audio, but an utterance may last a minute and the engine runs it up
 to six times when it is unsure, and ending the process drops every call and keeps the line down
 for a restart, which only pays for a run that would last longer. The phone line's database
-sessions end a statement after 2 s (`db.bounded_sessions`), so a tool that waits on a lock sends
-the call to the team instead of keeping the guest waiting; their connections also give up on a
+sessions end a statement after 2 s (`db.bounded_sessions`), and a tool the model calls after
+at most what is left of the turn (`db.bounded_by`), so a tool that waits on a lock sends
+the call to the team instead of keeping the guest waiting past the turn's deadline; their connections also give up on a
 database that stops answering at the network level (connect timeout, unacknowledged data,
 keepalives), which no statement timeout reaches. The call
 log is closed when the line reports the end of the leg, with the session's outcome: after the

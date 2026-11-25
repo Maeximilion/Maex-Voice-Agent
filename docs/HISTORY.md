@@ -1963,3 +1963,10 @@ Checked in one PR of #888 round 3 on the own Asterisk 22.12.0 image (#1026): `pj
 | Point | Why still open | When due |
 |---|---|---|
 | `[global]` with `endpoint_identifier_order=ip` may do nothing (`deploy/asterisk/conf/pjsip.conf`) | Ponytail review of PR #340 (P2), 20.10.2026: the block's own comment says it does not switch identification by the From user off, `identify_by=ip` on the endpoint does; and Asterisk's default order is believed to start with `ip` already ... | With the next telephony PR |
+## Open Points from Reviews (archive, lock wait row fixed 25.11.2026)
+
+Fixed in one PR of #888 round 3 (`api/db.py` `bounded_by`, `api/agent/dispatch.py`, `api/agent/loop.py`, tests in `api/tests/test_db.py`, `test_turn_deadline.py` and `test_telephony.py`): every statement of a tool the model calls on the phone line waits no longer than what is left of the turn, never more than the line's 2 s, and a statement cut there is the tool's structured error `out_of_time`, on which the core ends the turn like after a late answer (outage sentence, transfer, or a callback where nobody answers).
+
+| Point | Why still open | When due |
+|---|---|---|
+| A tool's wait on a lock is bounded at 2 s, not by what is left of the turn (`telephony/app.py` `DB_TIMEOUT_MS`, `db.bounded_sessions`) | Codex on `879f51e` (PR #298, P2), 15.10.2026: with 9.5 s of a 10 s turn spent on the model, a tool that waits on a row lock keeps the guest up to 2 s past the deadline; with `turn_deadline_seconds=1` more directly. | Before the first test call with real guests (T-10.7) |
