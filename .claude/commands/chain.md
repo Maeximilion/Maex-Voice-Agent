@@ -47,7 +47,13 @@ clean, fixes every finding of that first round itself (a P0 or P1 too), and
 ends with "PR #N ready, first review clean". Then it is done: one item per
 session (Maxi, 2026-11-24 evening, popup "One item per session"), archived
 by the coordinator once its pull request is merged, so the sidebar shows no
-merged pull request and no session grows over several items.
+merged pull request and no session grows over several items. As soon as its
+pull request opens, the session calls `set_monitor` with
+`auto_archive_on_close: true`, so the app archives it at the merge even when
+no note reaches the coordinator (Maxi, 2026-11-25: a finished session stayed
+open after its merge). It never ends a turn while CI or Codex still run on
+its head; it waits inside the turn and ends with the "ready" message or a
+blocked one.
 
 **The ship lane** (Maxi, 2026-11-24, "One Sonnet ship lane"): one fresh Sonnet
 `medium` session, started in Maxi's turn together with the first build
@@ -55,7 +61,10 @@ sessions of the chain, ships the queue: it waits until the coordinator sends
 "ship #N", merges `origin/main` in, gets CI, Codex and the evals on the new
 head, fixes what that round finds, merges, messages the coordinator "merged
 #N" before anything else (no sleep or pause comes between the merge and that
-message; Maxi, 2026-11-24), and waits for the next "ship #N". One pull request merges at a time
+message; Maxi, 2026-11-24), then removes that pull request from its own bar
+with `unbind_pr` (Maxi, 2026-11-25: "Auch wollte ich, dass die Ship Lane nach
+dem Merge immer sofort das Gemergte PR ausblendet, damit es nicht mehr
+angezeigt wird in der Ship lane"), and waits for the next "ship #N". One pull request merges at a time
 anyway, so one lane is enough. Why: a long build session ships in a big Opus
 context, and every CI or Codex wake rereads all of it; the ship lane rereads a
 small Sonnet context. A P1 in an `xhigh` path of the ship round is fixed on
@@ -242,7 +251,13 @@ before naming a base.
 - Archives its own side sessions without asking once their items are merged or
   stopped without a pull request (Maxi, 2026-11-23: "archive Items which are
   done for now and in future", "But just for the chain"); other sessions only on
-  his word.
+  his word. The app refuses to archive a session that still runs a background
+  task: the coordinator then sends it "merged #N: stop every background task and
+  end your turn" and archives it at its next note. The coordinator also sends
+  that message whenever it ships an item that has not reported "ready" itself
+  (25.11.2026: #1026's session ended a turn with CI and Codex still running, the
+  coordinator shipped it from its own check, and the session kept waiting on a
+  head that was already merged, so it could not be archived).
 - Never stops for its own context either (Maxi, 2026-11-24: "Don't stop the
   chain any more"): auto compaction carries it. So it keeps the chain state
   outside its context at all times: `~/.claude/chain/notes.txt` gets a line at
@@ -253,11 +268,14 @@ before naming a base.
   its next action (seen 24.11.2026: three Dependabot pull requests sat open and
   unqueued for seven hours across a compaction).
 - Open Dependabot pull requests go to the ship lane's queue whenever it idles.
-- Merged pull requests stay on the ship lane's sidebar row: the app binds each
-  pull request it ships, and auto mode refuses both its own `unbind_pr` and a
-  coordinator's message asking for it (24.11.2026, "Undermining Oversight").
-  So only Maxi clears them, with the x on its pull request bar; build sessions
-  need nothing, since they are archived after their merge.
+- Merged pull requests leave the ship lane's sidebar row at once: the app binds
+  each pull request it ships, and the ship lane unbinds it right after its
+  "merged #N" message (section 2; Maxi's rule of 2026-11-25, which his quote in
+  the ship lane's brief carries, since auto mode refused the unbind on
+  24.11.2026 when it came without his words, "Undermining Oversight"). If auto
+  mode still refuses, the ship lane reports the refusal text and Maxi clears
+  the pull request with the x on its bar. Build sessions need nothing: they are
+  archived after their merge.
 
 ## 5. Usage pacing (in every brief)
 
