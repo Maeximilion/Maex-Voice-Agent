@@ -78,8 +78,9 @@ docker network create "$tag" >/dev/null
 # Started as the product starts it (the service in docker-compose.yml, kept
 # equal by api/tests/test_asterisk_image_check.py): through the image's
 # entrypoint, which hands the runtime folders to the asterisk user, with the
-# service's command and its rights only. The configuration is copied in, not mounted: the
-# entrypoint owns /etc/asterisk too, which a read-only mount would refuse.
+# service's command and its rights only. The configuration is copied in, not
+# mounted: the entrypoint owns /etc/asterisk too, which a read-only mount
+# would refuse.
 docker create --name "$tag-ast" --network "$tag" \
     --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
     --cap-add SETUID --cap-add SETGID --security-opt no-new-privileges:true \
