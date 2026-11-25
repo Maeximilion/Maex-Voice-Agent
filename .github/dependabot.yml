@@ -65,9 +65,6 @@ updates:
     directories:
       - /api
       - /deploy/speech
-      # The base of the own Asterisk image (#775); the Asterisk version itself
-      # is pinned by checksum there and moves by hand.
-      - /deploy/asterisk/image
     schedule:
       interval: monthly
     # One PR for all Dockerfile base images of a run instead of one per image.
@@ -90,6 +87,25 @@ updates:
           - version-update:semver-major
           - version-update:semver-minor
 
+  # The base of the own Asterisk image (#775), apart from the API's: an Alpine
+  # step there (Alpine's musl patches, package names, the busybox tools
+  # render.sh reads) moves by hand with the drills and must not hold up the
+  # API's base bump. New digests of the same Alpine still come. The Asterisk
+  # version itself is pinned by checksum there and moves by hand.
+  - package-ecosystem: docker
+    directories:
+      - /deploy/asterisk/image
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: chore
+      include: scope
+    ignore:
+      - dependency-name: alpine
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
+
   # Postgres, n8n, ntfy and caddy images live in the compose files, not in a Dockerfile.
   # /deploy/asterisk is the test PBX of the voice spike, a third-party image.
   - package-ecosystem: docker-compose
@@ -108,6 +124,9 @@ updates:
       prefix: chore
       include: scope
     ignore:
+      # The own Asterisk image (docker-compose.yml) is built here and is on no
+      # registry; its base moves through the docker entry above.
+      - dependency-name: "maex-voice-agent/*"
       # PostgreSQL stays on 16 (CLAUDE.md). A major bump is not an image tag change: a
       # volume initialised by 16 does not start under 18, it needs a dump and restore
       # (take a backup first). Minor and patch bumps still arrive.

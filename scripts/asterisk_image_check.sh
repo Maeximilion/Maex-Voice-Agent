@@ -25,7 +25,9 @@ fi
 root=$(cd "$(dirname "$0")/.." && pwd)
 conf=$root/deploy/asterisk/conf
 alpine=$(sed -n 's/^FROM \([^ ]*\) AS build$/\1/p' "$root/deploy/asterisk/image/Dockerfile")
-dial=$(grep -m1 -o 'Dial(WebSocket/[^ ]*' "$conf/extensions.conf")
+# Comments skipped: the product's own line, never an old one quoted above it.
+# `|| true`: under `set -e` an empty grep would end the check before its message.
+dial=$(grep -v '^[[:space:]]*;' "$conf/extensions.conf" | grep -m1 -o 'Dial(WebSocket/[^ ]*' || true)
 if [ -z "$dial" ] || [ -z "$alpine" ]; then
     echo "asterisk_image_check: no media Dial in extensions.conf or no base image" >&2
     exit 2
@@ -38,15 +40,25 @@ cleanup() {
     rm -rf "$work"
 }
 trap cleanup EXIT
+# dash runs the EXIT trap on a signal only through an exit of its own.
+trap 'exit 130' INT TERM
 
 sed 's/${VOICE_MEDIA_TOKEN}/check-token/' "$conf/websocket_client.conf" > "$work/websocket_client.conf"
 printf '[options]\n' > "$work/asterisk.conf"
 printf '[modules]\nautoload=yes\n' > "$work/modules.conf"
 printf '[logfiles]\nconsole => notice,warning,error\n' > "$work/logger.conf"
+# How long each Dial took, in ms: a frozen `voice` has to hold it for the
+# connection timeout, or the check never met a frozen one.
+timeout_ms=$(sed -n 's/^connection_timeout=\([0-9][0-9]*\).*/\1/p' "$conf/websocket_client.conf")
+if [ -z "$timeout_ms" ]; then
+    echo "asterisk_image_check: no connection_timeout in websocket_client.conf" >&2
+    exit 2
+fi
 cat > "$work/extensions.conf" <<EOF
 [check]
-exten => fail,1,$dial
- same => n,Log(NOTICE,check ended \${DIALSTATUS})
+exten => fail,1,Set(T0=\${STRFTIME(,,%s%3q)})
+ same => n,$dial
+ same => n,Log(NOTICE,check ended \${DIALSTATUS} after \$[\${STRFTIME(,,%s%3q)} - \${T0}] ms)
  same => n,Hangup()
 exten => next,1,Log(NOTICE,check next call runs)
  same => n,Hangup()
@@ -58,13 +70,25 @@ fail() {
     echo "FAIL  $1"
     failed=1
 }
-cli() { docker exec "$tag-ast" asterisk -rx "$1" 2>/dev/null; }
+# Bounded: a deadlocked loader or a lock left held (#2121) would hang the
+# question until the CI job's 30 minutes, without the check's message.
+cli() { timeout 20 docker exec "$tag-ast" asterisk -rx "$1" 2>/dev/null; }
 alive() { [ "$(docker inspect -f '{{.State.Running}}' "$tag-ast" 2>/dev/null)" = true ]; }
 lines() { docker logs "$tag-ast" 2>&1 | grep -c "$1" || true; }
 
 docker network create "$tag" >/dev/null
-docker run -d --name "$tag-ast" --network "$tag" -v "$work:/etc/asterisk:ro" \
-    --entrypoint /usr/sbin/asterisk "$image" -f -n >/dev/null
+# Started as the product starts it (the service in docker-compose.yml, kept
+# equal by api/tests/test_asterisk_image_check.py): through the image's
+# entrypoint, which hands the runtime folders to the asterisk user, with the
+# service's command and its rights only. The configuration is copied in, not
+# mounted: the entrypoint owns /etc/asterisk too, which a read-only mount
+# would refuse.
+docker create --name "$tag-ast" --network "$tag" \
+    --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
+    --cap-add SETUID --cap-add SETGID --security-opt no-new-privileges:true \
+    "$image" /usr/sbin/asterisk -f -T -n -U asterisk -p >/dev/null
+docker cp "$work/." "$tag-ast:/etc/asterisk/"
+docker start "$tag-ast" >/dev/null
 booted=no
 for _ in $(seq 1 60); do
     if cli "core waitfullybooted" >/dev/null; then booted=yes; break; fi
@@ -72,16 +96,26 @@ for _ in $(seq 1 60); do
 done
 if [ "$booted" = no ]; then
     docker logs "$tag-ast" 2>&1 | tail -20
-    fail "Asterisk did not boot within 60 s"
+    fail "Asterisk did not boot"
     exit 1
 fi
 echo "      $(cli 'core show version' | head -1)"
 
+# Every module the product's dialplan, features.conf and pjsip.conf use
+# (api/tests/test_asterisk_image_check.py keeps the list complete): with
+# autoload=yes a missing one stops neither the boot nor the healthcheck. A
+# module that loaded and declined is listed as "Not Running"; `like` also
+# lists longer names (format_wav_gsm for format_wav), so the line must start
+# with the module's own.
 for module in chan_websocket res_websocket_client res_http_websocket chan_pjsip \
-    res_pjsip_outbound_registration res_resolver_unbound res_rtp_asterisk \
-    pbx_config app_dial app_mixmonitor app_playback app_system func_curl \
-    func_env codec_ulaw codec_alaw format_wav format_pcm; do
-    if cli "module show like $module" | grep -q " Running "; then
+    res_pjsip_session res_pjsip_sdp_rtp res_pjsip_outbound_authenticator_digest \
+    res_pjsip_outbound_registration res_pjsip_acl res_pjsip_endpoint_identifier_ip \
+    res_resolver_unbound res_rtp_asterisk pbx_config bridge_simple bridge_native_rtp \
+    app_dial app_exec app_stack app_verbose app_mixmonitor app_playback app_system \
+    func_callerid func_curl func_env func_logic func_strings \
+    codec_ulaw codec_alaw codec_resample format_wav format_sln format_pcm; do
+    if cli "module show like $module" |
+        grep -Eq "^$module\.so[[:space:]].*[0-9][[:space:]]+Running[[:space:]]"; then
         echo "PASS  $module runs"
     else
         fail "$module does not run"
@@ -95,10 +129,13 @@ for voice in refused unresolved frozen; do
         refused)
             docker run -d --name "$tag-voice" --network "$tag" --network-alias voice \
                 "$alpine" sleep 600 >/dev/null ;;
+        # `-e sleep` holds each connection silent, `-k` takes the next: a plain
+        # `nc -l` has /dev/null as stdin here and closes at once.
         frozen)
             docker run -d --name "$tag-voice" --network "$tag" --network-alias voice \
-                "$alpine" sh -c 'while true; do nc -l -p 8001 >/dev/null; done' >/dev/null ;;
+                "$alpine" nc -lk -p 8001 -e sleep 600 >/dev/null ;;
     esac
+    sleep 1
     for _ in 1 2 3; do
         calls=$((calls + 1))
         cli "channel originate Local/fail@check application Wait 1" >/dev/null || true
@@ -113,11 +150,25 @@ for voice in refused unresolved frozen; do
         break
     fi
     ended=$(lines 'check ended CHANUNAVAIL')
-    if [ "$ended" -ge "$calls" ]; then
-        echo "PASS  voice $voice: 3 failed media connections, each CHANUNAVAIL, Asterisk up"
-    else
+    if [ "$ended" -lt "$calls" ]; then
         fail "voice $voice: $ended of $calls Dials ended CHANUNAVAIL"
+        continue
     fi
+    # A frozen `voice` holds each Dial for the connection timeout, and not
+    # much longer (#1979): three readable durations in that window, or the
+    # check met no frozen `voice`, or the caller waits too long for the team.
+    took=
+    if [ "$voice" = frozen ]; then
+        took=$(docker logs "$tag-ast" 2>&1 |
+            sed -n 's/.*check ended CHANUNAVAIL after \([0-9][0-9]*\) ms.*/\1/p' | tail -n 3 | xargs)
+        if ! printf '%s\n' "$took" | awk -v min="$timeout_ms" -v max=$((timeout_ms * 3)) \
+            'NF != 3 { exit 1 } { for (i = 1; i <= 3; i++) if ($i < min || $i > max) exit 1 }'; then
+            fail "voice frozen: Dials took $took ms, not between $timeout_ms and $((timeout_ms * 3)) ms each"
+            continue
+        fi
+        took=" ($took ms)"
+    fi
+    echo "PASS  voice $voice: 3 failed media connections, each CHANUNAVAIL, Asterisk up$took"
 done
 
 if alive; then
@@ -128,5 +179,10 @@ if alive; then
     else
         fail "the call after the failures did not run"
     fi
+fi
+# Issue #2121 crashed Asterisk when a call's thread ended, after the call's
+# last log line: a death no phase saw still fails the check.
+if ! alive && [ "$failed" = 0 ]; then
+    fail "Asterisk died after the failures ($(docker inspect -f 'exit {{.State.ExitCode}}' "$tag-ast"))"
 fi
 exit "$failed"
