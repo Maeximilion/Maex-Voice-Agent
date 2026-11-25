@@ -157,6 +157,10 @@ class ConversationState(BaseModel):
     # recording (`loop._still_open`): `last_say` keeps the end of a long one.
     # Never sent.
     last_said: str | None = None
+    # What the guest had not heard to its end when they spoke: they talked
+    # over it, or spoke before it began to play (`guards.note_unheard`). Their
+    # words may not answer it. Gone with the next sentence said.
+    unheard_say: str | None = None
     # What get_service_status said in this call about being open and taking
     # orders (`SERVICE_FLAGS`); None until then. The model reads from it that
     # the status is known: it asked again at the start of every turn, one
@@ -230,6 +234,8 @@ class ConversationState(BaseModel):
             data["greeted"] = True
         if self.last_say:
             data["last_say"] = self.last_say
+        if self.unheard_say:
+            data["unheard_say"] = self.unheard_say
         if self.service is not None:
             data["service"] = dict(self.service)
         if self.customer is not None:

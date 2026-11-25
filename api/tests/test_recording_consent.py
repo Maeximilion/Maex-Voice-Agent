@@ -609,6 +609,26 @@ def test_a_withdrawal_repeats_what_the_guest_was_asked(session, tenant, switched
     assert port.says(SID)[-2:] == [SAY_RECORDING_STOPPED, asked]
 
 
+def test_a_withdrawal_said_over_the_question_makes_it_heard_again(
+    session, tenant, switched_on
+):
+    """The guest talked over the question to stop the recording (Codex PR
+    #291): it is said again in full, so it is the sentence their next words
+    answer, not one they did not hear."""
+    port, handler = on_the_phone(session, tenant)
+    handler.on_user_turn(SID, "Ja.")
+    handler.on_user_turn(SID, A_TABLE)
+    asked = port.says(SID)[-1]
+    handler.on_unheard(SID, asked)
+    state = handler._live[SID].state
+    assert state.last_say is None and state.unheard_say == asked
+
+    handler.on_user_turn(SID, "Aufnahme stoppen.")
+
+    assert port.says(SID)[-2:] == [SAY_RECORDING_STOPPED, asked]
+    assert state.last_say == asked and state.unheard_say is None
+
+
 def test_a_withdrawal_at_the_read_back_leaves_it_standing(session, tenant, switched_on):
     """The read-back is said again behind the stop, and a yes still confirms
     it: the sentence that stops the recording changes nothing of the draft."""
