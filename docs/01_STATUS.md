@@ -178,7 +178,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.77 · 25.11.2026:** /chain never waits for Maxi: a lane is filled in the first turn that allows a start, else the session that just finished takes the next item; big AFK decisions go into the round's decisions issue (Maxi)
+- **v2.69.77 · 25.11.2026:** /chain never waits for Maxi: a free lane goes first to a waiting heavy step, then to the next planned item; a fresh session in Maxi's turn, otherwise the session that just finished takes it (auto mode refuses other starts); big AFK decisions go into the round's decisions issue (Maxi)
 - **v2.69.76 · 25.11.2026:** /chain: no queued sessions; planned items keep their order and get a session only when a lane is free (Maxi)
 - **v2.69.75 · 25.11.2026:** /chain: a build session never ends a turn while CI or Codex run (auto_archive_on_close is refused in auto mode, the coordinator archives); a session with a background task gets "merged #N: stop" before it is archived; merged PRs on the ship lane are cleared by Maxi with the x (Maxi)
 - **v2.69.74 · 25.11.2026:** #888 round 3: splitting a sentence into positions keeps the words of the growing part instead of reading it again at every separator, so that cut costs linear time on a long sentence; the card checks after it in search.py stay a docs/24 row
