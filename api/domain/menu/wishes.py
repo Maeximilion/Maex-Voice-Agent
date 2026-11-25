@@ -64,11 +64,8 @@ _TOKEN = re.compile(r"[^\W_]+|,")
 # separators again from every character of it. The separators in front of a
 # match are taken off by `_separators_start` instead.
 #
-# "bitte" at the very end, and the word that joins the next part of a wish
-# ("ohne Zwiebeln, dafür" / "mit Nudeln, aber").
-_PLEASE_AT_END = re.compile(r"bitte[\s.!?]*$", re.IGNORECASE)
-# Lower case only, as the pattern it replaces was: "Und" at the end stays.
-_JOINER_AT_END = re.compile(r"(?:dafür|dafuer|aber|und)[\s,]*$")
+# "bitte" at the very end, only as a word of its own: "Abbitte" stays.
+_PLEASE_AT_END = re.compile(r"\bbitte[\s.!?]*$", re.IGNORECASE)
 # Joining words at the end of a part, one after the other ("mit Salami, aber").
 _GLUE_WORD = re.compile(r"aber|und|dafür|dafuer|dann|bitte", re.IGNORECASE)
 # Eine Menge gehoert zur Position, nie in den Hinweis ("zweimal", "2 x").
@@ -1327,7 +1324,9 @@ def _drop_trailing_glue(text: str) -> str:
 
 
 def _clean(text: str) -> str:
-    return _cut_tail(_PLEASE_AT_END, _drop_quantity(text)).strip(" ,.;!?")
+    # Stripped first, so a comma behind "bitte" does not keep it ("bitte,").
+    plain = _drop_quantity(text).rstrip(" ,.;!?")
+    return _cut_tail(_PLEASE_AT_END, plain).strip(" ,.;!?")
 
 
 def _is_quantity(word: str) -> bool:
@@ -2039,9 +2038,31 @@ def _split_addition(text: str) -> tuple[str, str | None]:
     begin = at + 1 if words[at] in _SWAP else at
     if words[at] in _INSTEAD:
         at = begin = at - 1
-    removal = text[: tokens[at].start()]
-    removal = _cut_tail(_JOINER_AT_END, removal)
-    return removal.strip(" ,.;"), text[tokens[begin].start() :].strip(" ,.;")
+    removal = _without_glue(text[: tokens[at].start()])
+    return removal, text[tokens[begin].start() :].strip(" ,.;")
+
+
+# What may stand at either end of such a part besides whitespace.
+_PART_END = " ,.;!?"
+
+
+def _without_glue(part: str) -> str:
+    """The part of a wish in front of the next one, without the joining words
+    at its end, each a word of its own: "ohne Zwiebeln, aber bitte" and "ohne
+    Zwiebeln und. Aber" -> "ohne Zwiebeln", "ohne Hund" stays (docs/HISTORY.md).
+    One end index walks back and the part is cut once, so a long chain of
+    joining words costs linear time, not a copy per word (Codex PR #1025)."""
+    part = part.lstrip(_PART_END)
+    end = len(part)
+    while True:
+        while end and (part[end - 1] in _PART_END or part[end - 1].isspace()):
+            end -= 1
+        word = end
+        while word and not _is_separator(part[word - 1]):
+            word -= 1
+        if word == 0 or _GLUE_WORD.fullmatch(part, word, end) is None:
+            return part[:end]
+        end = word
 
 
 def _swaps(words: list[str], i: int) -> bool:
@@ -2055,9 +2076,8 @@ def _split_removal(text: str) -> tuple[str, str | None]:
     at = next((i for i, w in enumerate(words) if i > 0 and w in _REMOVE), None)
     if at is None:
         return text, None
-    addition = text[: tokens[at].start()]
-    addition = _cut_tail(_JOINER_AT_END, addition)
-    return addition.strip(" ,.;"), text[tokens[at].start() :].strip(" ,.;")
+    addition = _without_glue(text[: tokens[at].start()])
+    return addition, text[tokens[at].start() :].strip(" ,.;")
 
 
 def _names(option: str, group: str, wanted: set[str]) -> set[str]:
