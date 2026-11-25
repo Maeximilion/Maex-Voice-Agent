@@ -25,7 +25,13 @@ import time
 import pytest
 
 from api.domain.menu import split, wishes
-from api.domain.menu.numberwords import fold
+from api.domain.menu.numberwords import (
+    fold,
+    inside_split,
+    parse_cardinal,
+    pause_before_und,
+    tens_half,
+)
 from api.domain.menu.split import raw_pieces, separator_pieces, split_positions
 from api.domain.menu.wishes import classify_wish, wish_candidates
 
@@ -347,9 +353,11 @@ def test_split_words_of_a_joined_part_are_the_words_of_its_pieces():
     # again; that is only the same when every run of pieces, joined with its
     # separators, has exactly the words of its pieces and separators in a row.
     atoms = [*_FILLER, "und", "Und", "UND", "sowie", "23", "0,5", "8, 50", "ß"]
-    atoms += ["Süß", "İ", "Σ", "drei", "zwanzig", "hundert", "äh"]
+    atoms += ["Süß", "İ", "Σ", "drei", "zwanzig", "hundert", "äh", " und ", " Sowie "]
     rng = random.Random(1)
-    joined_runs = 0
+    # Joined runs across a separator that is a word itself ("und", "sowie")
+    # and has words on both sides: the case the comma runs do not cover.
+    across_a_word = 0
     for _ in range(SENTENCES_PER_OPERATION):
         text = "".join(rng.choice(atoms) for _ in range(rng.randint(0, 12)))
         pieces = split._SEPARATOR.split(text)
@@ -358,8 +366,87 @@ def test_split_words_of_a_joined_part_are_the_words_of_its_pieces():
             joined = pieces[start]
             words = _words(joined)
             for sep, piece in zip(separators[start:], pieces[start + 1 :], strict=True):
+                across_a_word += bool(words and _words(sep) and _words(piece))
                 joined += sep + piece
                 words += _words(sep) + _words(piece)
                 assert words == _words(joined), repr(text)
-                joined_runs += 1
-    assert joined_runs >= SENTENCES_WITH_AN_EFFECT_AT_LEAST
+    assert across_a_word >= SENTENCES_WITH_AN_EFFECT_AT_LEAST
+
+
+# `_split` as it was before it kept the words of the growing part (docs/24),
+# the reference for the test below and nothing else.
+def _old_split(text, *, by_position=True):
+    pieces = split._SEPARATOR.split(text)
+    separators = split._SEPARATOR.findall(text)
+    parts = [pieces[0]]
+    for sep, piece in zip(separators, pieces[1:], strict=True):
+        left = _words(parts[-1])
+        right = _words(piece)
+        a = len(left)
+        while a and pause_before_und(left[a - 1]):
+            a -= 1
+        b = 0
+        while b < len(right) and inside_split(right[b]):
+            b += 1
+        und = sep.strip().casefold() == "und"
+        cut_off = False
+        if not und and b < len(right) and right[b] == "und":
+            und = True
+            b += 1
+            while b < len(right) and inside_split(right[b]):
+                b += 1
+        elif not und and a and left[a - 1] == "und":
+            und = True
+            a -= 1
+            while a and pause_before_und(left[a - 1]):
+                a -= 1
+            cut_off = not a
+        number_joined = (
+            und
+            and b < len(right)
+            and (
+                (cut_off and tens_half(right[b]))
+                or (
+                    a > 0
+                    and left[a - 1].endswith("hundert")
+                    and split._only_number(piece)
+                )
+                or (
+                    a > 0
+                    and parse_cardinal(left[a - 1]) in split._UNITS
+                    and tens_half(right[b])
+                )
+            )
+        )
+        if by_position:
+            attached = not split._opens_position(piece)
+        else:
+            attached = split._modifies(piece)
+        if number_joined or attached:
+            parts[-1] += sep + piece
+        else:
+            parts.append(piece)
+    return parts
+
+
+SPLIT_ATOMS = [
+    *[" ", " ", " ", "\t", ",", ", ", "und,", ".", "x", "Cola", "süß", "Pho Bo"],
+    *["und", "Und", "sowie", "drei", "zwanzig", "hundert", "eins", "eine", "die"],
+    *["23", "4", "äh", "bitte", "mit", "ohne", "einmal", "zweimal"],
+]
+SPLITS_COMPARED = 20_000
+
+
+def test_split_is_the_same_as_before():
+    # The random sentences reach every line that keeps the words of the
+    # growing part: dropping or changing any one of them made this test fail.
+    rng = random.Random(3)
+    attached = 0
+    for _ in range(SPLITS_COMPARED):
+        glue = rng.choice([" ", "\t", ""])
+        text = glue.join(rng.choice(SPLIT_ATOMS) for _ in range(rng.randint(1, 10)))
+        for by_position in (True, False):
+            expected = _old_split(text, by_position=by_position)
+            assert split._split(text, by_position=by_position) == expected, repr(text)
+            attached += len(expected) <= len(split._SEPARATOR.findall(text))
+    assert attached >= SENTENCES_WITH_AN_EFFECT_AT_LEAST
