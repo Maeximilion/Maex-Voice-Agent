@@ -6,7 +6,6 @@ product's own media Dial is what it dials, every failure must end CHANUNAVAIL
 with Asterisk up, and a crash fails the check.
 """
 
-import itertools
 import os
 import re
 import shutil
@@ -24,7 +23,8 @@ pytestmark = pytest.mark.skipif(shutil.which("sh") is None, reason="needs sh")
 # A docker that answers like a healthy Asterisk, or one that dies at the first
 # failed media connection (DIES set), or one that is seen dead from the
 # DIES_AT_INSPECT-th liveness check on. Every failed Dial takes FAKE_MS; the
-# module NOT_RUNNING is listed as loaded but not running. It keeps how the
+# module NOT_RUNNING is listed as loaded but not running, and for
+# ONLY_LONGER only a module whose name starts with it runs. It keeps how the
 # Asterisk container was created in `create`, copies the configuration it is
 # handed to `seen` and counts the originated calls, so `logs` shows what ran.
 FAKE_DOCKER = r"""#!/bin/sh
@@ -54,7 +54,13 @@ case "$1" in
       *"core show version"*) echo "Asterisk 22.12.0 built by fake" ;;
       *"module show like ${NOT_RUNNING:-none}"*)
         echo "${NOT_RUNNING}.so   Some module   0 Not Running   core" ;;
-      *"module show like"*) echo "chan_x.so   Some module   0 Running   core" ;;
+      *"module show like"*)
+        name=${*##* }
+        if [ "$name" = "${ONLY_LONGER:-none}" ]; then
+          echo "${name}_gsm.so   Some module   0 Running   core"
+        else
+          echo "$name.so   Some module   0 Running   core"
+        fi ;;
       *"originate Local/fail"*)
         calls=$(cat "$state/calls" 2>/dev/null || echo 0)
         echo $((calls + 1)) > "$state/calls" ;;
@@ -154,7 +160,32 @@ def test_a_frozen_voice_that_ends_the_dial_at_once_fails_the_check(tmp_path):
     silent `voice` would pass (deep review of #972)."""
     run, _ = _run(tmp_path, dial_ms=5)
     assert run.returncode == 1, run.stdout + run.stderr
-    assert "FAIL  voice frozen: a Dial ended after 5 ms" in run.stdout
+    assert "FAIL  voice frozen: Dials took 5 5 5 ms" in run.stdout
+
+
+def test_frozen_dials_whose_time_cannot_be_read_fail_the_check(tmp_path):
+    """No readable duration is no proof of a frozen `voice` (sweep of the deep
+    review of #972): the check failed only on a number it could read."""
+    run, _ = _run(tmp_path, dial_ms="")
+    assert run.returncode == 1, run.stdout + run.stderr
+    assert "FAIL  voice frozen: Dials took" in run.stdout
+
+
+def test_a_frozen_dial_that_outlasts_the_timeout_fails_the_check(tmp_path):
+    """A release that ignores `connection_timeout` and holds the caller for
+    most of a minute before the team rings must not pass (sweep of the deep
+    review of #972)."""
+    run, _ = _run(tmp_path, dial_ms=19000)
+    assert run.returncode == 1, run.stdout + run.stderr
+    assert "FAIL  voice frozen: Dials took 19000 19000 19000 ms" in run.stdout
+
+
+def test_a_module_is_matched_by_its_whole_name(tmp_path):
+    """`module show like format_wav` also lists format_wav_gsm; that one running
+    says nothing about format_wav (sweep of the deep review of #972)."""
+    run, _ = _run(tmp_path, only_longer="format_wav")
+    assert run.returncode == 1, run.stdout + run.stderr
+    assert "FAIL  format_wav does not run" in run.stdout
 
 
 def test_the_frozen_voice_holds_every_connection():
@@ -189,6 +220,8 @@ def test_a_patch_that_does_not_apply_fails_the_image_build(tmp_path):
         ["sh", "-c", command],
         cwd=src,
         stdin=subprocess.DEVNULL,
+        # No terminal: GNU patch would ask there for the file it cannot find.
+        start_new_session=True,
         capture_output=True,
         text=True,
         timeout=30,
@@ -385,14 +418,20 @@ def test_asterisk_starts_with_the_products_command_and_rights(tmp_path):
     args = (state / "create").read_text().split()
     command = service["command"]
     assert args[-len(command) :] == command
-    pairs = set(itertools.pairwise(args))
-    for flag, key in (
-        ("--cap-drop", "cap_drop"),
-        ("--cap-add", "cap_add"),
-        ("--security-opt", "security_opt"),
-    ):
-        for value in service[key]:
-            assert (flag, value) in pairs, f"{flag} {value}"
+    # Its rights and nothing more: every option before the image is one of
+    # the service's, or the container's own name and network.
+    options = args[1 : -len(command) - 1]
+    given = set(zip(options[::2], options[1::2], strict=True))
+    wanted = {
+        (flag, value)
+        for flag, key in (
+            ("--cap-drop", "cap_drop"),
+            ("--cap-add", "cap_add"),
+            ("--security-opt", "security_opt"),
+        )
+        for value in service[key]
+    }
+    assert given - {p for p in given if p[0] in ("--name", "--network")} == wanted
 
 
 def test_dependabot_keeps_the_asterisk_base_apart():
