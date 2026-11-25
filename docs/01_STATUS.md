@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.77
+> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.80
 
 ---
 
@@ -178,7 +178,10 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.77 · 25.11.2026:** #888 round 3: words said before the caller heard the end of a sentence (a barge-in, or speech before the answer began to play) no longer answer it: `last_say` keeps only what was heard, the rest goes to the model as `unheard_say`, an answer to an allergy question talked over is still kept, and a read-back cut off is no read-back (Codex PR #291; two timing cases left in docs/24)
+- **v2.69.80 · 25.11.2026:** #888 round 3: words said before the caller heard the end of a sentence (a barge-in, or speech before the answer began to play) no longer answer it: `last_say` keeps only what was heard, the rest goes to the model as `unheard_say`, an answer to an allergy question talked over is still kept, and a read-back cut off is no read-back (Codex PR #291; two timing cases left in docs/24)
+- **v2.69.79 · 25.11.2026:** fix: line endings of 411 files restored to LF (a commit of 25.11.2026 had written CRLF into them; content unchanged)
+- **v2.69.78 · 25.11.2026:** /chain: no planned item gets a session before a lane is free; a free lane goes first to a chain change (chain.md, dashboard), then to a waiting heavy step, then to the next planned item; big AFK decisions go into the round's decisions issue (Maxi)
+- **v2.69.77 · 25.11.2026:** #888 round 3: a tool the model calls on the phone line waits on the database no longer than its turn has left, all its statements together and never past the 2 s bound; a statement cut there ends the turn like a late answer (out_of_time)
 - **v2.69.76 · 25.11.2026:** /chain: no queued sessions; planned items keep their order and get a session only when a lane is free (Maxi)
 - **v2.69.75 · 25.11.2026:** /chain: a build session never ends a turn while CI or Codex run (auto_archive_on_close is refused in auto mode, the coordinator archives); a session with a background task gets "merged #N: stop" before it is archived; merged PRs on the ship lane are cleared by Maxi with the x (Maxi)
 - **v2.69.74 · 25.11.2026:** #888 round 3: splitting a sentence into positions keeps the words of the growing part instead of reading it again at every separator, so that cut costs linear time on a long sentence; the card checks after it in search.py stay a docs/24 row

@@ -1963,3 +1963,10 @@ Fixed in one PR of #888 round 3: before the caller's words become a turn, the se
 | Point | Why still open | When due |
 |---|---|---|
 | `last_say` holds the whole sentence even when the caller talked over it (`agent/guards.py` `note_said`, `telephony/handler.py` `_turn`) | Codex on PR #291 (14.10.2026, P2): an interruptible sentence is stored before it is played, so after a barge-in the model reads the guest's words as the answer to words never heard. | With the barge-in work of the voice layer (T-10.x) |
+## Open Points from Reviews (archive, lock wait row fixed 25.11.2026)
+
+Fixed in one PR of #888 round 3 (`api/db.py` `bounded_by`, `api/agent/dispatch.py`, `api/agent/loop.py`, tests in `api/tests/test_db.py`, `test_turn_deadline.py` and `test_telephony.py`): every statement of a tool the model calls on the phone line waits no longer than what is left of the turn, never more than the line's 2 s, and a statement cut there is the tool's structured error `out_of_time`, on which the core ends the turn like after a late answer (outage sentence, transfer, or a callback where nobody answers).
+
+| Point | Why still open | When due |
+|---|---|---|
+| A tool's wait on a lock is bounded at 2 s, not by what is left of the turn (`telephony/app.py` `DB_TIMEOUT_MS`, `db.bounded_sessions`) | Codex on `879f51e` (PR #298, P2), 15.10.2026: with 9.5 s of a 10 s turn spent on the model, a tool that waits on a row lock keeps the guest up to 2 s past the deadline; with `turn_deadline_seconds=1` more directly. | Before the first test call with real guests (T-10.7) |

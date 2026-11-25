@@ -37,6 +37,7 @@ from api.agent.loop import (
 )
 from api.agent.state import ConversationState
 from api.config import settings
+from api.core.envelope import SAY_ON_FAILURE
 from api.domain.callbacks.create import SAY_NOTED, SUMMARY_BOOKED
 from api.domain.callbacks.transfer import (
     SUMMARY_HUNG_UP,
@@ -1665,6 +1666,57 @@ def test_a_turn_that_waits_on_a_lock_goes_to_the_team_at_the_bound(
     holder.dispose()
     handler.on_call_ended("s-1")
     assert _logged(session, "s-1").outcome == "error"
+
+
+class _LateModel:
+    """The scripted model, taking `late` seconds of the call's clock per
+    answer: what the guest has waited when a tool starts."""
+
+    def __init__(self, inner, clock: Clock) -> None:
+        self.inner, self.clock, self.late = inner, clock, 0.0
+
+    def next_turn(self, *args, **kwargs) -> LLMTurn:
+        self.clock.now += self.late
+        return self.inner.next_turn(*args, **kwargs)
+
+
+def test_a_tool_waits_on_a_lock_no_longer_than_the_turn_has_left(
+    session, tenant, migrated_db_url, bounded_db
+):
+    """With 9.75 s of a 10 s turn spent on the model, a tool that waits on a
+    lock gives up within the quarter second left, not at the line's 2 s
+    bound, and the guest goes to the team as after a late answer, with the
+    outage sentence (Codex on PR #298, docs/24)."""
+    clock = Clock()
+    model = _LateModel(scripted(session, tenant)(session), clock)
+    port = FakeTelephony()
+    handler = handler_for(
+        session,
+        tenant,
+        port,
+        session_factory=bounded_db(2000),
+        llm_factory=lambda _s: model,
+        clock=clock,
+    )
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    handler.on_user_turn("s-1", WISH)
+    deadline = session.scalar(select(ServiceConfig.turn_deadline_seconds))
+    model.late = deadline - 0.25
+
+    holder = create_engine(migrated_db_url)
+    with holder.connect() as conn:
+        conn.execute(text("lock table reservations in access exclusive mode"))
+        started = time.monotonic()
+        handler.on_user_turn("s-1", "Auf den Namen Mueller.")
+        took = time.monotonic() - started
+        assert port.says("s-1")[-1] == SAY_ON_FAILURE
+        assert port.transfers("s-1") == [TEAM_PHONE]
+    holder.dispose()
+    assert took < 1.0
+    handler.on_call_ended("s-1")
+    assert _logged(session, "s-1").outcome == "transferred"
+    assert session.scalars(select(Reservation)).all() == []
 
 
 def _ended_under_a_lock(
