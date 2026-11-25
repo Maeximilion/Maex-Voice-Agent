@@ -183,7 +183,7 @@ before naming a base.
   2026-11-25: "it's just about that we don't start the next side sessions or
   items which are planned when there is no free lane for it"). A free lane
   goes, in this order:
-  1. to a planned item that changes the chain itself (`chain.md`, the chain
+  1. to a planned item that changes the chain itself (this chain command, the chain
      dashboard, the chain memories), before everything else (Maxi,
      2026-11-25: "Priority of planned chain items should be done first over
      everything else because they are more important of how the chain works");
