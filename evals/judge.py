@@ -44,6 +44,7 @@ from api.models import (
 from api.models.calls import CONSENT_ANSWERS
 from api.models.orders import ORDER_TYPES
 from evals.recorder import DRAFT_TOOLS
+from sim.replay import customer_lines
 from sim.session import Turn
 
 CONFIRMED = ("confirmed", "approved", "handed_over")
@@ -96,6 +97,9 @@ EXPECTED_KEYS = frozenset(
         "consent",
         # What became of the recording of the call (L2, T-11.3): `RECORDINGS`.
         "recording",
+        # What the agent has to do in the turn of one customer line, where the
+        # final state cannot tell (Codex PR #145): `TURN_KEYS`.
+        "turns",
     }
 )
 # The states of `expected.recording`, by the row of the call.
@@ -111,6 +115,11 @@ LOCAL_MINUTE = "%Y-%m-%dT%H:%M"
 # `note` im festen Wortlaut: der Allergiehinweis an die Kueche darf nicht still
 # wegfallen (E14, Codex PR #145, P1).
 ITEM_KEYS = frozenset({"number", "quantity", "options", "note"})
+# One entry of `expected.turns`: `line` counts the customer lines of the
+# transcript from 1; `tools` are entries as in `expected.tools`, `said` and
+# `never_said` pieces word for word, like the call-wide ones, in what the agent
+# said in that turn: no pattern over German words (AGENTS.md, #798).
+TURN_KEYS = frozenset({"line", "tools", "said", "never_said"})
 
 
 class CaseError(ValueError):
@@ -213,6 +222,14 @@ def validate_case(case: dict[str, Any], source: str) -> None:
         )
     if not isinstance(case.get("repeat_confirm", False), bool):
         raise CaseError(f"{source}: repeat_confirm ist true oder false")
+    if "turns" in case["expected"] and not _valid_turns(
+        case["expected"]["turns"], len(customer_lines(case))
+    ):
+        raise CaseError(
+            f"{source}: turns is a list of {{line, tools, said, never_said}}, "
+            "each line a customer line counted from 1 and named once, with at "
+            "least one assertion; said and never_said are lists of non-blank pieces"
+        )
     pending = case.get("pending")
     if pending is not None and (not isinstance(pending, str) or not pending.strip()):
         # Eine bekannte Luecke ohne Grund waere ein stilles Rot (docs/08 §3).
@@ -249,23 +266,53 @@ def _local_minute(entry: Any) -> bool:
 
 
 def _valid_tool(entry: Any) -> bool:
+    """A name, or `tool` with `number` (read from the result) or with `args`
+    (read from the call, needed next to `error`), never both: two records."""
     if isinstance(entry, str):
         return True
-    return (
+    if not (
         isinstance(entry, dict)
         and isinstance(entry.get("tool"), str)
         and set(entry) <= {"tool", "number", "error", "args"}
-        and not {"number", "error"} <= set(entry)
         and isinstance(entry.get("number", ""), str)
-        and (
-            "error" not in entry
-            or (
-                isinstance(entry["error"], str)
-                and bool(entry["error"].strip())
-                and _valid_call_args(entry.get("args"))
-            )
-        )
-        and ("args" not in entry or "error" in entry)
+    ):
+        return False
+    if "number" in entry and {"error", "args"} & set(entry):
+        return False
+    if "error" in entry and not (
+        isinstance(entry["error"], str) and entry["error"].strip() and "args" in entry
+    ):
+        return False
+    return "args" not in entry or _valid_call_args(entry["args"])
+
+
+def _valid_turns(turns: Any, lines: int) -> bool:
+    """`expected.turns`: each line of the transcript at most once, each entry
+    with at least one assertion, every piece a non-blank text."""
+    if not isinstance(turns, list) or not turns:
+        return False
+    if not all(isinstance(t, dict) and _valid_turn(t, lines) for t in turns):
+        return False
+    return len({t["line"] for t in turns}) == len(turns)
+
+
+def _valid_turn(turn: dict[str, Any], lines: int) -> bool:
+    line = turn.get("line")
+    if (
+        set(turn) - TURN_KEYS
+        or set(turn) == {"line"}
+        or type(line) is not int
+        or not 1 <= line <= lines
+    ):
+        return False
+    tools = turn.get("tools", ["any"])
+    if not isinstance(tools, list) or not tools or not all(map(_valid_tool, tools)):
+        return False
+    return all(
+        isinstance(pieces, list)
+        and pieces
+        and all(isinstance(p, str) and p.strip() for p in pieces)
+        for pieces in (turn.get(key, ["any"]) for key in ("said", "never_said"))
     )
 
 
@@ -298,6 +345,7 @@ def missing_tools(
     wanted: list[Any],
     ok_results: list[tuple[str, dict[str, Any]]],
     error_results: Sequence[tuple[str, str, dict[str, Any]]] = (),
+    ok_calls: Sequence[tuple[str, dict[str, Any]]] = (),
 ) -> list[Any]:
     """Erwartete Tool-Aufrufe ohne erfolgreiches Ergebnis. Mit `number` nur,
     wenn das Ergebnis genau dieses Gericht betrifft: Allergene der 24 beantworten
@@ -306,7 +354,8 @@ def missing_tools(
     With `error` the tool has to have rejected with exactly that code
     (`check_delivery` with `out_of_zone`): "nothing booked" alone does not prove
     that the rule was applied (Codex PR #162). And it has to be the call that
-    `args` names: a rejected check of another postal code is not that check."""
+    `args` names: a rejected check of another postal code is not that check.
+    Without `error`, `args` names a call that went through (`ok_calls`)."""
     missing = []
     for entry in wanted:
         if isinstance(entry, dict) and "error" in entry:
@@ -315,6 +364,13 @@ def missing_tools(
                 and code == entry["error"]
                 and _called_with(args, entry["args"])
                 for tool, code, args in error_results
+            ):
+                missing.append(entry)
+            continue
+        if isinstance(entry, dict) and "args" in entry:
+            if not any(
+                tool == entry["tool"] and _called_with(args, entry["args"])
+                for tool, args in ok_calls
             ):
                 missing.append(entry)
             continue
@@ -330,6 +386,50 @@ def missing_tools(
         if not hit:
             missing.append(entry)
     return missing
+
+
+@dataclass
+class TurnSeen:
+    """One turn of the call: what the agent said in it, and the tool results
+    and calls the recorder took in during it (`evals/recorder.py`)."""
+
+    said: str
+    ok_results: list[tuple[str, dict[str, Any]]]
+    error_results: list[tuple[str, str, dict[str, Any]]]
+    ok_calls: list[tuple[str, dict[str, Any]]]
+
+
+def missed_turns(
+    wanted: Sequence[dict[str, Any]], lines: Sequence[str], seen: dict[int, TurnSeen]
+) -> list[str]:
+    """One difference per entry of `expected.turns` that did not hold, naming
+    the turn and the guest's line. A line the call never got to is red, not
+    skipped: the call ended before it, or the ear heard nothing of it."""
+    diffs = []
+    for want in wanted:
+        line = want["line"]
+        name = f'turn {line} ("{lines[line - 1]}")'
+        turn = seen.get(line)
+        if turn is None:
+            diffs.append(f"{name}: never played, the call ended or the ear missed it")
+            continue
+        missing = missing_tools(
+            want.get("tools", []), turn.ok_results, turn.error_results, turn.ok_calls
+        )
+        rejected = [m for m in missing if isinstance(m, dict) and "error" in m]
+        succeeded = [m for m in missing if m not in rejected]
+        found = []
+        if succeeded:
+            found.append(f"no successful call {succeeded}")
+        if rejected:
+            found.append(f"no rejection with this code of this call {rejected}")
+        found += [
+            f"never said {p!r}" for p in want.get("said", []) if p not in turn.said
+        ]
+        found += [f"said {p!r}" for p in want.get("never_said", []) if p in turn.said]
+        if found:
+            diffs.append(f"{name}: {'; '.join(found)}")
+    return diffs
 
 
 def offered_alternatives(
