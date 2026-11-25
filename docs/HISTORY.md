@@ -1957,6 +1957,14 @@ Fixed in one PR of #888 round 3 (`sim/scripted_order.py`, `sim/scripted_llm.py`,
 | Quantity of a replacement that is one of the offered dishes (`sim/scripted_order.py` `on_customer`, question branch) | Codex PR #178 (P2 on the merged head, rule 24.09.2026: recorded, not blocking): "Nein, lieber zwei Nummer 13" on "Meinen Sie Nummer 12 oder Nummer 13?" picks the 13 from the part after the rejection, but reads the quantity from the whole ... | with T-2.4 or the next sim change |
 | Scripted model takes a whole pickup order while pickup is closed (`sim/scripted_order.py`) | Eval suite T-5.2: at closing time or on the closed day the stand-in asks for dishes, name and phone and only `draft_order` says "Abholung ist gerade leider nicht möglich"; the outcome is right (nothing booked), the conversation is long. | with T-2.4 |
 
+## Open Points from Reviews (archive, tool-hop question fixed 25.11.2026)
+
+Fixed in one PR of #888 round 3: on a tool hop the state carries the sentence the guest's words answer as `guest_answered`, next to `guest_said` (`agent/loop.py` `_prompt_state`), never as `last_say`, which a real model said again word for word next to a tool result (13.10.2026). After a barge-in it is the part heard (#1040); with nothing heard it is absent. No sentence in the prompt contract: the core prompt has no room left in its token budget, and the name says it, as for `unheard_say`.
+
+| Point | Why still open | When due |
+|---|---|---|
+| A question answered in a turn that calls a tool is out of sight on the hop (`agent/loop.py` `_prompt_state`) | Codex on PR #291 (14.10.2026, P2): `last_say` is left off tool hops, so an answer the model did not write into `slots` before calling a tool loses its question. | Next T-2.4 round |
+
 ## Open Points from Reviews (archive, barge-in row fixed 25.11.2026)
 
 Fixed in one PR of #888 round 3: before the caller's words become a turn, the session reports the sentences they had not heard to their end (`CallEvents.on_unheard`: cut off by a barge-in, or not yet playing when they spoke), and `guards.note_unheard` keeps in `last_say` only what was heard, or none, and the rest in `unheard_say` for the model and the allergy readers; a read-back cut off is no read-back. Tests in `api/tests/test_agent_guards.py`, `api/tests/test_telephony_session.py`, `api/tests/test_telephony.py` and `api/tests/test_recording_consent.py`.

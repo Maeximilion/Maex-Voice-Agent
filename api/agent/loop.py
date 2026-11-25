@@ -1448,7 +1448,12 @@ class ConversationLoop:
             # tool result, a real model said it again word for word instead
             # of the read-back the tool had just delivered (13.10.2026). The
             # same for what the guest did not hear (`guards.note_unheard`).
-            data.pop("last_say", None)
+            # The question the guest's words answer stays in sight under its
+            # own name, or a "Für vier" not yet in `slots` loses it (Codex
+            # PR #291).
+            asked = data.pop("last_say", None)
+            if asked:
+                data["guest_answered"] = asked
             data.pop("unheard_say", None)
         if called:
             # Also within the turn only. A model sees one tool result at a

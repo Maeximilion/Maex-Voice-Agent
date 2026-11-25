@@ -1128,12 +1128,15 @@ def test_guest_sentence_rides_along_on_a_tool_hop(session, state):
     assert "guest_said" not in next_turn
 
 
-def test_last_sentence_reaches_the_next_turn_but_no_tool_hop(session, state):
+def test_last_sentence_reaches_the_next_turn_and_a_tool_hop_as_answered(session, state):
     """The guest's words answer the sentence that ended the last turn, so the
-    model reads them next to it. On a tool hop it is left out: next to a tool
-    result a real model said it again word for word instead of the read-back
-    the tool had delivered (first full eval run, 13.10.2026). The first
-    sentence of a call also counts as the greeting."""
+    model reads them next to it. On a tool hop it is no `last_say`: next to a
+    tool result a real model said it again word for word instead of the
+    read-back the tool had delivered (first full eval run, 13.10.2026). It
+    stands there as `guest_answered`, the question `guest_said` answers: a
+    "Für vier" the model did not write into `slots` before the tool call keeps
+    its question (Codex PR #291). The first sentence of a call also counts as
+    the greeting."""
     llm = FakeLLM(
         [
             LLMTurn(say="Für wie viele Personen?"),
@@ -1154,11 +1157,22 @@ def test_last_sentence_reaches_the_next_turn_but_no_tool_hop(session, state):
     assert second["last_say"] == "Für wie viele Personen?"
     assert second["greeted"] is True
     assert "last_say" not in hop
+    assert hop["guest_said"] == "Für vier"
+    assert hop["guest_answered"] == "Für wie viele Personen?"
+    # Gone with the turn, like `guest_said`.
+    assert "guest_answered" not in third
+    assert "guest_answered" not in first
 
-    # Nor what the guest did not hear to its end (Codex PR #291).
+    # Nor what the guest did not hear to its end (Codex PR #291): after a
+    # barge-in only the part heard is what the guest answered (#1040).
     state.unheard_say = "Und um wie viel Uhr?"
-    assert "unheard_say" not in loop._prompt_state(state, guest_said="Um sieben")
+    on_hop = loop._prompt_state(state, guest_said="Um sieben")
+    assert "unheard_say" not in on_hop
+    assert on_hop["guest_answered"] == "Gern."
     assert loop._prompt_state(state)["unheard_say"] == "Und um wie viel Uhr?"
+    # Heard nothing of it: the guest's words answer no sentence.
+    state.last_say = None
+    assert "guest_answered" not in loop._prompt_state(state, guest_said="Um sieben")
     # NOW is eight in the morning: closed, and known for the rest of the call.
     assert hop["service"] == {
         "is_open": False,

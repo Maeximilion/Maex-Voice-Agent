@@ -526,9 +526,10 @@ platform), then the answer format below. The compact state carries `now`, the lo
 with weekday ("Dienstag, 2026-09-15T18:00+02:00"): a model has no clock, and "morgen um
 sieben" or "am Samstag" need one. It is the same clock the tools get. While a guest turn
 runs over several tool calls, the input of a request is the last tool result; the state
-then also carries `guest_said`, the sentence the turn began with, and `called`, the names
-of the tools the model has called in this turn (a refused call and a refused `cart` included). Both are gone
-with the next turn. Without `called` a real model asked `get_service_status` again on its
+then also carries `guest_said`, the sentence the turn began with, `guest_answered`, the
+sentence of the last turn those words answer (`last_say` under its own name, below), and
+`called`, the names of the tools the model has called in this turn (a refused call and a
+refused `cart` included). All three are gone with the next turn. Without `called` a real model asked `get_service_status` again on its
 own result until the hop limit (seen 07.10.2026).
 
 **What stays across turns for a model that keeps nothing (first full eval run, 13.10.2026).**
@@ -544,7 +545,10 @@ transcript:
   is the start of a call, which is the only place the model greets (and not at all with
   `greeted`). An offer of several dishes is therefore in sight for the one turn that
   answers it, by name and card number, never with an id; the order still takes only dishes
-  the core knows (`guards.take_cart`).
+  the core knows (`guards.take_cart`). On a tool hop it is no `last_say`: next to a tool
+  result a real model said it again word for word instead of the read-back the tool had
+  delivered. It stands there as `guest_answered`, so a "Für vier" the model did not write
+  into `slots` before the tool call keeps its question (Codex PR #291).
 - `unheard_say`: on the phone, what the guest had not heard to its end when they spoke: they
   talked over it, or spoke before it began to play (`guards.note_unheard`, docs/20 §4).
   `last_say` then keeps only the part heard, or is absent mid-call (with `greeted`, so no
