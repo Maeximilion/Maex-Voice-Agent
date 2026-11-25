@@ -175,22 +175,29 @@ before naming a base.
 
 ## 4. What the coordinator does, and what it must not
 
-- Starts sessions only in a turn Maxi's own message began. A turn begun by a
-  child's note, a subagent's report, a timer or a background command cannot
-  start one, and an `AskUserQuestion` answer inside such a turn does not
-  change that; over Remote Control not even a proposal card shows. So: start
-  every item that is ready in the turn of his message, and when the next item
-  waits, say in one line that it starts with his next message. A scout
+- The chain never waits for Maxi's message (Maxi, 2026-11-25: "It shouldn't
+  wait for my message. /chain should be autonomiously as much as we set it.").
+  The app starts a session in a turn Maxi's message began, and in a
+  `<side-sessions-event>` turn (all side sessions idle) that follows his turn,
+  for the work he asked for; it refuses in a turn begun by one child's message,
+  a subagent's report, a timer or a background command (25.11.2026: "Start
+  sessions only on the user's own words"), and an `AskUserQuestion` answer
+  inside such a turn does not change that. So: start every item that is ready
+  in the first turn that allows it. When a start is refused and the next item
+  waits, the session whose own item has just reached "PR ready" (or stopped)
+  takes the next queue item itself on a new branch from `origin/main`, with the
+  brief the coordinator sends it; the coordinator archives it after that
+  item's merge. A scout
   agent's report turn is such a turn too, so sessions start in Maxi's turn,
   after the foreground scouts returned; only a late map follows by message
   (section 2, item 4).
 - Never asks Maxi whether to start the next item (Maxi, 2026-11-23: "Don't ask
   me ever again starting the Items / Side Sessions just do it because you are
   using /chain"). When a lane frees, the coordinator starts the next item in
-  that same turn; only when the app refuses the start does it wait for his next
-  message, and it says so in one line, never as a question.
-- Never routes a new task into an existing idle session to get around a
-  refused start.
+  that same turn, or in the first turn that allows a start, or hands it to the
+  session that has just finished (the item above); never as a question.
+- Never routes a new task into an unrelated idle session; only the session
+  whose own item has just finished takes the next one (Maxi, 2026-11-25).
 - Maxi away (AFK) changes only the decisions (Maxi, 2026-11-24: "The planned
   Items should start like when I would be here"): sessions take the best option
   and list it in the PR under "Claude's choice, awaiting Maxi"; money, law,
@@ -199,13 +206,16 @@ before naming a base.
   session before a lane is free for them (Maxi, 2026-11-25: "Planned items get
   a que order but not in side sessions just when a lane gets free the first in
   que gets the free lane and so on"; queued sessions waiting on the baton,
-  used on 24 and 25.11, made every hold and slow mode pause more sessions). In
-  every turn Maxi's message begins, the coordinator starts a fresh session for
-  the first items in order that fit a free lane (one item per session, Maxi,
-  2026-11-24 evening, popup "One item per session"). Since a note turn cannot
-  start a session, a lane that frees in such a turn stays empty until his next
-  message, and the coordinator sends him one push notification that the chain
-  waits for it. Context size never stops a session (Maxi, 2026-11-24: "Don't
+  used on 24 and 25.11, made every hold and slow mode pause more sessions). The
+  coordinator starts a fresh session for the first items in order that fit a
+  free lane, in the first turn that allows it (one item per session, Maxi,
+  2026-11-24 evening, popup "One item per session"); a lane that no allowed
+  turn can fill goes to the session that has just finished its item (the first
+  item of this section). Decisions while he is away: every choice is taken with
+  the best option; a big one (money, law, security design, production data, a
+  product behaviour he has not decided) also goes into the open "Decisions for
+  Maxi after chain ..." issue as it happens, which he reviews with popups at
+  the end of the round (Maxi, 2026-11-25). Context size never stops a session (Maxi, 2026-11-24: "Don't
   stop the chain any more"): no handover at 300k or 450k; auto compaction
   carries it, so it commits and pushes at every step and keeps its state in the
   PR and in files. "Nothing new"
