@@ -232,6 +232,13 @@ SAY_ORDER_DROPPED = (
 # The same for a table read back and not yet confirmed (own review of PR #369).
 SAY_TABLE_NOT_BOOKED = "Ihre Reservierung ist damit noch nicht bestätigt."
 SUMMARY_OPEN_TABLE = "Offene Reservierung, nicht bestätigt:"
+# An open order that was a delivery, with the address the guest gave in the
+# call: the team does not ask for it again when it calls back (docs/24).
+SUMMARY_DELIVERY = "Lieferung an"
+SUMMARY_DELIVERY_NO_ADDRESS = "Lieferung, keine Adresse genannt"
+# The most of a card an address takes: its slots come from the model, and
+# the order lines need the room (rule 5).
+_ADDRESS_MAX = 200
 # What an open table's card says for a draft no tool could read (#940).
 SUMMARY_TABLE_UNREAD = "Angaben mit dem Gast klären"
 # A table the domain refused in the same turn: no team can book it as it
@@ -1901,8 +1908,30 @@ def _with_open_order(state: ConversationState, summary: str, reserve: int = 0) -
     characters left for what follows it."""
     if not state.cart:
         return summary
-    head = f"{summary} {SUMMARY_OPEN_ORDER} "
+    head = f"{summary} {SUMMARY_OPEN_ORDER} {_delivery_to(state)}"
     return f"{head}{_order_lines(state, _SUMMARY_MAX - reserve - len(head) - 1)}."
+
+
+def _delivery_to(state: ConversationState) -> str:
+    """The way of an open delivery as the card names it, in front of its
+    lines where no cut at the card's end reaches it: the address from the
+    slots, in the order a driver reads it. A floor note that names the
+    guest's health is not on it (L13). Empty for any other order."""
+    if state.intent != "delivery":
+        return ""
+    slots = state.slots
+    floor = slots.get("floor_note")
+    if floor and _names_health(state, str(floor)):
+        floor = None
+    parts = (
+        f"{slots.get('street') or ''} {slots.get('house_number') or ''}",
+        f"{slots.get('postal_code') or ''} {slots.get('city') or ''}",
+        str(floor or ""),
+    )
+    address = ", ".join(p for part in parts if (p := " ".join(part.split())))
+    if not address:
+        return f"{SUMMARY_DELIVERY_NO_ADDRESS}; "
+    return f"{SUMMARY_DELIVERY} {address[:_ADDRESS_MAX].rstrip()}; "
 
 
 def _order_lines(state: ConversationState, room: int) -> str:
@@ -2256,8 +2285,10 @@ def _judged_again(state: ConversationState, card: str) -> str:
         end = min((at for at in ends if at >= 0), default=len(card))
         if _names_health(state, card[tail_at + len(_SAID_TAIL) : end]):
             card = card[:tail_at] + card[end:]
-    for note in (state.order_note, *(line.get("note") for line in state.cart)):
-        if note and _names_health(state, note):
+    floor = state.slots.get("floor_note") if state.intent == "delivery" else None
+    notes = (state.order_note, floor, *(line.get("note") for line in state.cart))
+    for note in notes:
+        if note and _names_health(state, note := str(note)):
             card = card.replace(note, SUMMARY_NOTE_TO_CLEAR)
     # A note shorter than the marker makes the card longer: over what a
     # callback takes it is refused and the guest lost (rule 5, #940 review).

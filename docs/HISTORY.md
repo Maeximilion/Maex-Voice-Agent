@@ -2518,3 +2518,11 @@ Fixed in one PR of #888 round 3 (migration 048, `evals/runner.py` `record`): eve
 | Point | Why still open | When due |
 |---|---|---|
 | Store eval runs in `eval_runs` (T-5.1) | docs/08 §3 asks for it; the table needs a migration, and PR #139 is renumbering 003/004. | with the migration after PR #139, latest before G2 |
+
+## Open Points from Reviews (archive, delivery on the handover card fixed 25.11.2026)
+
+Fixed in one PR of #888 round 3 (`api/agent/loop.py` `_delivery_to`): a card that names an open delivery says so and gives the address from the slots in front of its lines, or that none was given.
+
+| Point | Why still open | When due |
+|---|---|---|
+| A card of a handover does not say that the open order was a delivery (`agent/loop.py` `_with_open_order`) | An order that stands unplaced goes onto the card with its dishes; the address the guest gave stays in the slots and is not on it, so the team asks again when it calls back. | with T-6.8 |

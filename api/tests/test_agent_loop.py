@@ -39,6 +39,8 @@ from api.agent.loop import (
     SAY_TABLE_BOOKED,
     SAY_TABLE_NOT_BOOKED,
     SAY_TEAM_OFFER,
+    SUMMARY_DELIVERY,
+    SUMMARY_DELIVERY_NO_ADDRESS,
     SUMMARY_NOTE_TO_CLEAR,
     SUMMARY_OPEN_ORDER,
     SUMMARY_OPEN_TABLE,
@@ -56,6 +58,7 @@ from api.agent.loop import (
     _note_allergy_said,
     _order_lines,
     _still_open,
+    _with_open_order,
 )
 from api.agent.outcome import call_outcome
 from api.agent.state import ALLERGY_SAID_MAX, ConversationState, initial_state
@@ -3330,6 +3333,107 @@ def test_the_card_that_waited_drops_words_the_answer_made_health(session, state)
     card = session.scalars(select(Callback)).one().summary
     assert card.startswith(f"{SUMMARY_NOTE_TO_CLEAR}.")
     assert "Erdnüss" not in card and "Kunde sagte" not in card
+
+
+def _delivery(state: ConversationState) -> None:
+    pho = str(uuid.uuid4())
+    state.seen_items[pho] = {"number": "13", "name": "Pho Bo"}
+    state.cart = [{"menu_item_id": pho, "quantity": 1}]
+    state.intent = "delivery"
+
+
+def test_the_card_of_an_open_delivery_names_the_address(state):
+    """The address the guest gave stands on the card with the order: the team
+    calls back and does not ask for it again (docs/24, with T-6.8)."""
+    _delivery(state)
+    state.slots.update(
+        street="Hauptstraße",
+        house_number="5a",
+        postal_code="76530",
+        city="Musterstadt",
+        floor_note="3. Stock",
+    )
+
+    assert _with_open_order(state, "Kunde wollte mit einem Menschen sprechen.") == (
+        f"Kunde wollte mit einem Menschen sprechen. {SUMMARY_OPEN_ORDER} "
+        f"{SUMMARY_DELIVERY} Hauptstraße 5a, 76530 Musterstadt, 3. Stock; "
+        "1x 13 Pho Bo."
+    )
+
+
+def test_a_delivery_without_an_address_says_none_was_given(state):
+    _delivery(state)
+    state.slots.update(postal_code="76530")
+
+    assert f"{SUMMARY_DELIVERY} 76530; 1x 13 Pho Bo." in _with_open_order(state, "x")
+    state.slots.clear()
+    assert f"{SUMMARY_DELIVERY_NO_ADDRESS}; 1x 13 Pho Bo." in _with_open_order(
+        state, "x"
+    )
+
+
+def test_a_pickup_card_names_no_way(state):
+    _delivery(state)
+    state.intent = "pickup"
+    state.slots.update(street="Hauptstraße")
+
+    assert _with_open_order(state, "x") == f"x {SUMMARY_OPEN_ORDER} 1x 13 Pho Bo."
+
+
+def test_a_floor_note_that_names_health_stays_off_the_card(state):
+    """A card is kept for the period of a callback, the guest's health never
+    stands on it (L13)."""
+    _delivery(state)
+    state.slots.update(
+        street="Hauptstraße", floor_note="Erdnussallergie, bitte klingeln"
+    )
+    state.allergy_said = ["Ich habe eine Erdnussallergie."]
+
+    card = _with_open_order(state, "x")
+
+    assert f"{SUMMARY_DELIVERY} Hauptstraße; 1x 13 Pho Bo." in card
+    assert "Erdnuss" not in card
+
+
+def test_a_floor_note_the_answer_made_health_leaves_the_waiting_card(state):
+    """The card waited for a number before the guest's answer named the
+    allergy: the floor note that names it goes as an order's note does (L13)."""
+    _delivery(state)
+    state.slots.update(street="Hauptstraße", floor_note="wegen Erdnüssen klingeln")
+    card = _with_open_order(state, "x")
+    assert "wegen Erdnüssen klingeln" in card
+    state.allergy_said = ["Ich habe nämlich eine Erdnussallergie."]
+
+    judged = _judged_again(state, card)
+
+    assert "Erdnüss" not in judged and SUMMARY_NOTE_TO_CLEAR in judged
+
+
+def test_a_long_delivery_keeps_its_address_and_the_callback_bound(state):
+    """Thirty long lines: the lines give way, the address stays whole, and the
+    card stays inside what a callback takes (rule 5)."""
+    state.intent = "delivery"
+    for n in range(30):
+        dish = str(uuid.uuid4())
+        state.seen_items[dish] = {"number": str(n), "name": "Pho Bo Spezial " * 4}
+        state.cart.append({"menu_item_id": dish, "quantity": 1})
+    state.slots.update(street="Hauptstraße", house_number="5", city="Musterstadt")
+
+    card = _with_open_order(state, "x", reserve=100)
+
+    assert f"{SUMMARY_DELIVERY} Hauptstraße 5, Musterstadt; " in card
+    assert len(card) <= 900 and "1x 29" in card
+
+
+def test_an_address_longer_than_its_room_is_cut(state):
+    """Slots come from the model: an address of any length leaves room for
+    the order lines."""
+    _delivery(state)
+    state.slots.update(street="Hauptstraße " * 100)
+
+    card = _with_open_order(state, "x")
+
+    assert len(card) <= 1000 and card.endswith("; 1x 13 Pho Bo.")
 
 
 def test_a_note_of_the_waiting_card_the_answer_made_health_is_cleared(state):
