@@ -14,7 +14,7 @@ import json
 import logging
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, tzinfo
@@ -44,6 +44,7 @@ from api.agent.ladder import (
 )
 from api.agent.llm import LLMClient, LLMError, ToolCall
 from api.agent.state import (
+    ADDRESS_SLOTS,
     ALLERGY_SAID_MAX,
     ConversationState,
     RemedyOffer,
@@ -78,6 +79,7 @@ from api.domain.callbacks.transfer import SUMMARY_MISSED
 from api.domain.callbacks.transfer import (
     SUMMARY_NOTE_TO_CLEAR as SUMMARY_NOTE_TO_CLEAR,
 )
+from api.domain.delivery.address import same_address
 from api.domain.menu.details import SAY_ALLERGENS_LEAD, SAY_ALLERGENS_UNKNOWN
 from api.domain.menu.pos_convert import allergens_named, names_an_allergen
 from api.domain.menu.wishes import (
@@ -88,8 +90,9 @@ from api.domain.menu.wishes import (
 )
 from api.domain.ordering.readback import spoken_euro
 from api.domain.reservations.spoken import WEEKDAYS
-from api.models import Order, Reservation, Tenant
+from api.models import Address, Order, Reservation, Tenant
 from api.schemas.callbacks import CallbackReason
+from api.schemas.orders import OrderAddress
 from api.schemas.reservations import CheckSlotRequest
 from api.schemas.transfer import TransferReason
 
@@ -232,6 +235,22 @@ SAY_ORDER_DROPPED = (
 # The same for a table read back and not yet confirmed (own review of PR #369).
 SAY_TABLE_NOT_BOOKED = "Ihre Reservierung ist damit noch nicht bestätigt."
 SUMMARY_OPEN_TABLE = "Offene Reservierung, nicht bestätigt:"
+# An open order that was a delivery, with the address the guest gave in the
+# call: the team does not ask for it again when it calls back (docs/24).
+SUMMARY_DELIVERY = "Lieferung an"
+SUMMARY_DELIVERY_NO_ADDRESS = "Lieferung, keine Adresse genannt"
+# A known guest's stored address no draft stands with: the team finds it
+# under the number (L12: the call never says it).
+SUMMARY_ADDRESS_STORED = "gespeicherte Adresse vorhanden"
+SUMMARY_DELIVERY_STORED = f"{SUMMARY_DELIVERY_NO_ADDRESS}, {SUMMARY_ADDRESS_STORED}"
+# The draft's address next to another one the guest named in the call.
+SUMMARY_READ_BACK = "vorgelesen"
+SUMMARY_SAID_IN_CALL = "im Anruf genannt:"
+# A floor note that names the guest's health, in its place (L13).
+SUMMARY_FLOOR_NOTE_TO_CLEAR = "Lieferhinweis mit dem Gast klären"
+# The most of a card each part of an address takes: a slot holds what the
+# model wrote, and the order lines need the room (rule 5).
+_ADDRESS_PART_MAX = 120
 # What an open table's card says for a draft no tool could read (#940).
 SUMMARY_TABLE_UNREAD = "Angaben mit dem Gast klären"
 # A table the domain refused in the same turn: no team can book it as it
@@ -277,6 +296,17 @@ class TurnResult:
     state: ConversationState
     say: list[str] = field(default_factory=list)
     ended: bool = False
+
+
+@dataclass(frozen=True)
+class _Where:
+    """Where an open delivery goes, as its card names it (`_delivery_to`):
+    the address the guest said in the call, the unconfirmed draft's, which
+    the guest heard read back, and whether `find_customer` knew a stored one."""
+
+    said: Mapping[str, Any]
+    drafted: Mapping[str, Any] | None = None
+    stored: bool = False
 
 
 def _opening(state: ConversationState) -> list[str]:
@@ -1536,6 +1566,7 @@ class ConversationLoop:
                             state,
                             wish,
                             reserve=len(self._bookings_on_card(state) + _MARKER) + 2,
+                            where=self._delivery_address(state),
                         ),
                     ),
                 },
@@ -1852,7 +1883,8 @@ class ConversationLoop:
         head = summary or _HANDOFF_SUMMARIES.get(reason, _DEFAULT_HANDOFF_SUMMARY)
         said = _card_tail(detail)
         if open_named:
-            return _marked(state, _judged_again(state, head + said)), []
+            where = self._delivery_address(state)
+            return _marked(state, _judged_again(state, head + said, where)), []
         table = self._open_table(state) or table
         if table:
             label = (
@@ -1870,7 +1902,12 @@ class ConversationLoop:
         # adds: all of it stands on that card (#207, #764).
         bookings = self._bookings_on_card(state)
         reserve = len(said + marker + SUMMARY_MISSED + bookings) + 2
-        head = _marked(state, _with_open_order(state, head, reserve=reserve))
+        head = _marked(
+            state,
+            _with_open_order(
+                state, head, reserve=reserve, where=self._delivery_address(state)
+            ),
+        )
         # What stands open, each: a table and an order both (#940).
         not_booked = [
             say
@@ -1894,15 +1931,117 @@ class ConversationLoop:
             return ""
         return booked(self._session, state.tenant_id, state.call_id) or ""
 
+    def _delivery_address(self, state: ConversationState) -> _Where:
+        """Where an open delivery goes. While its draft stands unconfirmed:
+        the draft's address from the database, the one the guest heard read
+        back, said or stored (L12: a stored one is never said, the team reads
+        it on its card). While the draft waits for its yes it is the only
+        one: a word that changes the address takes the read-back away
+        (`apply_state_patch`). In any other stage, after the model's own
+        callback for one, the guest may have named another address since,
+        and the card names both. Without a draft: the address the guest said,
+        in the slots. A card waits for a number only without one, and
+        without one no draft exists: a card judged again (`_judged_again`)
+        has the same address."""
+        stored = bool(state.customer and state.customer.get("address_id"))
+        order = self._session.get(Order, state.order_id) if state.order_id else None
+        if order is not None and order.status == "draft" and order.address_id:
+            row = self._session.get(Address, order.address_id)
+            if row is not None:
+                same = state.stage == "readback_pending" or _same_place(
+                    row, state.slots
+                )
+                return _Where(
+                    said={} if same else state.slots,
+                    drafted={slot: getattr(row, slot) for slot in ADDRESS_SLOTS},
+                    stored=stored,
+                )
+        return _Where(said=state.slots, stored=stored)
 
-def _with_open_order(state: ConversationState, summary: str, reserve: int = 0) -> str:
+
+def _with_open_order(
+    state: ConversationState,
+    summary: str,
+    reserve: int = 0,
+    where: _Where | None = None,
+) -> str:
     """The card's sentence with the order that stands unplaced, if any (#207),
     fitted so the card stays inside what a callback takes, `reserve`
-    characters left for what follows it."""
+    characters left for what follows it. `where` is the address of a
+    delivery (`ConversationLoop._delivery_address`), the slots without one."""
     if not state.cart:
         return summary
-    head = f"{summary} {SUMMARY_OPEN_ORDER} "
+    head = f"{summary} {SUMMARY_OPEN_ORDER} {_delivery_to(state, where)}"
     return f"{head}{_order_lines(state, _SUMMARY_MAX - reserve - len(head) - 1)}."
+
+
+def _delivery_to(
+    state: ConversationState, where: _Where | None = None, judged: bool = True
+) -> str:
+    """The way of an open delivery as the card names it, in front of its
+    lines where no cut at the card's end reaches it: the address of `where`
+    (the slots without one), so the team does not ask for it again. A floor
+    note that names the guest's health stands as the note to clear (L13);
+    `judged` False leaves it as the card had it before the guest's last
+    words (`_judged_again`). Empty for any other order."""
+    if state.intent != "delivery":
+        return ""
+    if where is None:
+        stored = bool(state.customer and state.customer.get("address_id"))
+        where = _Where(said=state.slots, stored=stored)
+    said = _address_text(state, where.said, judged)
+    if where.drafted is not None:
+        text = _address_text(state, where.drafted, judged)
+        if said:
+            text += f" ({SUMMARY_READ_BACK}), {SUMMARY_SAID_IN_CALL} {said}"
+        return f"{SUMMARY_DELIVERY} {text}; "
+    if said:
+        stored_too = f", {SUMMARY_ADDRESS_STORED}" if where.stored else ""
+        return f"{SUMMARY_DELIVERY} {said}{stored_too}; "
+    if where.stored:
+        return f"{SUMMARY_DELIVERY_STORED}; "
+    return f"{SUMMARY_DELIVERY_NO_ADDRESS}; "
+
+
+def _address_text(
+    state: ConversationState, address: Mapping[str, Any], judged: bool
+) -> str:
+    """An address in the order a driver reads it: street and number, postal
+    code and city, floor note (`_delivery_to`)."""
+    floor = _slot_text(address, "floor_note")
+    if judged and floor and _names_health(state, floor):
+        floor = SUMMARY_FLOOR_NOTE_TO_CLEAR
+    parts = (
+        f"{_slot_text(address, 'street')} {_slot_text(address, 'house_number')}",
+        f"{_slot_text(address, 'postal_code')} {_slot_text(address, 'city')}",
+        floor,
+    )
+    return ", ".join(
+        part.strip()[:_ADDRESS_PART_MAX].rstrip() for part in parts if part.strip()
+    )
+
+
+def _slot_text(address: Mapping[str, Any], slot: str) -> str:
+    """A part of an address as one line of words. Only words and numbers are
+    an address: a slot holds what the model wrote, a list too."""
+    value = address.get(slot)
+    if isinstance(value, bool) or not isinstance(value, str | int):
+        return ""
+    return " ".join(str(value).split())
+
+
+def _same_place(row: Address, slots: Mapping[str, Any]) -> bool:
+    """Whether the slots name no address or the draft's again, as the draft
+    would find it (`same_address`)."""
+    said = {slot: _slot_text(slots, slot) for slot in ADDRESS_SLOTS}
+    if not any(text for slot, text in said.items() if slot != "floor_note"):
+        return True
+    with suppress(ValidationError):
+        named = OrderAddress.model_validate(
+            {**said, "floor_note": said["floor_note"] or None}
+        )
+        return same_address(row, named)
+    return False
 
 
 def _order_lines(state: ConversationState, room: int) -> str:
@@ -2240,7 +2379,9 @@ def _marked(state: ConversationState, card: str) -> str:
 _CARD_PARTS = (SUMMARY_OPEN_TABLE, SUMMARY_REFUSED_TABLE, SUMMARY_OPEN_ORDER)
 
 
-def _judged_again(state: ConversationState, card: str) -> str:
+def _judged_again(
+    state: ConversationState, card: str, where: _Where | None = None
+) -> str:
     """A card that waited for a callback number, judged again: it was judged
     against the sentences kept before the guest's answer, which may name the
     allergy (#940). The guest's words and a note of the order that name it now
@@ -2256,6 +2397,15 @@ def _judged_again(state: ConversationState, card: str) -> str:
         end = min((at for at in ends if at >= 0), default=len(card))
         if _names_health(state, card[tail_at + len(_SAID_TAIL) : end]):
             card = card[:tail_at] + card[end:]
+    # The way as the card had it, built the same way, so a floor note the
+    # answer made health is found whatever its blanks or its cut (`where`:
+    # the same address the card was written from).
+    written, judged = (
+        _delivery_to(state, where, judged=False),
+        _delivery_to(state, where),
+    )
+    if written != judged:
+        card = card.replace(written, judged)
     for note in (state.order_note, *(line.get("note") for line in state.cart)):
         if note and _names_health(state, note):
             card = card.replace(note, SUMMARY_NOTE_TO_CLEAR)
