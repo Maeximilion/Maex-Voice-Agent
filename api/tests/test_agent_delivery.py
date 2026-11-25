@@ -12,7 +12,7 @@ from api.agent import guards
 from api.agent.dispatch import TOOLS, dispatch
 from api.agent.intent import heard
 from api.agent.llm import FakeLLM, LLMTurn, ToolCall
-from api.agent.loop import ConversationLoop
+from api.agent.loop import SUMMARY_DELIVERY, ConversationLoop
 from api.agent.state import (
     apply_state_patch,
     apply_tool_result,
@@ -26,6 +26,7 @@ from api.domain.ordering.validation import SAY_DELIVERY_CLOSED
 from api.domain.status.config import set_delivery
 from api.models import (
     Address,
+    Callback,
     Customer,
     DeliveryZone,
     Order,
@@ -408,6 +409,49 @@ def test_no_stored_word_reaches_the_model_or_the_guest(session, tenant_id, call_
     seen = json.dumps(llm.calls, ensure_ascii=False, default=str) + " ".join(said)
     for stored in ("Müller", "Mueller", "Rheinstraße", "Musterdorf"):
         assert stored not in seen, stored
+
+
+def test_a_card_names_the_stored_address_the_draft_goes_to(session, tenant_id, call_id):
+    """A known guest said yes to the stored address and hung up on the
+    read-back: the team's card names that address, which the call never
+    said (L12), not one the slots held from before (deep review of item 16)."""
+    _, home = known(session, tenant_id)
+    dish = item(session, tenant_id, "23")
+    draft = _draft_args(dish, name=None, address_id=str(home.id))
+    del draft["customer"]["address"]
+    llm = Reader(
+        [
+            LLMTurn(tool_call=ToolCall("search_menu", {"query": "die 23"})),
+            LLMTurn(tool_call=ToolCall("find_customer", {})),
+            LLMTurn(say=SAY_SAME_ADDRESS),
+            LLMTurn(tool_call=ToolCall("draft_order", draft)),
+            LLMTurn(say="READBACK"),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "prompt", now=NOW)
+    state = _state(call_id, tenant_id)
+    loop.run_turn(state, "Zweimal die 23 liefern bitte.")
+    loop.run_turn(state, "Ja, dorthin.")
+    assert state.stage == "readback_pending"
+    state.slots.update(ADDRESS)
+
+    loop.offer_unanswered(state)
+
+    card = session.scalars(select(Callback)).one().summary
+    assert f"{SUMMARY_DELIVERY} Rheinstraße 54, 12345 Musterdorf; 2x 23" in card
+    assert "Lindenstraße" not in card
+
+
+def test_a_card_names_the_address_the_guest_said(session, tenant_id, call_id):
+    dish = item(session, tenant_id, "23")
+    loop = _reading_loop(session, [*_opening(dish), LLMTurn(say="READBACK")])
+    state = _state(call_id, tenant_id)
+    loop.run_turn(state, SENTENCE)
+
+    loop.offer_unanswered(state)
+
+    card = session.scalars(select(Callback)).one().summary
+    assert f"{SUMMARY_DELIVERY} Lindenstraße 12, 12345 Musterdorf; 2x 23" in card
 
 
 def test_a_recognized_customer_with_another_name_is_asked(session, tenant_id, call_id):

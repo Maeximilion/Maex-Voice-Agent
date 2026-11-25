@@ -2521,7 +2521,7 @@ Fixed in one PR of #888 round 3 (migration 048, `evals/runner.py` `record`): eve
 
 ## Open Points from Reviews (archive, delivery on the handover card fixed 25.11.2026)
 
-Fixed in one PR of #888 round 3 (`api/agent/loop.py` `_delivery_to`): a card that names an open delivery says so and gives the address from the slots in front of its lines, or that none was given.
+Fixed in one PR of #888 round 3 (`api/agent/loop.py` `_delivery_to`): a card that names an open delivery says so and gives its address in front of its lines: the unconfirmed draft's from the database (said or stored), else the one the guest said in the call, or that none was given.
 
 | Point | Why still open | When due |
 |---|---|---|

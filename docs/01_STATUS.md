@@ -178,7 +178,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.94 · 25.11.2026:** #888 round 3: a handover card that names an open delivery says so and gives the address the guest gave in the call, in front of the order lines, or that none was given; the docs/24 row moved to HISTORY (item 16)
+- **v2.69.94 · 25.11.2026:** #888 round 3: a handover card that names an open delivery says so and gives its address in front of the order lines: the unconfirmed draft's (said or stored, L12), else the one the guest said; a floor note that names health stands as a note to clear (L13), also on a card judged again; the docs/24 row moved to HISTORY (item 16)
 - **v2.69.93 · 25.11.2026:** #888 round 3: on a tool hop the model still sees the question the guest's words answer, as `answered_say` next to `guest_said`, so an answer not yet written into `slots` before a tool call keeps its question (Codex PR #291; the real-model comparison waits for the workbench model, #1050)
 - **v2.69.92 · 25.11.2026:** docs/24 sweep: three built rows moved to HISTORY, #888 B3 ticked, sync-main install noted
 - **v2.69.91 · 25.11.2026:** #888 round 3: every eval run is kept as one row in the new table `eval_runs` (migration 048): model, prompt version, case folder, tags, passed and failed, accuracy, verdict, the whole report and the commit `make eval` passes; the docs/24 row moved to HISTORY
