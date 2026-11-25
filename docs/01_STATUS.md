@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.80
+> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.82
 
 ---
 
@@ -178,7 +178,9 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.80 · 25.11.2026:** #888 round 3: words said before the caller heard the end of a sentence (a barge-in, or speech before the answer began to play) no longer answer it: `last_say` keeps only what was heard, the rest goes to the model as `unheard_say`, an answer to an allergy question talked over is still kept, and a read-back cut off is no read-back (Codex PR #291; two timing cases left in docs/24)
+- **v2.69.82 · 25.11.2026:** #888 round 3: words said before the caller heard the end of a sentence (a barge-in, or speech before the answer began to play) no longer answer it: `last_say` keeps only what was heard, the rest goes to the model as `unheard_say`, an answer to an allergy question talked over is still kept, and a read-back cut off is no read-back (Codex PR #291; two timing cases left in docs/24)
+- **v2.69.81 · 25.11.2026:** /chain: the ship lane archives each PR's build session right after its merge; new sessions start without a Remote Control link (Maxi)
+- **v2.69.80 · 25.11.2026:** #888 round 3: pjsip.conf drops endpoint_identifier_order, which on 22.12.0 only reordered the identifiers after ip; a test keeps identify_by=ip on every endpoint; the docs/24 row moved to HISTORY
 - **v2.69.79 · 25.11.2026:** fix: line endings of 411 files restored to LF (a commit of 25.11.2026 had written CRLF into them; content unchanged)
 - **v2.69.78 · 25.11.2026:** /chain: no planned item gets a session before a lane is free; a free lane goes first to a chain change (chain.md, dashboard), then to a waiting heavy step, then to the next planned item; big AFK decisions go into the round's decisions issue (Maxi)
 - **v2.69.77 · 25.11.2026:** #888 round 3: a tool the model calls on the phone line waits on the database no longer than its turn has left, all its statements together and never past the 2 s bound; a statement cut there ends the turn like a late answer (out_of_time)

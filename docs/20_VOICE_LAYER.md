@@ -329,9 +329,9 @@ on the old configuration: `100 Trying`, `200 OK`). Now:
   number on the list has no mailbox, or its forwarding on no answer is off (open point, §12).
   Unanswered at `TEAM_PHONE` too, the call becomes a callback card (T-10.8, below).
 - SIP only from the access: an ACL refuses every request from another address, IPv4 and IPv6,
-  before anything reads it, and the endpoint is identified by address alone (`identify_by=ip`; the
-  global `endpoint_identifier_order=ip` only puts the address first, Asterisk appends the
-  identifiers it leaves out, so every endpoint needs `identify_by=ip`). The ACL takes addresses,
+  before anything reads it, and the endpoint is identified by address alone (`identify_by=ip`; a
+  global `endpoint_identifier_order` cannot do it, as Asterisk appends the identifiers it leaves
+  out, so every endpoint needs `identify_by=ip`, kept by a test). The ACL takes addresses,
   not names, so `render.sh` looks `ACCESS_HOST` up once at the start: a name with `_sip._udp` SRV
   records counts with the servers they name, which the registration over our only transport, UDP,
   follows; its own A record is then used for nothing and stays out, as do servers for TCP and TLS

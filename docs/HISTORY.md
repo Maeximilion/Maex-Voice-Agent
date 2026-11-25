@@ -1963,6 +1963,13 @@ Fixed in one PR of #888 round 3: before the caller's words become a turn, the se
 | Point | Why still open | When due |
 |---|---|---|
 | `last_say` holds the whole sentence even when the caller talked over it (`agent/guards.py` `note_said`, `telephony/handler.py` `_turn`) | Codex on PR #291 (14.10.2026, P2): an interruptible sentence is stored before it is played, so after a barge-in the model reads the guest's words as the answer to words never heard. | With the barge-in work of the voice layer (T-10.x) |
+## Open Points from Reviews (archive, identifier order checked 25.11.2026)
+
+Checked in one PR of #888 round 3 on the own Asterisk 22.12.0 image (#1026): `pjsip show identifiers` lists `ip` first with and without the line; the line only moved `username` and `anonymous` behind `header`, `request_uri` and `auth_username`, and none of them can take the only endpoint, which has `identify_by=ip`. The `[global]` block is gone, and `api/tests/test_asterisk_pjsip_conf.py` keeps `identify_by=ip` on every endpoint.
+
+| Point | Why still open | When due |
+|---|---|---|
+| `[global]` with `endpoint_identifier_order=ip` may do nothing (`deploy/asterisk/conf/pjsip.conf`) | Ponytail review of PR #340 (P2), 20.10.2026: the block's own comment says it does not switch identification by the From user off, `identify_by=ip` on the endpoint does; and Asterisk's default order is believed to start with `ip` already ... | With the next telephony PR |
 ## Open Points from Reviews (archive, lock wait row fixed 25.11.2026)
 
 Fixed in one PR of #888 round 3 (`api/db.py` `bounded_by`, `api/agent/dispatch.py`, `api/agent/loop.py`, tests in `api/tests/test_db.py`, `test_turn_deadline.py` and `test_telephony.py`): every statement of a tool the model calls on the phone line waits no longer than what is left of the turn, never more than the line's 2 s, and a statement cut there is the tool's structured error `out_of_time`, on which the core ends the turn like after a late answer (outage sentence, transfer, or a callback where nobody answers).
