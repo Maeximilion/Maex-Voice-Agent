@@ -163,10 +163,10 @@ def test_the_model_is_not_asked_again_once_the_time_is_up(session, state, monkey
     loop = _loop(session, model, clock)
     dispatch = loop._dispatch
 
-    def slow_tool(state, name, args):
+    def slow_tool(state, name, args, **more):
         if name == "get_service_status":
             clock.now += 7.0
-        return dispatch(state, name, args)
+        return dispatch(state, name, args, **more)
 
     monkeypatch.setattr(loop, "_dispatch", slow_tool)
 
