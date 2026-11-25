@@ -28,6 +28,8 @@ down_revision: str | None = "047"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
+TZ = sa.DateTime(timezone=True)
+
 
 def upgrade() -> None:
     op.create_table(
@@ -35,7 +37,7 @@ def upgrade() -> None:
         sa.Column(
             "id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False
         ),
-        sa.Column("at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("at", TZ, nullable=False),
         sa.Column("model", sa.Text(), nullable=False),
         sa.Column("prompt_version", sa.Text(), nullable=False),
         sa.Column("suite", sa.Text(), nullable=False),
@@ -51,6 +53,8 @@ def upgrade() -> None:
         sa.Column("verdict", sa.Text(), nullable=False),
         sa.Column("details", postgresql.JSONB(), nullable=False),
         sa.Column("git_sha", sa.Text()),
+        sa.Column("created_at", TZ, server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", TZ, server_default=sa.text("now()"), nullable=False),
         sa.CheckConstraint("passed >= 0 AND failed >= 0", name="ck_eval_runs_counts"),
         sa.CheckConstraint(
             "accuracy >= 0 AND accuracy <= 1", name="ck_eval_runs_accuracy"

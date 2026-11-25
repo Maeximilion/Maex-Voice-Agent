@@ -21,6 +21,8 @@ COLUMNS = {
     "verdict",
     "details",
     "git_sha",
+    "created_at",
+    "updated_at",
 }
 
 INSERT = text(
@@ -81,7 +83,7 @@ def test_a_valid_row_goes_in_with_its_defaults(engine, scratch_db_url):
         {"passed": 0, "failed": -1, "accuracy": 0, "verdict": "bestanden"},
         {"passed": 1, "failed": 0, "accuracy": 1.5, "verdict": "bestanden"},
         {"passed": 1, "failed": 0, "accuracy": -0.1, "verdict": "bestanden"},
-        {"passed": 1, "failed": 0, "accuracy": 1, "verdict": "gruen"},
+        {"passed": 1, "failed": 0, "accuracy": 1, "verdict": "green"},
     ],
     ids=["passed", "failed", "accuracy_high", "accuracy_low", "verdict"],
 )

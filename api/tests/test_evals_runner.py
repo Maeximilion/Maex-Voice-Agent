@@ -212,9 +212,17 @@ EVAL_RUNS = sql_text(
 def _two_cases(folder: Path) -> Path:
     return write_cases(
         folder,
-        fall("gruen", ["Ich habe eine Beschwerde."], {"escalated": True}),
-        fall("rot", ["Einmal die 13 zum Abholen."], {"escalated": True}),
+        fall("green", ["Ich habe eine Beschwerde."], {"escalated": True}),
+        fall("red", ["Einmal die 13 zum Abholen."], {"escalated": True}),
     )
+
+
+def _rows(url: str) -> list[Any]:
+    engine = create_engine(url)
+    with engine.connect() as conn:
+        rows = list(conn.execute(EVAL_RUNS).all())
+    engine.dispose()
+    return rows
 
 
 def test_a_run_writes_one_row_to_eval_runs(migrated_db_url, tmp_path):
@@ -229,49 +237,49 @@ def test_a_run_writes_one_row_to_eval_runs(migrated_db_url, tmp_path):
         git_sha="abc123",
     )
 
-    engine = create_engine(migrated_db_url)
-    with engine.connect() as conn:
-        rows = conn.execute(EVAL_RUNS).all()
-    engine.dispose()
+    rows = _rows(migrated_db_url)
     assert len(rows) == 1
     row = rows[0]
     assert row.at == stamp
-    assert (row.model, row.prompt_version, row.suite) == ("scripted", "v3", "suite")
+    assert (row.model, row.prompt_version) == ("scripted", "v3")
+    assert row.suite == runner.suite_name(cases)
     assert row.tags == []
     assert (row.passed, row.failed) == (1, 1)
     assert float(row.accuracy) == 0.5
     assert row.verdict == report.verdict == "durchgefallen"
     assert row.git_sha == "abc123"
-    # The whole report: every case with what it expected and what it got.
+    # The whole report: every case with its result and its differences.
     assert row.details == json.loads(json.dumps(report.to_json()))
-    assert [c["id"] for c in row.details["cases"]] == ["gruen", "rot"]
+    assert [c["id"] for c in row.details["cases"]] == ["green", "red"]
+    assert row.details["cases"][1]["diffs"]
 
 
 def test_every_run_adds_its_own_row(migrated_db_url, tmp_path):
     cases = _two_cases(tmp_path / "suite")
-    for hour in (9, 10):
+    stamps = [datetime(2026, 11, 25, hour, 0, tzinfo=UTC) for hour in (9, 10)]
+    for stamp in stamps:
         run(
             migrated_db_url,
             cases,
             tmp_path / "r",
-            stamp=datetime(2026, 11, 25, hour, 0, tzinfo=UTC),
+            stamp=stamp,
             record_url=migrated_db_url,
             tags=["test"],
         )
-    engine = create_engine(migrated_db_url)
-    with engine.connect() as conn:
-        rows = conn.execute(EVAL_RUNS).all()
-    engine.dispose()
-    assert [r.at.hour for r in rows] == [9, 10]
+    rows = _rows(migrated_db_url)
+    assert [r.at for r in rows] == stamps
     assert all(r.tags == ["test"] and r.git_sha is None for r in rows)
 
 
-def test_a_run_without_a_record_url_writes_no_row(migrated_db_url, tmp_path):
+def test_a_run_without_a_record_url_records_nothing(
+    migrated_db_url, tmp_path, monkeypatch
+):
+    def no_record(*args, **kw):
+        raise AssertionError("run() recorded without a record_url")
+
+    monkeypatch.setattr(runner, "record", no_record)
     run(migrated_db_url, _two_cases(tmp_path / "suite"), tmp_path / "r")
-    engine = create_engine(migrated_db_url)
-    with engine.connect() as conn:
-        assert conn.execute(EVAL_RUNS).all() == []
-    engine.dispose()
+    assert _rows(migrated_db_url) == []
 
 
 def test_a_record_that_fails_warns_and_keeps_the_verdict(
@@ -280,12 +288,61 @@ def test_a_record_that_fails_warns_and_keeps_the_verdict(
     # scratch_db_url has no schema: like a stack database not migrated to 048.
     cases = write_cases(
         tmp_path / "suite",
-        fall("gruen", ["Ich habe eine Beschwerde."], {"escalated": True}),
+        fall("green", ["Ich habe eine Beschwerde."], {"escalated": True}),
     )
     report = run(migrated_db_url, cases, tmp_path / "r", record_url=scratch_db_url)
     assert report.verdict == "bestanden"
     assert list((tmp_path / "r").glob("eval_*.json"))
     assert "not recorded in eval_runs: UndefinedTable" in capsys.readouterr().err
+
+
+def _empty_report() -> RunReport:
+    report = RunReport(run_at="", model="scripted", tags=[], cases=[])
+    report.verdict = "bestanden"
+    return report
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["postgresql+psycopg://u:p@localhost:notaport/db", "nodriver://u@h/db"],
+    ids=["bad_port", "unknown_driver"],
+)
+def test_a_record_url_that_cannot_connect_only_warns(url, capsys):
+    runner.record(
+        _empty_report(), url, at=datetime.now(UTC), suite="cases", git_sha=None
+    )
+    assert "not recorded in eval_runs" in capsys.readouterr().err
+
+
+def test_a_record_behind_a_lock_gives_up_instead_of_hanging(
+    migrated_db_url, monkeypatch, capsys
+):
+    # A migration holds the table: the row waits a moment, then the run goes on.
+    monkeypatch.setattr(runner, "RECORD_LOCK_TIMEOUT", "200ms")
+    engine = create_engine(migrated_db_url)
+    with engine.connect() as holder:
+        holder.execute(sql_text("LOCK TABLE eval_runs IN ACCESS EXCLUSIVE MODE"))
+        runner.record(
+            _empty_report(),
+            migrated_db_url,
+            at=datetime.now(UTC),
+            suite="cases",
+            git_sha=None,
+        )
+        holder.rollback()
+    engine.dispose()
+    assert "not recorded in eval_runs: LockNotAvailable" in capsys.readouterr().err
+    assert _rows(migrated_db_url) == []
+
+
+def test_the_suite_is_named_like_its_report_folder(tmp_path, monkeypatch):
+    evals = Path(runner.__file__).parent
+    assert runner.suite_name(evals / "cases") == "cases"
+    assert runner.suite_name(evals / "targets") == "targets"
+    elsewhere = runner.suite_name(tmp_path / "targets")
+    assert elsewhere.startswith("targets_")
+    monkeypatch.chdir(evals / "targets")
+    assert runner.suite_name(Path(".")) == "targets"
 
 
 @pytest.mark.parametrize(("given", "sha"), [("abc123", "abc123"), ("", None)])
@@ -294,9 +351,7 @@ def test_main_records_into_the_stack_database(monkeypatch, given, sha):
 
     def fake_run(**kw):
         seen.update(kw)
-        report = RunReport(run_at="", model="scripted", tags=[], cases=[])
-        report.verdict = "bestanden"
-        return report
+        return _empty_report()
 
     monkeypatch.setattr(runner, "run", fake_run)
     assert runner.main(["--git-sha", given]) == 0

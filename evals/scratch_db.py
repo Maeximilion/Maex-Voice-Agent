@@ -3,7 +3,9 @@
 Beide dürfen die Entwicklungs- oder Betriebsdaten nie berühren. Eine eigene
 Datenbank je Lauf, frisch migriert, danach gelöscht. Früher in
 `api/tests/conftest.py`; hier, damit `evals/runner.py` denselben Weg nimmt, ohne
-aus dem Testpaket zu importieren.
+aus dem Testpaket zu importieren. The eval CLI adds one row per run to
+`eval_runs` of the database of DATABASE_URL after it (`evals/runner.py`
+`record`, docs/08 §3); nothing else outside the scratch database is written.
 """
 
 import uuid

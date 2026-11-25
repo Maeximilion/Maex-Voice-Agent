@@ -15,10 +15,10 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from api.models.base import Base, UUIDPrimaryKey
+from api.models.base import Base, Timestamps, UUIDPrimaryKey
 
 
-class EvalRun(UUIDPrimaryKey, Base):
+class EvalRun(UUIDPrimaryKey, Timestamps, Base):
     __tablename__ = "eval_runs"
     __table_args__ = (
         CheckConstraint("passed >= 0 AND failed >= 0", name="ck_eval_runs_counts"),
