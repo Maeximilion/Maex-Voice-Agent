@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.92
+> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.93
 
 ---
 
@@ -178,7 +178,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.92 · 25.11.2026:** #888 round 3: on a tool hop the model still sees the question the guest's words answer, as `guest_answered` next to `guest_said`, so an answer not yet written into `slots` before a tool call keeps its question (Codex PR #291)
+- **v2.69.93 · 25.11.2026:** #888 round 3: on a tool hop the model still sees the question the guest's words answer, as `guest_answered` next to `guest_said`, so an answer not yet written into `slots` before a tool call keeps its question (Codex PR #291)
+- **v2.69.92 · 25.11.2026:** docs/24 sweep: three built rows moved to HISTORY, #888 B3 ticked, sync-main install noted
 - **v2.69.91 · 25.11.2026:** #888 round 3: every eval run is kept as one row in the new table `eval_runs` (migration 048): model, prompt version, case folder, tags, passed and failed, accuracy, verdict, the whole report and the commit `make eval` passes; the docs/24 row moved to HISTORY
 - **v2.69.90 · 25.11.2026:** Dialplan: a caller who hangs up after the handover and before a team leg answers gets a callback card that says so (extension h, left=1; #888 round 3 item 10, rule 5)
 - **v2.69.89 · 25.11.2026:** /chain rewritten: a one-screen coordinator loop, every planned item gets a session in each of Maxi's turns (queued ones wait on the baton), modes and pacing as one table, one-line rules; shared item-session rules versioned in .claude/chain/brief-common.md; the old text with Maxi's quotes archived in HISTORY (item 25)
