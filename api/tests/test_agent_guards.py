@@ -1096,6 +1096,8 @@ def test_a_safety_promise_about_a_frei_dish_still_counts():
         "Die 23 ist eine glutenfreie Variante.",
         "Wir haben auch laktosefreies Eis.",
         "Das sind nussfreien Gerichte.",
+        # Deep review of #997: the allergy's own "-frei" was missing.
+        "Die 13 ist übrigens allergiefrei.",
     ],
 )
 def test_an_inflected_or_turned_absence_claim_is_refused(say):

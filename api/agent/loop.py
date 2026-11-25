@@ -787,9 +787,12 @@ class ConversationLoop:
                         # Rows 3 and 6: back to the model once.
                         allergen_back = True
                         dish_back = refused is guards.ALLERGY_DISH
-                        # Refused only for the dish it names, no allergen word.
-                        dish_only = dish_back and not guards.unlicensed(
-                            aturn, state, say
+                        # Refused only for the dish it names: no allergen word,
+                        # licensed or not (Maxi: R1; deep review of #997).
+                        dish_only = (
+                            dish_back
+                            and not guards.unlicensed(aturn, state, say)
+                            and not guards.own_allergens(aturn, state, say)
                         )
                         called.append(SAY)
                         pending_input = _tool_result_as_input(SAY, refused, zone)

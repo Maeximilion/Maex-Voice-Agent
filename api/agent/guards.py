@@ -264,7 +264,7 @@ def note_said(state: ConversationState, say: str) -> None:
 # sentence they miss reaches the guest, so the prompt forbids the claim too.
 _ALWAYS = re.compile(
     r"keine verl(?:ä|ae)ssliche auskunft"
-    r"|(?:allergen|spuren|gluten|laktose|lactose|nuss|sesam|soja|milch|sellerie"
+    r"|(?:allergen|allergie|spuren|gluten|laktose|lactose|nuss|sesam|soja|milch|sellerie"
     r"|senf|lupinen|sulfit|weizen|fisch)frei(?:e[mnrs]?)?\b|\beie?r?frei(?:e[mnrs]?)?\b"
 )
 # Safety and separate preparation: a claim in a call that speaks of
@@ -715,6 +715,12 @@ ALLERGY_CALL = ToolResult(ok=False, error_code="invalid_input", hint=HINT_ALLERG
 # Allergiker geeignet"). The guest's own allergy ("Ihre Allergie") is no such
 # word.
 _ALLERGEN_TALK = re.compile(r"allergen|allergiker", re.IGNORECASE)
+# The model's words for the guest's allergy that the guest's readers leave
+# out on purpose ("gut verträglich", "worauf Sie reagieren", "Was Sie meiden
+# müssen") (deep review of #997).
+_ALLERGY_TALK = re.compile(
+    r"allerg|vertr(?:ä|ae|a)g|reagier|intoleran|\bmeiden\b", re.IGNORECASE
+)
 # The letter coeliac disease names in a note ("Zöliakie, ohne Gluten").
 _GLUTEN = allergens_named("Gluten")
 _WORDS = re.compile(r"\w")
@@ -1120,23 +1126,52 @@ def about_a_dish(
     sehr gern. Ja, die können Sie essen."), and the turn took no order step;
     with an order step only when its own words speak of the allergy too ("Bei
     Ihrer Allergie ist die 13 kein Problem", next to the `cart` the model
-    writes for every dish a search found clearly) (deep review of #928)."""
+    writes for every dish a search found clearly) (deep review of #928), in
+    the words the retry is held for ("gut verträglich", deep review of
+    #997)."""
     own = _without_core(turn, state, say)
     if _WORDS.search(own) is None:
         return False
     if not _dishes_said(state, _with_search_says(turn, say, own)):
         return False
-    return not changed or mentions_allergy(own) or names_coeliac(own)
+    return not changed or _allergy_words(own)
+
+
+def _allergy_words(own: str) -> bool:
+    """Do the model's own words speak of the guest's allergy: an allergy word
+    the guest's readers know, coeliac disease, or a word of tolerance they
+    leave out (`_ALLERGY_TALK`)?"""
+    return bool(
+        mentions_allergy(own) or names_coeliac(own) or _ALLERGY_TALK.search(own)
+    )
 
 
 def speaks_of_the_allergy(
     turn: AllergenTurn, state: ConversationState, say: str
 ) -> bool:
-    """Do the model's own words of `say` speak of the guest's allergy ("Bei
-    Ihrer Allergie ...")? Holds a retry after a refusal for a dish again
-    (#928, Maxi: R1)."""
-    own = _without_core(turn, state, say)
-    return mentions_allergy(own) or names_coeliac(own)
+    """Do the model's own words of `say` speak of the guest's allergy: a word
+    of it ("Bei Ihrer Allergie ...", "Was Sie meiden müssen ...", "gut
+    verträglich"), or an allergen (`own_allergens`: "Ja, die ist ohne
+    Erdnüsse") that the order text of the turn does not name? Holds a retry
+    after a refusal for a dish again (#928, Maxi: R1). An allergen the order
+    step names is the dish read back ("die 47 mit Erdnuss" next to that
+    line), checked by `unlicensed` as in a first answer (deep review of
+    #997)."""
+    if _allergy_words(_without_core(turn, state, say)):
+        return True
+    return bool(own_allergens(turn, state, say) - _order_codes(turn, state))
+
+
+def own_allergens(turn: AllergenTurn, state: ConversationState, say: str) -> set[str]:
+    """The allergen letters the model's own words of `say` name outside a
+    whole dish name, licensed or not. `unlicensed` licenses one by the dish's
+    own text or, in a sentence without a dish, by the whole turn's menu text:
+    the 47's option "Erdnuss" licensed "Die 47 hat keine Erdnüsse" as a
+    refusal for the dish alone and "Ja, die ist ohne Erdnüsse" as its retry
+    (deep review of #997).
+    shortcut: an option name counts ("die 47 mit Erdnuss"), so a refused
+    sentence that names one keeps the strict retry of before R1."""
+    return allergens_named(_without_dish_names(state, _without_core(turn, state, say)))
 
 
 def states_a_price(turn: AllergenTurn, state: ConversationState, say: str) -> bool:
