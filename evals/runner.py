@@ -494,13 +494,16 @@ def record(
                     accuracy=round(report.accuracy, 4),
                     verdict=report.verdict,
                     details=report.to_json(),
-                    git_sha=git_sha or None,
+                    git_sha=git_sha,
                 )
             )
             session.commit()
     except SQLAlchemyError as exc:
+        # The driver's error names the cause (UndefinedTable before 048); the
+        # message itself would carry the whole report as a bound parameter.
+        cause = type(getattr(exc, "orig", None) or exc).__name__
         print(
-            f"warning: the run was not recorded in eval_runs: {type(exc).__name__}",
+            f"warning: the run was not recorded in eval_runs: {cause}",
             file=sys.stderr,
         )
     finally:

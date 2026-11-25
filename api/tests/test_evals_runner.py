@@ -285,7 +285,7 @@ def test_a_record_that_fails_warns_and_keeps_the_verdict(
     report = run(migrated_db_url, cases, tmp_path / "r", record_url=scratch_db_url)
     assert report.verdict == "bestanden"
     assert list((tmp_path / "r").glob("eval_*.json"))
-    assert "not recorded in eval_runs" in capsys.readouterr().err
+    assert "not recorded in eval_runs: UndefinedTable" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(("given", "sha"), [("abc123", "abc123"), ("", None)])
