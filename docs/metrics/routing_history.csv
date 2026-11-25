@@ -179,3 +179,4 @@ date,task,split,session,model,calls,input,cache_write,cache_write_1h,cache_read,
 2026-11-25,#972-review,yes,d9797c08-4c1b-4ab6-98fd-221c1d8f3efc,claude-opus-5-5,375,752,1861390,511537,82583151,596654,13952727
 2026-11-25,#888-r3-identifier-order,no,9ec77431-8d49-42aa-a720-b7d7453d9edd,claude-opus-5-5,41,82,131139,131139,6020477,21451,971663
 2026-11-25,#888-r3-identifier-order,no,9ec77431-8d49-42aa-a720-b7d7453d9edd,claude-sonnet-5-5,1,2,81248,0,0,149,102307
+2026-11-25,#888-r3-turn-assertions,no,5447d4db-b4ae-4114-9bba-6e9f5f53d82d,claude-opus-5-5,86,172,214208,214208,18328880,55342,2538186

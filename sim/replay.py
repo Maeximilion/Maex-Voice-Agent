@@ -81,11 +81,12 @@ def replay(
     if case.get("recording"):
         call.state.recording = "asked"
     turns = []
-    for line in customer_lines(case):
+    for number, line in enumerate(customer_lines(case), start=1):
         heard = hear(line) if hear else line
         if heard is None:
             continue
         turn = call.say(noisy_text(heard, noise, rng))
+        turn.line = number
         turns.append(turn)
         if on_turn:
             on_turn(turn)
