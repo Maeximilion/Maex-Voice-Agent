@@ -2,6 +2,7 @@
 against a scratch operator database, with a software authenticator
 (`passkey_device.py`) in place of the operator's device."""
 
+import copy
 import json
 import re
 import threading
@@ -626,9 +627,9 @@ def test_garbage_in_a_passkey_sign_in_never_fails_the_server(
 
 
 def test_three_failed_passkey_sign_ins_bring_the_wait(client, factors, clock):
-    device = _with_passkey(client, factors, clock)
     """Passkeys that do not hold count on the account and the address; one
     that holds counts on its own and passes their wait (#990)."""
+    device = _with_passkey(client, factors, clock)
     for _ in range(3):
         _refused(client, _passkey_sign_in(client, device, verified=False))
     wait = web.WAIT.format(minutes=1)
@@ -2318,13 +2319,15 @@ def test_a_first_passkey_registered_while_a_code_step_up_waited_refuses_it(
 # --- #958, #990: a passkey skips the wait a guesser keeps running ---
 
 GUESS = "not the password at all"
+# The guesser's own address, so only the account's wait reaches the operator.
+ELSEWHERE = ("203.0.113.9", 50000)
 
 
-def _guesser_keeps_the_account_waiting(clock) -> None:
+def _guesser_keeps_the_account_waiting(clock, client=None) -> None:
     """Three wrong passwords from a browser of its own, which knows only the
-    account name (#927): the account's wait runs, and so does the address's,
-    since the test client sends every browser from the same address."""
-    guesser = TestClient(web.app)
+    account name (#927): the account's wait runs, and the address's too when
+    the guesser shares the operator's address (the test client's default)."""
+    guesser = TestClient(web.app, client=client) if client else TestClient(web.app)
     for _ in range(3):
         answer = _sign_in(guesser, "000000", password=GUESS)
         assert answer.status_code == 401
@@ -2332,25 +2335,27 @@ def _guesser_keeps_the_account_waiting(clock) -> None:
     assert web.WAIT.format(minutes=1) in answer.text
 
 
+@pytest.mark.parametrize("guesser", [None, ELSEWHERE], ids=["same", "elsewhere"])
 def test_a_passkey_signs_in_from_a_new_browser_while_a_guesser_keeps_the_wait(
-    client, factors, clock, sessions
+    client, factors, clock, sessions, guesser
 ):
     """Maxi, #990: who knows only the account name kept every browser without
     the device cookie waiting, the passkey included. A passkey that holds
     counts on its own, as a device cookie does, and signs in."""
     device = _with_passkey(client, factors, clock)
     client.cookies.clear()  # a new browser: no device cookie either
-    _guesser_keeps_the_account_waiting(clock)
+    _guesser_keeps_the_account_waiting(clock, guesser)
     assert _passkey_sign_in(client, device).status_code == 303
     signed = _audited(sessions, "operator.signed_in")
     assert signed[-1].detail["factor"] == "passkey"
 
 
 def test_a_code_from_a_new_browser_still_meets_the_wait(client, factors, clock):
-    """A TOTP code is six digits a guesser can try, so it skips nothing."""
+    """A TOTP code is six digits a guesser can try, so it skips nothing: the
+    guesser's address is another one, so this is the account's wait."""
     _with_passkey(client, factors, clock)
     client.cookies.clear()
-    _guesser_keeps_the_account_waiting(clock)
+    _guesser_keeps_the_account_waiting(clock, ELSEWHERE)
     answer = _sign_in(client, _code(factors.totp_secret, clock.at))
     _refused(client, answer, web.WAIT.format(minutes=1))
 
@@ -2415,3 +2420,73 @@ def test_a_passkey_removed_while_the_password_was_checked_opens_nothing(
     monkeypatch.setattr(access, "verify_secret", the_passkey_goes_meanwhile)
     _refused(client, _passkey_sign_in(client, device))
     assert _audited(sessions, "operator.signed_in")[-1].detail["factor"] == "totp"
+
+
+def test_a_passkey_steps_up_while_a_guesser_keeps_the_wait(
+    client, factors, clock, sessions
+):
+    """The step-up counts the account too (#888 A3), so after the bypass
+    sign-in the guesser's wait refused the passkey step-up that every factor
+    change needs (deep review of #990). A passkey that holds counts alone there
+    as well; the guesser's count stays."""
+    device = _with_passkey(client, factors, clock)
+    client.cookies.clear()
+    _guesser_keeps_the_account_waiting(clock)
+    assert _passkey_sign_in(client, device).status_code == 303
+    _passkey_step_up(client, device)
+    assert _operator(client, sessions, clock).fresh_for_factors(clock.at, True)
+    with sessions() as db:
+        account = db.scalars(select(OperatorAccount)).one()
+        assert account.blocked_until is not None and account.blocked_until > clock.at
+
+
+def test_a_passkey_step_up_that_does_not_hold_meets_the_wait(client, factors, clock):
+    device = _with_passkey(client, factors, clock)
+    client.cookies.clear()
+    _guesser_keeps_the_account_waiting(clock)
+    assert _passkey_sign_in(client, device).status_code == 303
+    asked = _post(client, "/step-up/passkey/options")
+    bent = device.get(asked.text, ORIGIN, verified=False)
+    answer = _post(client, "/step-up", passkey=bent)
+    assert answer.status_code == 401
+    assert web.WAIT.format(minutes=1) in answer.text
+
+
+def test_a_counter_jump_with_a_wrong_password_moves_nothing(
+    client, factors, clock, sessions
+):
+    """The passkey is checked before the password, but recorded only once the
+    password held: a cloned key's counter jump posted with a wrong password
+    must not make the real device a copy for good (deep review of #990)."""
+    device = _with_passkey(client, factors, clock)
+    before = _rows(sessions)[0]
+    clone = copy.copy(device)  # the same key, a counter of its own
+    jumped = _passkey_sign_in(client, clone, password=GUESS, sign_count=2**32 - 1)
+    _refused(client, jumped)
+    after = _rows(sessions)[0]
+    assert (after.sign_count, after.last_used_at) == (
+        before.sign_count,
+        before.last_used_at,
+    )
+    assert _passkey_sign_in(client, device).status_code == 303
+
+
+def test_a_counter_moved_while_the_password_was_checked_is_seen(
+    client, factors, clock, sessions, monkeypatch
+):
+    """The first check leaves the passkey's row in the session; the second,
+    after the password, must read the counter another answer committed
+    meanwhile, or a copy racing the real device would pass unseen."""
+    device = _with_passkey(client, factors, clock)
+
+    def a_copy_signs_in_meanwhile(password, stored):
+        with sessions() as db:
+            row = db.scalars(select(OperatorPasskey)).one()
+            row.sign_count += 5
+            db.commit()
+        return verify_secret(password, stored)
+
+    monkeypatch.setattr(access, "verify_secret", a_copy_signs_in_meanwhile)
+    _refused(client, _passkey_sign_in(client, device))
+    failed = _audited(sessions, "operator.sign_in_failed")
+    assert failed[-1].detail["reason"] == "counter"

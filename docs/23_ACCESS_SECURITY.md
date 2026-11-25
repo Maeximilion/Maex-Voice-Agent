@@ -178,7 +178,8 @@ counters. So each attempt without a known device also counts on its /48 (#962), 
 30th failure in a row (the same 1 to 5 minutes): a spray of made-up names from one /48 reaches the
 hash 30 times, then at most 30 times per 5 minutes, about 2 seconds of scrypt (69 ms a run,
 measured) instead of roughly 650 runs a second. Every attempt counts there, a known name too, so the
-wait tells no names; a right sign-in forgets its /48 as it does its address. The price: while a
+wait tells no names; a right sign-in without a passkey that holds forgets its /48 as it does its
+address and the account's count (a passkey's leaves them to the guesser's waits, #990). The price: while a
 spray holds the operator's own /48, a new browser there waits too; a browser with the device
 cookie counts alone and signs in, and so does a passkey that holds (#990, below). Left open: an attacker with many /48s (a /32) or many IPv4
 addresses still meets a fresh count in each. An unknown name still costs the dummy hash, so the
@@ -201,9 +202,11 @@ browser (a device cookie, as in §6, so a guesser cannot keep the operator out o
 browser; who knows only the account name can keep the account-wide wait running with three
 wrong passwords every five minutes, #927, so a sign-in with a passkey that holds counts on that
 passkey alone and skips the waits of the account, the address and its /48 (Maxi, #990: the
-passkey is checked under the account's row before the password, and looked for again before the
-session opens, so one removed meanwhile opens nothing): a passkey cannot be guessed, and a stolen
-authenticator guessing the password meets its own wait ladder. A passkey that does not hold, a
+passkey is only checked under the account's row before the password, and checked again and
+recorded once the password held, so one removed meanwhile opens nothing and a cloned key's counter
+jump posted with a wrong password moves no counter): a passkey cannot be guessed, and a stolen
+authenticator guessing the password meets its own wait ladder, beside the account's that anyone
+can use. A passkey that does not hold, a
 TOTP code and a recovery code count as before, so a browser without the device cookie and
 without a passkey still waits during such a burst, as does every browser right after a
 break-glass reset, which removes every passkey and forgets every device cookie: the trade-off §6
@@ -435,7 +438,9 @@ factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webau
   passkeys again once it holds the account's row, which a registration holds too, so a first
   passkey committed meanwhile refuses the code as well (#966 d). Wrong answers there
   count and wait as at the sign-in, except that the account counts even when the browser brings
-  its device cookie, so the cookie gives no second wait (#888 A3); every third wrong one in a row
+  its device cookie, so the cookie gives no second wait (#888 A3), and a passkey that holds counts
+  on itself alone, as at the sign-in, so a guesser's account wait cannot refuse the step-up every
+  factor change needs (#990); every third wrong one in a row
   is pushed to `ops` (#888 A2). A stale request is sent to `/step-up` and back to a path of
   this site; a stale write is dropped, never replayed. Today it stands before a customer's call
   list, the log of one call and every step of a customer's manage page; the later parts name it
