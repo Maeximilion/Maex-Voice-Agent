@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.89
+> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.90
 
 ---
 
@@ -178,7 +178,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.89 · 25.11.2026:** Dialplan: a caller who hangs up while the team rings gets a callback card (extension h, #888 round 3 item 10, rule 5)
+- **v2.69.90 · 25.11.2026:** Dialplan: a caller who hangs up after the handover and before a team leg answers gets a callback card that says so (extension h, left=1; #888 round 3 item 10, rule 5)
+- **v2.69.89 · 25.11.2026:** /chain rewritten: a one-screen coordinator loop, every planned item gets a session in each of Maxi's turns (queued ones wait on the baton), modes and pacing as one table, one-line rules; shared item-session rules versioned in .claude/chain/brief-common.md; the old text with Maxi's quotes archived in HISTORY (item 25)
 - **v2.69.88 · 25.11.2026:** project settings allow seven read-only MCP tools (usage, PR status, session list/events/search/get, Graphify node) so they never prompt; from /fewer-permission-prompts
 - **v2.69.87 · 25.11.2026:** dependency: types-pyyaml 6.0.12.20261113 to 6.0.12.20261122 (Dependabot #1028)
 - **v2.69.86 · 25.11.2026:** /chain and /ship: a turn never ends on a pending CI, Codex or evals wait (exit 2 waits again, exit 3 gets one scoped @codex review); after PR ready the build session pushes no more; the coordinator checks codex_review.py and gh pr checks on every waiting note (Maxi)

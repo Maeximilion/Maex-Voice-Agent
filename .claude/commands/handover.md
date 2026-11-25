@@ -11,7 +11,7 @@ Only when unfinished work continues in a new session:
 - **Break with work left:** "PC shuts down at <time>" (park everything 15 minutes before), a pause over 45 minutes (ask how long), the idle check-in firing, 90 percent of the 5-hour window (name the reset time).
 - **A task cut in parts** on purpose.
 
-Under the chain option "no handover limit" neither context limit applies (`.claude/commands/chain.md` section 5a, Maxi 2026-11-18).
+In a chain neither context limit applies (`.claude/commands/chain.md` section 4, Maxi 2026-11-24: "Don't stop the chain any more").
 
 Not due: after a merged PR with nothing of the session left open (write the next start only, below); mid-task under 300k; a break with nothing left open (push, say so in one line).
 
