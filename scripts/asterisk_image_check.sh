@@ -43,10 +43,18 @@ sed 's/${VOICE_MEDIA_TOKEN}/check-token/' "$conf/websocket_client.conf" > "$work
 printf '[options]\n' > "$work/asterisk.conf"
 printf '[modules]\nautoload=yes\n' > "$work/modules.conf"
 printf '[logfiles]\nconsole => notice,warning,error\n' > "$work/logger.conf"
+# How long each Dial took, in ms: a frozen `voice` has to hold it for the
+# connection timeout, or the check never met a frozen one.
+timeout_ms=$(sed -n 's/^connection_timeout=\([0-9][0-9]*\).*/\1/p' "$conf/websocket_client.conf")
+if [ -z "$timeout_ms" ]; then
+    echo "asterisk_image_check: no connection_timeout in websocket_client.conf" >&2
+    exit 2
+fi
 cat > "$work/extensions.conf" <<EOF
 [check]
-exten => fail,1,$dial
- same => n,Log(NOTICE,check ended \${DIALSTATUS})
+exten => fail,1,Set(T0=\${STRFTIME(,,%s%3q)})
+ same => n,$dial
+ same => n,Log(NOTICE,check ended \${DIALSTATUS} after \$[\${STRFTIME(,,%s%3q)} - \${T0}] ms)
  same => n,Hangup()
 exten => next,1,Log(NOTICE,check next call runs)
  same => n,Hangup()
@@ -95,10 +103,13 @@ for voice in refused unresolved frozen; do
         refused)
             docker run -d --name "$tag-voice" --network "$tag" --network-alias voice \
                 "$alpine" sleep 600 >/dev/null ;;
+        # `-e sleep` holds each connection silent, `-k` takes the next: a plain
+        # `nc -l` has /dev/null as stdin here and closes at once.
         frozen)
             docker run -d --name "$tag-voice" --network "$tag" --network-alias voice \
-                "$alpine" sh -c 'while true; do nc -l -p 8001 >/dev/null; done' >/dev/null ;;
+                "$alpine" nc -lk -p 8001 -e sleep 600 >/dev/null ;;
     esac
+    sleep 1
     for _ in 1 2 3; do
         calls=$((calls + 1))
         cli "channel originate Local/fail@check application Wait 1" >/dev/null || true
@@ -113,11 +124,19 @@ for voice in refused unresolved frozen; do
         break
     fi
     ended=$(lines 'check ended CHANUNAVAIL')
-    if [ "$ended" -ge "$calls" ]; then
-        echo "PASS  voice $voice: 3 failed media connections, each CHANUNAVAIL, Asterisk up"
-    else
+    if [ "$ended" -lt "$calls" ]; then
         fail "voice $voice: $ended of $calls Dials ended CHANUNAVAIL"
+        continue
     fi
+    if [ "$voice" = frozen ]; then
+        short=$(docker logs "$tag-ast" 2>&1 | sed -n 's/.*check ended CHANUNAVAIL after \([0-9]*\) ms.*/\1/p' |
+            tail -n 3 | awk -v min="$timeout_ms" '$1 < min { print; exit }')
+        if [ -n "$short" ]; then
+            fail "voice frozen: a Dial ended after $short ms, under the connection timeout of $timeout_ms ms"
+            continue
+        fi
+    fi
+    echo "PASS  voice $voice: 3 failed media connections, each CHANUNAVAIL, Asterisk up"
 done
 
 if alive; then
