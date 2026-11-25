@@ -85,11 +85,17 @@ if [ "$booted" = no ]; then
 fi
 echo "      $(cli 'core show version' | head -1)"
 
+# Every module the product's dialplan, features.conf and pjsip.conf use
+# (api/tests/test_asterisk_image_check.py keeps the list complete): with
+# autoload=yes a missing one stops neither the boot nor the healthcheck. A
+# module that loaded and declined is listed as "Not Running".
 for module in chan_websocket res_websocket_client res_http_websocket chan_pjsip \
-    res_pjsip_outbound_registration res_resolver_unbound res_rtp_asterisk \
-    pbx_config app_dial app_mixmonitor app_playback app_system func_curl \
-    func_env codec_ulaw codec_alaw format_wav format_pcm; do
-    if cli "module show like $module" | grep -q " Running "; then
+    res_pjsip_outbound_registration res_pjsip_acl res_pjsip_endpoint_identifier_ip \
+    res_resolver_unbound res_rtp_asterisk pbx_config bridge_simple bridge_native_rtp \
+    app_dial app_exec app_stack app_verbose app_mixmonitor app_playback app_system \
+    func_callerid func_curl func_env func_logic func_strings \
+    codec_ulaw codec_alaw codec_resample format_wav format_sln format_pcm; do
+    if cli "module show like $module" | grep -Eq '[0-9][[:space:]]+Running[[:space:]]'; then
         echo "PASS  $module runs"
     else
         fail "$module does not run"
@@ -147,5 +153,10 @@ if alive; then
     else
         fail "the call after the failures did not run"
     fi
+fi
+# Issue #2121 crashed Asterisk when a call's thread ended, after the call's
+# last log line: a death no phase saw still fails the check.
+if ! alive && [ "$failed" = 0 ]; then
+    fail "Asterisk died after the failures ($(docker inspect -f 'exit {{.State.ExitCode}}' "$tag-ast"))"
 fi
 exit "$failed"

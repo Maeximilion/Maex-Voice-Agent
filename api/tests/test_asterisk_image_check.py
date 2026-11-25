@@ -253,7 +253,11 @@ def _dialplan_names():
         for line in (conf / name).read_text().splitlines()
         if not line.lstrip().startswith(";")
     )
-    apps = set(re.findall(r"(?:=>\s*[^,\n]+,|same\s*=>\s*[^,\n]+,|[?(,])([A-Z][A-Za-z]+)\(", text))
+    apps = set(
+        re.findall(
+            r"(?:=>\s*[^,\n]+,|same\s*=>\s*[^,\n]+,|[?(,])([A-Z][A-Za-z]+)\(", text
+        )
+    )
     funcs = set(re.findall(r"(?:\$\{|Set\()([A-Z_]{2,})\(", text))
     return (apps | funcs) - {"WebSocket", "PJSIP"}
 
@@ -266,8 +270,13 @@ def test_the_check_runs_every_module_the_product_uses():
     assert not unknown, f"add the module of {sorted(unknown)} here and to the check"
     pjsip = (ROOT / "deploy/asterisk/conf/pjsip.conf").read_text()
     types = set(re.findall(r"^type=(\w+)", pjsip, re.M))
-    assert types <= PJSIP_MODULES.keys(), f"add the module of {sorted(types - PJSIP_MODULES.keys())}"
-    needed = {DIALPLAN_MODULES[name] for name in names} | {PJSIP_MODULES[t] for t in types}
+    assert types <= PJSIP_MODULES.keys(), (
+        f"add the module of {sorted(types - PJSIP_MODULES.keys())}"
+    )
+    needed = {DIALPLAN_MODULES[name] for name in names} | {
+        PJSIP_MODULES[t] for t in types
+    }
     needed = (needed | MEDIA_MODULES) - {None}
-    listed = set(re.search(r"for module in (.*?); do", SCRIPT.read_text(), re.S).group(1).split())
-    assert needed - listed == set()
+    loop = re.search(r"for module in (.*?); do", SCRIPT.read_text(), re.S)
+    assert loop, "the check has no module loop"
+    assert needed - set(loop.group(1).split()) == set()
