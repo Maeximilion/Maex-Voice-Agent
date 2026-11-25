@@ -49,6 +49,24 @@ SAY_MORE = "Darf es noch etwas sein?"
 SAY_NAME = "Auf welchen Namen darf ich die Bestellung notieren?"
 SAY_PHONE = "Unter welcher Telefonnummer sind Sie erreichbar?"
 SAY_RESTART = "Dann noch einmal von vorn: was möchten Sie bestellen?"
+# A surcharge without a `reason` on the menu: no reason is made up (prompt
+# rule "Grund für einen Aufpreis: nur `reason`").
+SAY_NO_REASON = "Der Aufpreis steht so in der Karte."
+# "Warum kostet das mehr?" about a chosen surcharge: a German word pattern
+# Maxi allowed for the stand-in (25.11.2026, #1023). Narrow on purpose: it
+# matches only a why clause at the start of the sentence ("Ich weiß nicht,"
+# may open it) and stops at the first joining word or punctuation, so what
+# follows is searched as before: "Ich weiß nicht, warum das teurer ist, aber
+# ich möchte noch die 23." stays an order of the 23 (Codex PR #1023, P1).
+_WHY_MORE = re.compile(
+    r"^\W*(?:(?:ich\s+wei(?:ß|ss)\s+nicht|keine\s+ahnung)\W+)?"
+    r"(?:warum|wieso|weshalb)\b[^,;.!?]*?\b(?:kostet|teurer|aufpreis)\b"
+    r"(?:\s+(?!(?:aber|und|dann|ich|wir)\b)[^\s,;.!?]+)*"
+    r"[\s,;.!?]*(?:(?:aber|und|dann)\b\W*)?",
+    re.IGNORECASE,
+)
+# Words after the why question that order nothing ("Warum kostet das mehr, bitte?").
+_POLITE = frozenset({"bitte", "danke", "denn", "eigentlich"})
 # An allergy without its ingredient: the model asks (Maxi, 15.11.2026), with
 # the fixed question of an allergy turn (#798); the variant with the dish
 # while another one is open too (Codex PR #139, P1) is refused in such a turn
@@ -80,6 +98,9 @@ class CartItem:
     pending: list[dict[str, Any]] = field(default_factory=list)
     # Note for the kitchen ("ohne Karotten", an allergy), T-4.10.
     note: str | None = None
+    # Options chosen with a surcharge and their `reason` from the menu, for
+    # "Warum kostet das mehr?"; never sent to `draft_order`.
+    surcharges: list[tuple[str, str | None]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -251,6 +272,32 @@ class PickupScript:
             self.phase = "dishes"
             self._suggestions = []
             return _search(text, patch)
+        surcharge = next(
+            (i.surcharges[-1] for i in reversed(self.cart) if i.surcharges), None
+        )
+        why = _WHY_MORE.match(text) if surcharge else None
+        rest = text[why.end() :] if why else ""
+        ordering = bool(set(_words(rest)) - _POLITE)
+        if (
+            surcharge
+            and why
+            # "Warum kostet die 23 mehr?" names a dish: searched as before.
+            and not _orders_something(why.group(0), self._numbers())
+            and (not ordering or self.phase in ("dishes", "more"))
+        ):
+            # The reason of the last surcharge comes from the menu.
+            option, reason = surcharge
+            answer = (
+                f"Der Aufpreis für {option}: {reason.rstrip('.')}."
+                if reason
+                else SAY_NO_REASON
+            )
+            if ordering:
+                # "..., aber ich möchte noch die 23": the rest is searched on
+                # its own, the answer is said before its result.
+                self._carry = _join(self._carry, answer)
+                return _search(rest, patch)
+            return self._next(slots, patch, lead=answer)
         if self.phase == "option":
             return self._answer_option(text, slots, patch)
         if self.phase == "more":
@@ -559,7 +606,16 @@ class PickupScript:
         wish: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         pending = [
-            {"group": g["group"], "options": [o["name"] for o in g["options"]]}
+            {
+                "group": g["group"],
+                "options": [o["name"] for o in g["options"]],
+                # Surcharge and reason of each option, for the why question.
+                "surcharges": {
+                    o["name"]: o.get("reason")
+                    for o in g["options"]
+                    if (o.get("price_delta_cents") or 0) > 0
+                },
+            }
             for g in hit.get("option_groups", [])
             if g.get("required")
         ]
@@ -597,6 +653,8 @@ class PickupScript:
         if wish["kind"] == "option":
             item.options.append({"group": wish["group"], "name": wish["option"]})
             item.pending = [g for g in item.pending if g["group"] != wish["group"]]
+            if (wish.get("price_delta_cents") or 0) > 0:
+                item.surcharges.append((wish["option"], wish.get("reason")))
         elif wish["kind"] == "open" and wish.get("groups"):
             # The option stands in several groups: the question stays open
             # until the answer names one, none is chosen here.
@@ -772,6 +830,8 @@ class PickupScript:
                 understanding_failure="option",
             )
         item.options.append({"group": group["group"], "name": chosen[0]})
+        if chosen[0] in group["surcharges"]:
+            item.surcharges.append((chosen[0], group["surcharges"][chosen[0]]))
         item.pending.remove(group)
         return self._next(slots, patch)
 

@@ -180,6 +180,8 @@ def test_a_call_on_the_engines_of_the_service(mouth, monkeypatch):
 
     from api.config import settings
     from api.telephony import app as voice_app
+    from api.telephony import watchdog as voice_watchdog
+    from api.telephony.adapters import speech_engines
     from api.telephony.session import Lines
     from api.tests.test_telephony_voice import (
         TOKEN,
@@ -190,9 +192,9 @@ def test_a_call_on_the_engines_of_the_service(mouth, monkeypatch):
         wait_for,
     )
 
-    monkeypatch.setattr(voice_app, "MODELS", MODELS)
+    monkeypatch.setattr(speech_engines, "MODELS", MODELS)
     monkeypatch.setattr(settings, "voice_ear_device", DEVICE)
-    watchdog = voice_app.Watchdog()
+    watchdog = voice_watchdog.Watchdog()
 
     class Core:
         def __init__(self, lines: Lines) -> None:
@@ -226,8 +228,8 @@ def test_a_call_on_the_engines_of_the_service(mouth, monkeypatch):
         events=core,
         lines=lines,
         token=TOKEN,
-        ear=voice_app._whisper(watchdog),
-        mouth=voice_app._piper(watchdog),
+        ear=speech_engines._whisper(watchdog),
+        mouth=speech_engines._piper(watchdog),
         silence_seconds=60.0,
         team_phone=lambda: "",
     )

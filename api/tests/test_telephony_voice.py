@@ -28,6 +28,8 @@ from api.domain.calls import tenant_named
 from api.models import Callback
 from api.telephony import app as voice_app
 from api.telephony import router as router_module
+from api.telephony import watchdog as voice_watchdog
+from api.telephony.adapters import speech_engines, tts_piper
 from api.telephony.adapters.fake_speech import FakeEar, FakeMouth
 from api.telephony.app import Voice, create_app, voice_from_settings
 from api.telephony.handler import ANNOUNCEMENTS, GREETING
@@ -1057,7 +1059,7 @@ def startable(monkeypatch, tmp_path):
         monkeypatch.setattr(settings, name, value)
     # No watchdog thread is left behind: it would end the test process with
     # `os._exit` once a watched call took long.
-    monkeypatch.setattr(voice_app.Watchdog, "start", lambda self: None)
+    monkeypatch.setattr(voice_watchdog.Watchdog, "start", lambda self: None)
     # Never the volume a running `voice` plays from.
     monkeypatch.setattr(voice_app, "ANNOUNCEMENTS_FOLDER", tmp_path)
     return monkeypatch
@@ -1071,6 +1073,7 @@ def startable(monkeypatch, tmp_path):
         ("voice_number", "07221 5550100", "VOICE_NUMBER"),
         ("voice_ear", "", "no ear"),
         ("voice_mouth", "whisper", "no mouth"),
+        ("voice_ear", "Whisper", "no ear"),  # names are exact
     ],
 )
 def test_the_service_does_not_start_without_what_a_call_needs(
@@ -1185,9 +1188,9 @@ class _Exit:
         self.codes.append(code)
 
 
-def watchdog_at(clock: list[float]) -> tuple[voice_app.Watchdog, _Exit]:
+def watchdog_at(clock: list[float]) -> tuple[voice_watchdog.Watchdog, _Exit]:
     end = _Exit()
-    return voice_app.Watchdog(limit=30.0, clock=lambda: clock[0], end=end), end
+    return voice_watchdog.Watchdog(limit=30.0, clock=lambda: clock[0], end=end), end
 
 
 def test_an_engine_call_that_hangs_ends_the_process():
@@ -1201,7 +1204,7 @@ def test_an_engine_call_that_hangs_ends_the_process():
         assert end.codes == []  # at the limit, not past it
         clock[0] += 0.5
         watchdog.check()
-    assert end.codes == [voice_app.EXIT_ENGINE_HUNG]
+    assert end.codes == [voice_watchdog.EXIT_ENGINE_HUNG]
 
 
 def test_an_engine_call_that_returned_is_not_watched_any_more():
@@ -1227,10 +1230,20 @@ def test_the_mouth_is_watched_while_it_speaks():
             watchdog.check()
             yield b"\x02\x00"
 
-    assert b"".join(voice_app.WatchedMouth(Slow(), watchdog).speak("Hallo")) == (
+    assert b"".join(voice_watchdog.WatchedMouth(Slow(), watchdog).speak("Hallo")) == (
         b"\x01\x00\x02\x00"
     )
-    assert end.codes == [voice_app.EXIT_ENGINE_HUNG]
+    assert end.codes == [voice_watchdog.EXIT_ENGINE_HUNG]
+
+
+def model_files(folder: Path, *voices: str) -> Path:
+    """What the loaders look for themselves (`speech_engines.model_file`),
+    empty: the engines' own files are theirs to read."""
+    (folder / "whisper").mkdir(exist_ok=True)
+    (folder / "piper").mkdir(exist_ok=True)
+    for voice in voices or (tts_piper.VOICE,):
+        (folder / "piper" / f"{voice}.onnx").touch()
+    return folder
 
 
 def test_ear_and_mouth_that_cannot_be_loaded_keep_the_service_down(
@@ -1239,7 +1252,8 @@ def test_ear_and_mouth_that_cannot_be_loaded_keep_the_service_down(
     """Without the engines' packages, as here in the API's image: refused at
     start, and the dialplan rings the team meanwhile. Without their model files
     in the image of `voice`: test_telephony_engine_loading.py."""
-    its_database.setattr(voice_app, "MODELS", tmp_path)
+    its_database.setattr(speech_engines, "MODELS", model_files(tmp_path))
+    its_database.setattr(settings, "voice_mouth_voice", "")
     its_database.setattr(settings, "voice_ear", "whisper")
     with pytest.raises(RuntimeError, match="could not be loaded"):
         voice_from_settings()
@@ -1293,11 +1307,17 @@ def test_a_call_that_waits_for_the_engine_is_not_taken_for_a_hang():
 
 
 @pytest.fixture
-def stand_in_engines(monkeypatch):
+def stand_in_engines(monkeypatch, tmp_path):
     """The engines' classes stand in for the packages, which only the image of
     `voice` has; what the loaders do with them is checked here."""
-    from api.telephony.adapters import stt_whisper, tts_piper
+    from api.telephony.adapters import stt_whisper
 
+    monkeypatch.setattr(
+        speech_engines,
+        "MODELS",
+        model_files(tmp_path, tts_piper.VOICE, "de_DE-other-high"),
+    )
+    monkeypatch.setattr(settings, "voice_mouth_voice", "")
     runs: list[tuple[str, object]] = []
 
     class Engine:
@@ -1336,9 +1356,9 @@ def test_each_engine_has_run_once_before_the_service_answers(stand_in_engines):
     """An engine that loads may still fail on its first run, when the
     graphics card's libraries are set up: at start, where the service is
     refused, not in a caller's first sentence (ultra review on PR #298)."""
-    watchdog = voice_app.Watchdog()
-    voice_app._whisper(watchdog)
-    voice_app._piper(watchdog)
+    watchdog = voice_watchdog.Watchdog()
+    speech_engines._whisper(watchdog)
+    speech_engines._piper(watchdog)
     assert [kind for kind, _ in stand_in_engines] == [
         "ear",
         "detector",
@@ -1354,9 +1374,9 @@ def test_the_mouth_speaks_the_engines_own_voice_unless_one_is_set(
     from api.telephony.adapters import tts_piper
 
     monkeypatch.setattr(settings, "voice_mouth_voice", "")
-    voice_app._piper(voice_app.Watchdog())
+    speech_engines._piper(voice_watchdog.Watchdog())
     monkeypatch.setattr(settings, "voice_mouth_voice", "de_DE-other-high")
-    voice_app._piper(voice_app.Watchdog())
+    speech_engines._piper(voice_watchdog.Watchdog())
     voices = [name for kind, name in stand_in_engines if kind == "voice"]
     assert voices == [f"{tts_piper.VOICE}.onnx", "de_DE-other-high.onnx"]
 
@@ -1385,7 +1405,7 @@ def test_the_watchdog_runs_before_the_engines_first_runs(
 
     order = []
     monkeypatch.setattr(
-        voice_app.Watchdog, "start", lambda self: order.append("watchdog")
+        voice_watchdog.Watchdog, "start", lambda self: order.append("watchdog")
     )
 
     def transcribe(self, pcm, terms) -> str:
@@ -1409,7 +1429,7 @@ def test_a_mouth_that_makes_no_audio_is_not_loaded(stand_in_engines, monkeypatch
 
     monkeypatch.setattr(tts_piper, "piper", lambda voice: Silent())
     with pytest.raises(RuntimeError, match="no audio"):
-        voice_app._piper(voice_app.Watchdog())
+        speech_engines._piper(voice_watchdog.Watchdog())
 
 
 def test_the_mouth_makes_the_sentences_of_several_calls_side_by_side():
@@ -1427,7 +1447,7 @@ def test_the_mouth_makes_the_sentences_of_several_calls_side_by_side():
             met.append(speaking[other].wait(2))
             yield b"\x01\x00"
 
-    mouth = voice_app.WatchedMouth(Mouth(), watchdog)
+    mouth = voice_watchdog.WatchedMouth(Mouth(), watchdog)
     calls = [
         threading.Thread(target=lambda text=text: b"".join(mouth.speak(text)))
         for text in ("Eins.", "Zwei.")
@@ -1452,7 +1472,7 @@ def test_an_engine_that_hangs_while_it_loads_ends_the_process(
     watchdog, end = watchdog_at(clock)
 
     def loading(*args, **kwargs):
-        clock[0] += voice_app.ENGINE_LOAD_SECONDS - 1
+        clock[0] += voice_watchdog.ENGINE_LOAD_SECONDS - 1
         watchdog.check()
         assert end.codes == []  # a slow load is no hang
         clock[0] += 2.0
@@ -1466,8 +1486,8 @@ def test_an_engine_that_hangs_while_it_loads_ends_the_process(
     else:
         monkeypatch.setattr(tts_piper, "piper", loading)
     with pytest.raises(RuntimeError, match="stopped here"):
-        (voice_app._whisper if ear else voice_app._piper)(watchdog)
-    assert end.codes == [voice_app.EXIT_ENGINE_HUNG]
+        (speech_engines._whisper if ear else speech_engines._piper)(watchdog)
+    assert end.codes == [voice_watchdog.EXIT_ENGINE_HUNG]
 
 
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
@@ -1492,18 +1512,18 @@ def test_a_slow_run_of_the_ear_is_a_hang_only_past_its_devices_limit(
 
     monkeypatch.setattr(settings, "voice_ear_device", device)
     monkeypatch.setattr(stt_whisper.Whisper, "transcribe", slow)
-    ear = voice_app._whisper(watchdog)()
+    ear = speech_engines._whisper(watchdog)()
     assert isinstance(ear, stt_whisper.SegmentingEar)
     transcribe = ear._transcribe
     assert end.codes == []
     transcribe(b"\x00\x00", [])
     if device == "cuda":
-        assert end.codes == [voice_app.EXIT_ENGINE_HUNG]
+        assert end.codes == [voice_watchdog.EXIT_ENGINE_HUNG]
         return
     assert end.codes == []
-    takes[0] = voice_app.ENGINE_LOAD_SECONDS + 1
+    takes[0] = voice_watchdog.ENGINE_LOAD_SECONDS + 1
     transcribe(b"\x00\x00", [])
-    assert end.codes == [voice_app.EXIT_ENGINE_HUNG]
+    assert end.codes == [voice_watchdog.EXIT_ENGINE_HUNG]
 
 
 def test_a_limit_of_zero_is_no_default():
@@ -1512,12 +1532,62 @@ def test_a_limit_of_zero_is_no_default():
     with watchdog.watch("ear", 0.0):
         clock[0] += 0.5
         watchdog.check()
-    assert end.codes == [voice_app.EXIT_ENGINE_HUNG]
+    assert end.codes == [voice_watchdog.EXIT_ENGINE_HUNG]
+
+
+def test_the_factory_makes_ear_and_mouth_by_their_name(stand_in_engines):
+    """`app.py` knows the engines by name only; the factory in `adapters/`
+    loads them (Codex on PR #298)."""
+    from api.telephony.adapters import stt_whisper
+
+    watchdog = voice_watchdog.Watchdog()
+    assert isinstance(
+        speech_engines.EARS["whisper"](watchdog)(), stt_whisper.SegmentingEar
+    )
+    assert b"".join(speech_engines.MOUTHS["piper"](watchdog)().speak("Hallo"))
+    assert isinstance(speech_engines.EARS["fake"](watchdog)(), FakeEar)
+    assert isinstance(speech_engines.MOUTHS["fake"](watchdog)(), FakeMouth)
+
+
+@pytest.mark.parametrize("kind", ["whisper", "piper", "voice"])
+def test_an_engine_without_its_model_file_is_not_loaded(
+    stand_in_engines, monkeypatch, tmp_path, kind
+):
+    """Checked before the engine's package is imported, so the missing file
+    is named in every image, and nothing is loaded."""
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    if kind == "voice":  # a voice set in `.env` that the kit does not hold
+        monkeypatch.setattr(settings, "voice_mouth_voice", "de_DE-missing-low")
+    else:
+        monkeypatch.setattr(speech_engines, "MODELS", empty)
+    load = (
+        speech_engines.EARS["whisper"]
+        if kind == "whisper"
+        else (speech_engines.MOUTHS["piper"])
+    )
+    missing = {
+        "whisper": empty / "whisper",
+        "piper": empty / "piper" / f"{tts_piper.VOICE}.onnx",
+        "voice": speech_engines.MODELS / "piper" / "de_DE-missing-low.onnx",
+    }[kind]
+    with pytest.raises(FileNotFoundError, match=re.escape(str(missing))):
+        load(voice_watchdog.Watchdog())
+    assert stand_in_engines == []
+
+
+def test_a_missing_model_file_keeps_the_service_down(
+    its_database, stand_in_engines, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(speech_engines, "MODELS", tmp_path / "nothing")
+    its_database.setattr(settings, "voice_mouth", "piper")
+    with pytest.raises(RuntimeError, match=r"could not be loaded.*no model file"):
+        voice_from_settings()
 
 
 def test_on_the_processor_the_ear_is_not_run_at_start(stand_in_engines, monkeypatch):
     """No graphics card libraries to set up there, and the run took 4.5 s of
     every start (ultra review on PR #310). The detector still runs."""
     monkeypatch.setattr(settings, "voice_ear_device", "cpu")
-    voice_app._whisper(voice_app.Watchdog())
+    speech_engines._whisper(voice_watchdog.Watchdog())
     assert [kind for kind, _ in stand_in_engines] == ["detector"]

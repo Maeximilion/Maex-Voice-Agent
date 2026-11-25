@@ -21,6 +21,8 @@ from api.tests.test_domain_menu_search import KARTE
 from scripts.seed import seed
 from sim.replay import replay
 from sim.scripted_order import (
+    _WHY_MORE,
+    SAY_NO_REASON,
     MenuNumbers,
     PickupScript,
     _orders_something,
@@ -2510,3 +2512,124 @@ def test_a_closed_pickup_with_a_dish_in_the_opening_searches_nothing(session, te
     )
     assert "geschlossen" in " ".join(turns[0].say)
     assert all("search_menu" not in str(t.tools) for t in turns)
+
+
+# --- Reason for a surcharge (docs/24, Maxi 25.11.2026 on #1023) ----------------
+
+
+@pytest.fixture
+def priced_reason(session, tenant):
+    """A dish whose surcharge has a reason on the menu, one without, and a
+    mandatory group with a surcharge."""
+    head, *rows = KARTE[OPTIONS_FILE].splitlines()
+    plan = parse(
+        {
+            **KARTE,
+            MENU_FILE: KARTE[MENU_FILE]
+            + "57;Bratnudeln;Hauptgerichte;10,00;;ja\n"
+            + "58;Reispfanne;Hauptgerichte;9,00;;ja\n",
+            OPTIONS_FILE: f"{head};price_reason\n"
+            + "".join(f"{row};\n" for row in rows)
+            + "57;Fleisch;Rind;3,00;nein;nein;Bio-Rind aus der Region\n"
+            + "57;Fleisch;Tofu;1,00;nein;nein;\n"
+            + "58;Größe;Normal;0,00;ja;ja;\n"
+            + "58;Größe;Groß;2,00;nein;ja;doppelte Portion\n",
+        }
+    )
+    assert plan.ok, plan.errors
+    apply(session, tenant.id, plan, now=NOW)
+    return tenant
+
+
+@pytest.mark.parametrize(
+    ("dish", "question", "answer"),
+    [
+        (
+            "Die 57 mit Rind.",
+            "Warum kostet das mehr?",
+            "Der Aufpreis für Rind: Bio-Rind aus der Region.",
+        ),
+        # No reason on the menu: none is made up.
+        ("Die 57 mit Tofu.", "Wieso ist das teurer?", SAY_NO_REASON),
+    ],
+)
+def test_the_reason_for_a_surcharge_is_answered(
+    session, priced_reason, dish, question, answer
+):
+    """Codex PR #139: the question is answered with `reason` from the menu,
+    not searched as a dish, and the order goes on."""
+    _, turns = _bestellung(session, priced_reason, dish, question)
+    assert answer in " ".join(turns[2].say)
+    assert "search_menu" not in str(turns[2].tools)
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert positions(session, order) == [("57", 1, [dish.split()[-1].rstrip(".")])]
+
+
+def test_the_reason_for_a_mandatory_choice_is_answered(session, priced_reason):
+    """A mandatory option chosen by its name keeps its surcharge reason."""
+    _, turns = _bestellung(
+        session, priced_reason, "Die 58.", "Groß.", "Warum kostet das mehr?"
+    )
+    assert "Der Aufpreis für Groß: doppelte Portion." in " ".join(turns[3].say)
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert positions(session, order) == [("58", 1, ["Groß"])]
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ich weiß nicht, warum das teurer ist, aber ich möchte noch die 23.",
+        "Warum ist das teurer? Ich nehme noch die 23.",
+        "Warum kostet das mehr aber ich möchte noch die 23",
+    ],
+)
+def test_a_why_clause_with_an_order_keeps_the_order(session, priced_reason, said):
+    """Codex PR #1023, P1: the 23 named after the why clause is ordered, and
+    the reason is said with it."""
+    _, turns = _bestellung(session, priced_reason, "Die 57 mit Rind.", said)
+    assert "Der Aufpreis für Rind: Bio-Rind aus der Region." in " ".join(turns[2].say)
+    assert "Nummer 23" in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert positions(session, order) == [("57", 1, ["Rind"]), ("23", 1, [])]
+
+
+def test_a_why_question_naming_a_dish_is_searched(session, priced_reason):
+    """ "Warum kostet die 23 mehr?" names a dish: no reason of another one."""
+    _, turns = _bestellung(
+        session, priced_reason, "Die 57 mit Rind.", "Warum kostet die 23 mehr?"
+    )
+    assert "Bio-Rind" not in " ".join(turns[2].say)
+    assert "search_menu" in str(turns[2].tools)
+
+
+def test_a_why_question_without_a_surcharge_is_searched(session, priced_reason):
+    """No surcharge on the cart: the sentence takes the usual way."""
+    _, turns = _bestellung(session, priced_reason, "Die 23.", "Warum kostet das mehr?")
+    assert "Aufpreis" not in " ".join(turns[2].say)
+    assert "search_menu" in str(turns[2].tools)
+
+
+@pytest.mark.parametrize(
+    ("said", "rest"),
+    [
+        ("Warum kostet das mehr?", ""),
+        ("Wieso ist das teurer", ""),
+        ("Warum kostet das denn mehr, bitte?", "bitte?"),
+        (
+            "Ich weiß nicht, warum das teurer ist, aber ich möchte noch die 23.",
+            "ich möchte noch die 23.",
+        ),
+        ("Warum ist das teurer? Ich nehme noch die 23.", "Ich nehme noch die 23."),
+        ("Warum teurer und dazu eine Suppe", "dazu eine Suppe"),
+        # Not opened by the why question: searched whole.
+        ("Und weshalb der Aufpreis?", None),
+        ("Die 23, warum ist das teurer?", None),
+        ("Warum dauert das so lange?", None),
+    ],
+)
+def test_the_why_pattern_is_narrow(said, rest):
+    found = _WHY_MORE.match(said)
+    assert (said[found.end() :] if found else None) == rest
