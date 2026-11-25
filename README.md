@@ -253,7 +253,7 @@ All settings come from `.env`. Template and description of all variables: `.env.
 
 ## Development
 
-The project is set up for Claude Code. `CLAUDE.md` contains the work instructions, `.claude/commands/` holds the commands `/start`, `/task`, `/done`, `/ship`, `/fix-bug`, `/eval`, `/gate` and `/handover`. Workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
+The project is set up for Claude Code. `CLAUDE.md` contains the work instructions, `.claude/commands/` holds the commands `/start`, `/task`, `/done`, `/ship`, `/fix-bug`, `/eval`, `/gate`, `/handover`, `/project` and `/chain`. Workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
 
 <details>
 <summary>Make targets and the text phone</summary>
@@ -266,6 +266,7 @@ make backup      # encrypted dump of the database of DATABASE_URL into backups/,
 make eval        # the regular cases (level 1-2) on a throwaway DB, optional TAGS=menu,noise; exit 1 on a hard metric, a crash or a case that was green in the last passing run
 make eval-targets  # the target cases (level 3-5, known gaps), not in CI, red allowed until the real model passes them (T-2.4, T-6.8)
 make eval-record  # record the newest real-model run in docs/metrics/; after make eval-targets: make eval-record SUITE=targets
+make eval-nummern  # number recognition on its own, no database and no model: a table of deviations, exit 1 on red (docs/08 §7)
 make eval-voice   # the cases spoken and heard by the service's ear on the graphics card (docs/08 §8), optional MODEL=, LIMIT=, VOICE=; needs make up and the speech kit's model files
 make readme-assets  # redraw the README images from docs/metrics/, the task list and the status (Python 3.12 or newer)
 make readme-check   # README links, anchors, image safety and blocked terms; then images up to date with their data
@@ -313,10 +314,15 @@ Start with [`docs/01_STATUS.md`](docs/01_STATUS.md) for where the project stands
 | `docs/18_MODEL_SELECTION.md` | Operation model, local test model, setup script, parallel calls |
 | `docs/19_CLAUDE_CODE_SETUP.md` | Personal Claude Code setup: user-level hooks, settings block, restore steps |
 | `docs/20_VOICE_LAYER.md` | Own voice layer: components, access, call session rules, outage map, cost model |
-| [docs/21_REVIEW_AUTOMATION.md](docs/21_REVIEW_AUTOMATION.md) | Planned subscription-based inline reviews: setup, independent reviewers, validation and deferred specialist experiment |
+| [docs/21_REVIEW_AUTOMATION.md](docs/21_REVIEW_AUTOMATION.md) | Working rules in force for independent reviews, plus the review automation design and its evidence |
 | `docs/metrics/` | Dated measurements behind the README images: eval runs on real models and voice layer measurements |
 | [docs/22_LANGUAGE_AND_PERFORMANCE.md](docs/22_LANGUAGE_AND_PERFORMANCE.md) | Python/TypeScript assessment, measured latency gate and UI/type-checking decisions |
 | [docs/23_ACCESS_SECURITY.md](docs/23_ACCESS_SECURITY.md) | Threat model and access design for several customers: operator dashboard, customer logins, tokens, uploads |
+| [docs/24_OPEN_REVIEW_POINTS.md](docs/24_OPEN_REVIEW_POINTS.md) | Review findings left open, each with the reason and its trigger |
+| `docs/HISTORY.md` | Archive of the status file: older summaries, done rows, changelog lines and settled assumptions |
+| `docs/design/` | Design records and mockups per piece of the product interface and the public site |
+| `docs/superpowers/plans/` | Implementation plans for larger changes |
+| `docs/vorlagen/` | Templates for the restaurant: allergen list, call log, privacy notice, go-live checklist, team briefing, data protection records |
 
 </details>
 
