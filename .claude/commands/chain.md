@@ -195,20 +195,20 @@ before naming a base.
   every other turn the app and auto mode refuse a start (25.11.2026: "Start
   sessions only on the user's own words" in a child's message turn, and
   "Undermining Oversight" in a `<side-sessions-event>` turn), and an
-  `AskUserQuestion` answer does not change that. There the session whose own
-  item has just reached "PR ready" (or stopped) takes the next planned item
-  itself, on a new branch from `origin/main`, with the brief the coordinator
-  sends it; it is archived after that item's merge. A scout
+  `AskUserQuestion` answer does not change that; auto mode also refuses to hand
+  the next item to a session that has just finished (25.11.2026, "Undermining
+  Oversight"). So a lane that frees in such a turn waits for Maxi's next
+  message, and the coordinator sends him one push notification. A scout
   agent's report turn is such a turn too, so sessions start in Maxi's turn,
   after the foreground scouts returned; only a late map follows by message
   (section 2, item 4).
 - Never asks Maxi whether to start the next item (Maxi, 2026-11-23: "Don't ask
   me ever again starting the Items / Side Sessions just do it because you are
   using /chain"). When a lane frees, the coordinator gives it out by the order
-  above in that same turn, by a fresh session or by the session that has just
-  finished; never as a question.
-- Never routes a new task into an unrelated idle session; only the session
-  whose own item has just finished takes the next one (Maxi, 2026-11-25).
+  above, by a fresh session in the first turn of Maxi's that allows it; never
+  as a question.
+- Never routes a new task into an existing idle session to get around a
+  refused start.
 - Maxi away (AFK) changes only the decisions (Maxi, 2026-11-24: "The planned
   Items should start like when I would be here"): sessions take the best option
   and list it in the PR under "Claude's choice, awaiting Maxi"; money, law,
@@ -218,10 +218,9 @@ before naming a base.
   a que order but not in side sessions just when a lane gets free the first in
   que gets the free lane and so on"; queued sessions waiting on the baton,
   used on 24 and 25.11, made every hold and slow mode pause more sessions). The
-  lane order and who takes the item are the first item of this section: a
-  fresh session in Maxi's turn (one item per session, Maxi, 2026-11-24
-  evening, popup "One item per session"), otherwise the session that has just
-  finished its item. Decisions while he is away: every choice is taken with
+  lane order is the first item of this section: a fresh session in Maxi's turn
+  (one item per session, Maxi, 2026-11-24 evening, popup "One item per
+  session"). Decisions while he is away: every choice is taken with
   the best option; a big one (money, law, security design, production data, a
   product behaviour he has not decided) also goes into the open "Decisions for
   Maxi after chain ..." issue as it happens, which he reviews with popups at
