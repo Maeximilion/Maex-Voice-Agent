@@ -61,7 +61,7 @@
           "search_menu"
         ],
         "never_said": [
-          "(?i)\\bfleisch\\b[^.!?]*\\?"
+          "Welche Auswahl bei"
         ]
       }
     ]

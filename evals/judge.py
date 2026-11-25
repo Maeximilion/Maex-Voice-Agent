@@ -117,7 +117,8 @@ LOCAL_MINUTE = "%Y-%m-%dT%H:%M"
 ITEM_KEYS = frozenset({"number", "quantity", "options", "note"})
 # One entry of `expected.turns`: `line` counts the customer lines of the
 # transcript from 1; `tools` are entries as in `expected.tools`, `said` and
-# `never_said` regular expressions searched in what the agent said in that turn.
+# `never_said` pieces word for word, like the call-wide ones, in what the agent
+# said in that turn: no pattern over German words (AGENTS.md, #798).
 TURN_KEYS = frozenset({"line", "tools", "said", "never_said"})
 
 
@@ -227,7 +228,7 @@ def validate_case(case: dict[str, Any], source: str) -> None:
         raise CaseError(
             f"{source}: turns is a list of {{line, tools, said, never_said}}, "
             "each line a customer line counted from 1 and named once, with at "
-            "least one assertion; said and never_said are regular expressions"
+            "least one assertion; said and never_said are lists of non-blank pieces"
         )
     pending = case.get("pending")
     if pending is not None and (not isinstance(pending, str) or not pending.strip()):
@@ -287,7 +288,7 @@ def _valid_tool(entry: Any) -> bool:
 
 def _valid_turns(turns: Any, lines: int) -> bool:
     """`expected.turns`: each line of the transcript at most once, each entry
-    with at least one assertion, every pattern a regular expression."""
+    with at least one assertion, every piece a non-blank text."""
     if not isinstance(turns, list) or not turns:
         return False
     if not all(isinstance(t, dict) and _valid_turn(t, lines) for t in turns):
@@ -307,18 +308,12 @@ def _valid_turn(turn: dict[str, Any], lines: int) -> bool:
     tools = turn.get("tools", ["any"])
     if not isinstance(tools, list) or not tools or not all(map(_valid_tool, tools)):
         return False
-    for key in ("said", "never_said"):
-        patterns = turn.get(key, ["any"])
-        if not isinstance(patterns, list) or not patterns:
-            return False
-        for pattern in patterns:
-            if not isinstance(pattern, str) or not pattern.strip():
-                return False
-            try:
-                re.compile(pattern)
-            except re.error:
-                return False
-    return True
+    return all(
+        isinstance(pieces, list)
+        and pieces
+        and all(isinstance(p, str) and p.strip() for p in pieces)
+        for pieces in (turn.get(key, ["any"]) for key in ("said", "never_said"))
+    )
 
 
 def _valid_call_args(args: Any) -> bool:
@@ -429,13 +424,9 @@ def missed_turns(
         if rejected:
             found.append(f"no rejection with this code of this call {rejected}")
         found += [
-            f"never said {p!r}"
-            for p in want.get("said", [])
-            if not re.search(p, turn.said)
+            f"never said {p!r}" for p in want.get("said", []) if p not in turn.said
         ]
-        found += [
-            f"said {p!r}" for p in want.get("never_said", []) if re.search(p, turn.said)
-        ]
+        found += [f"said {p!r}" for p in want.get("never_said", []) if p in turn.said]
         if found:
             diffs.append(f"{name}: {'; '.join(found)}")
     return diffs

@@ -17,6 +17,7 @@ from api.config import settings
 from api.domain.confirm import confirm
 from api.domain.customers.lookup import objected
 from api.domain.ordering import draft_order
+from api.domain.ordering.validation import SAY_OPTION_MISSING
 from api.models import Address, AuditLog, Customer, MenuItem, Tenant
 from api.schemas.confirm import ConfirmRequest
 from api.schemas.orders import DraftOrderRequest, OrderCustomer, OrderItemIn
@@ -2285,9 +2286,9 @@ def test_report_without_a_model_or_without_turns_shows_no_times():
 
 # --- Turn-level assertions (docs/24, Codex PR #145) --------------------------------
 
-# A question that names the meat: what the agent has to ask when the guest
-# orders a dish with a mandatory option and leaves the option open.
-ASKS_FOR_MEAT = r"(?i)\b(fleisch|huhn)\b[^.!?]*\?"
+# The core's question for a mandatory option left open, filled from the
+# search result: no pattern over German words (AGENTS.md, Codex on #1039).
+ASKS_FOR_MEAT = SAY_OPTION_MISSING.format(group="Fleisch", name="Ente knusprig")[:-1]
 MEAT_LEFT_OPEN = [
     "Guten Tag, ich moechte etwas zum Abholen bestellen.",
     "Zweimal die 23 und einmal die knusprige Ente.",
@@ -2351,7 +2352,7 @@ def test_a_turn_the_call_never_reached_is_red(migrated_db_url, tmp_path):
     case = fall(
         "ended",
         ["Ich moechte bitte mit einem Mitarbeiter sprechen.", "Hallo?"],
-        {"escalated": True, "turns": [{"line": 2, "said": ["(?i)hallo"]}]},
+        {"escalated": True, "turns": [{"line": 2, "said": ["Hallo"]}]},
     )
     cases = write_cases(tmp_path / "c", case)
 
@@ -2419,7 +2420,7 @@ TURN_LINES = [{"role": "customer", "text": t} for t in ("Hallo", "Einmal die 13.
         [{"line": 1}],
         [{"line": 1, "said": []}],
         [{"line": 1, "said": "x"}],
-        [{"line": 1, "said": ["(?i)huhn("]}],
+        [{"line": 1, "said": [3]}],
         [{"line": 1, "never_said": [""]}],
         [{"line": 1, "tools": ["search_menu"], "saïd": ["x"]}],
         [{"line": 1, "tools": [{"tool": "search_menu", "nummer": "13"}]}],

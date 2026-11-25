@@ -67,13 +67,13 @@
           "search_menu"
         ],
         "said": [
-          "(?i)\\b(fleisch|huhn)\\b[^.!?]*\\?"
+          "Welche Auswahl bei Fleisch möchten Sie zu Ente knusprig"
         ]
       },
       {
         "line": 3,
         "never_said": [
-          "(?i)\\bfleisch\\b[^.!?]*\\?"
+          "Welche Auswahl bei"
         ]
       }
     ]
