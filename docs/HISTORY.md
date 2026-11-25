@@ -2511,6 +2511,13 @@ Fixed in one PR of #888 round 3 (migration 048, `evals/runner.py` `record`): eve
 |---|---|---|
 | Store eval runs in `eval_runs` (T-5.1) | docs/08 §3 asks for it; the table needs a migration, and PR #139 is renumbering 003/004. | with the migration after PR #139, latest before G2 |
 
+## Open Points from Reviews (archive, surcharge reason row fixed 25.11.2026)
+
+Fixed in one PR of #888 round 3 (`sim/scripted_order.py`, tests in `api/tests/test_sim_pickup.py`), by the narrow German word pattern Maxi allowed on 25.11.2026 (#1023): each cart line keeps the options it got with a surcharge and their `reason`; a why clause at the start of a sentence ("Warum kostet das mehr?", "Ich weiß nicht, warum das teurer ist,") is answered with the last one ("Der Aufpreis steht so in der Karte." without one), and what follows the clause is searched on its own, so "..., aber ich möchte noch die 23." orders the 23. A clause that names a dish ("Warum kostet die 23 mehr?") is searched as before.
+
+| Point | Why still open | When due |
+|---|---|---|
+| Reason for a surcharge in the text phone (`sim/scripted_order.py` `_apply_wish`) | Codex PR #139 (P2, rule A): the cart keeps group and name of an option, not its `reason`; "Warum kostet das mehr?" is then searched as a dish. Tried in #1023 (25.11.2026) and taken out on Codex's P1 there: telling the why question from an order needs a pattern over German words, which AGENTS.md (#798) leaves to Maxi, and "Ich weiß nicht, warum das teurer ist, aber ich möchte noch die 23." lost the 23. Claude's choice, awaiting Maxi: allow a stand-in pattern that answers only after the search found no dish, with the `reason` kept on the cart line. Stand-in only | Maxi's word on the pattern, or with T-2.4 |
 ## Open Points from Reviews (archive, engine factory row fixed 25.11.2026)
 
 Fixed in one PR of #888 round 3: the Whisper and Piper loaders and `EARS`, `MOUTHS` live in `api/telephony/adapters/speech_engines.py`, the watchdog in `api/telephony/watchdog.py`; `telephony/app.py` picks an ear and a mouth by name only.
