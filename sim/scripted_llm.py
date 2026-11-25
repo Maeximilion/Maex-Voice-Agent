@@ -543,7 +543,7 @@ class ScriptedLLM:
             again = self._asked_again(result.get("hint"))
             if again is not None:
                 return again
-            return self._after_failure(name, say)
+            return self._after_failure(say)
         if name == "create_callback":
             self._out_of_scope_request = None
             return LLMTurn(say=say or SAY_HANDOVER)
@@ -632,14 +632,15 @@ class ScriptedLLM:
             return LLMTurn(say=question, understanding_failure="guest_name")
         return None
 
-    def _after_failure(self, name: str | None, say: str | None) -> LLMTurn:
+    def _after_failure(self, say: str | None) -> LLMTurn:
         """Ein Fehlschlag mit vorgeschriebenem Satz geht an den Kunden zurück, der
         dann etwas anderes vorschlagen kann. Ohne Satz bleibt nur die echte Übergabe
-        an das Team, nie eine erfundene Auskunft (CLAUDE.md §2 Regeln 2 und 5)."""
+        an das Team, nie eine erfundene Auskunft (CLAUDE.md §2 Regeln 2 und 5).
+        A failed transfer too: the core carries the new one out with the callback
+        where nobody answers (`loop._handoff`); a handover sentence here promised
+        the team with nothing behind it (Codex PR #244, P1)."""
         if say:
             return LLMTurn(say=say)
-        if name == "transfer_to_team":
-            return LLMTurn(say=SAY_HANDOVER)
         return LLMTurn(
             tool_call=ToolCall("transfer_to_team", {"reason": "not_understood"})
         )

@@ -2540,3 +2540,11 @@ Fixed in one PR of #888 round 3: the Whisper and Piper loaders and `EARS`, `MOUT
 | Point | Why still open | When due |
 |---|---|---|
 | `telephony/app.py` builds Whisper and Piper itself (`_whisper`, `_piper`) | Codex on `879f51e` (PR #298, P2), 15.10.2026: AGENTS.md wants a provider only under `api/telephony/adapters/`; the loaders should move behind an adapter-owned factory, so `app.py` only picks an `Ear` and a `Mouth` by name. | With that row |
+
+## Open Points from Reviews (archive, model-asked transfer row checked 26.11.2026)
+
+Checked in one PR of #888 round 3 (item 17): the loop part was fixed by #655 (13.10.2026), which runs the model's `transfer_to_team` through the core's own handover (`api/agent/loop.py` `_handoff`): a transfer that finds nobody leaves a callback under the number known, or asks for one; a team leg nobody answers leaves the card through the dialplan (#1046). A test now pins every reason a model may give. The stand-in no longer answers a failed transfer with a handover sentence (`sim/scripted_llm.py` `_after_failure`).
+
+| Point | Why still open | When due |
+|---|---|---|
+| A transfer the model asks for and that finds nobody is not followed by a callback (`api/agent/loop.py` `run_turn`, `sim/scripted_llm.py` `_after_tool`) | Codex PR #244 (P1, 12.10.2026), older than that PR: the loop falls back to a callback only when it hands over itself (`_handoff`). | Maxi decides; with T-10.8 at the latest |

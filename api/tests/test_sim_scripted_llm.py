@@ -154,6 +154,19 @@ def test_fehlgeschlagenes_tool_ohne_satz_uebergibt_wirklich(llm):
     assert turn.tool_call.name == "transfer_to_team"
 
 
+def test_a_failed_transfer_is_never_answered_with_a_promise(llm):
+    """Codex PR #244 (P1): a handover sentence after a transfer that found
+    nobody promised the team, and neither a transfer nor a callback followed.
+    The stand-in hands the call to the core again, which carries it out with
+    the callback (`loop._handoff`), as a real model's call is (#655)."""
+    failed = tool_result("transfer_to_team", ok=False, error_code="not_found")
+
+    turn = llm.next_turn("", {**START, "slots": {"phone": "+4972215551234"}}, failed)
+
+    assert turn.say is None
+    assert turn.tool_call.name == "transfer_to_team"
+
+
 def test_fehlgeschlagenes_tool_mit_satz_geht_an_den_kunden(llm):
     turn = llm.next_turn(
         "",

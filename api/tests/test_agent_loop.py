@@ -262,6 +262,40 @@ def test_a_transfer_of_the_model_without_the_team_becomes_a_callback(session, st
     )
 
 
+@pytest.mark.parametrize(
+    ("reason", "card_reason"),
+    [
+        ("complaint", "complaint"),
+        ("not_understood", "not_understood"),
+        ("human_requested", "human_requested"),
+        ("out_of_scope", "out_of_scope"),
+        # No callback reason of its own (docs/03).
+        ("cancellation", "human_requested"),
+        # The core's to say (#769), and a reason the model made up.
+        ("outage", "not_understood"),
+        ("unklar", "not_understood"),
+    ],
+)
+def test_every_transfer_of_the_model_that_finds_nobody_leaves_a_callback(
+    session, state, reason, card_reason
+):
+    """Codex PR #244 (P1, docs/24): a transfer the model asks for and that
+    finds nobody ends with a callback, whatever reason it gives, not only the
+    core's own handovers (hard rule 5)."""
+    state.slots["phone"] = CALLER
+    call = ToolCall(name="transfer_to_team", args={"reason": reason})
+    llm = FakeLLM([LLMTurn(tool_call=call), LLMTurn(say="Ich verbinde Sie.")])
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Ich hätte gern jemanden vom Team")
+
+    assert result.ended is True and state.stage == "callback"
+    assert len(llm.calls) == 1
+    card = session.scalars(select(Callback)).one()
+    assert (card.reason, card.phone) == (card_reason, CALLER)
+    assert session.get(Call, state.call_id).transfer_reason is None
+
+
 def test_a_transfer_of_the_model_without_team_or_number_asks_for_one(session, state):
     llm = _model_asks_for_the_team()
     loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))

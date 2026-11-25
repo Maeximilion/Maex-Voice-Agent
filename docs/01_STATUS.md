@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.97
+> Status: 26.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.98
 
 ---
 
@@ -178,6 +178,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.98 · 26.11.2026:** #888 round 3 item 17: a transfer the model asks for and that finds nobody leaves a callback, whatever reason it gives (a test pins all of them; the loop has done so since #655); the scripted stand-in no longer answers a failed transfer with a handover sentence; the docs/24 row (Codex PR #244, P1) moved to HISTORY
 - **v2.69.97 · 25.11.2026:** #888 round 3: a handover card that names an open delivery says so and gives its address in front of the order lines: the unconfirmed draft's (said or stored, L12), else the one the guest said; a floor note that names health stands as a note to clear (L13), also on a card judged again; the docs/24 row moved to HISTORY (item 16)
 - **v2.69.96 · 25.11.2026:** #888 round 3 item 21 (#990, Maxi): an operator sign-in or step-up with a passkey that holds counts on that passkey alone (checked before the password, recorded only after it) and skips the account's and the address's waits, so who knows only the account name can no longer keep the operator out (#927); codes still wait
 - **v2.69.95 · 25.11.2026:** #888 round 3: on a tool hop the model still sees the question the guest's words answer, as `answered_say` next to `guest_said`, so an answer not yet written into `slots` before a tool call keeps its question (Codex PR #291; the real-model comparison waits for the workbench model, #1050)
