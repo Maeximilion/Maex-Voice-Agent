@@ -2518,3 +2518,10 @@ Fixed in one PR of #888 round 3 (`sim/scripted_order.py`, tests in `api/tests/te
 | Point | Why still open | When due |
 |---|---|---|
 | Reason for a surcharge in the text phone (`sim/scripted_order.py` `_apply_wish`) | Codex PR #139 (P2, rule A): the cart keeps group and name of an option, not its `reason`; "Warum kostet das mehr?" is then searched as a dish. Tried in #1023 (25.11.2026) and taken out on Codex's P1 there: telling the why question from an order needs a pattern over German words, which AGENTS.md (#798) leaves to Maxi, and "Ich weiß nicht, warum das teurer ist, aber ich möchte noch die 23." lost the 23. Claude's choice, awaiting Maxi: allow a stand-in pattern that answers only after the search found no dish, with the `reason` kept on the cart line. Stand-in only | Maxi's word on the pattern, or with T-2.4 |
+## Open Points from Reviews (archive, engine factory row fixed 25.11.2026)
+
+Fixed in one PR of #888 round 3: the Whisper and Piper loaders and `EARS`, `MOUTHS` live in `api/telephony/adapters/speech_engines.py`, the watchdog in `api/telephony/watchdog.py`; `telephony/app.py` picks an ear and a mouth by name only.
+
+| Point | Why still open | When due |
+|---|---|---|
+| `telephony/app.py` builds Whisper and Piper itself (`_whisper`, `_piper`) | Codex on `879f51e` (PR #298, P2), 15.10.2026: AGENTS.md wants a provider only under `api/telephony/adapters/`; the loaders should move behind an adapter-owned factory, so `app.py` only picks an `Ear` and a `Mouth` by name. | With that row |
