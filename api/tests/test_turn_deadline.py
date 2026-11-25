@@ -18,10 +18,12 @@ import pytest
 from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session
 
+from api.agent import dispatch as dispatch_module
 from api.agent.llm import ChatCompletionsLLM, LLMError, LLMTurn, ToolCall
 from api.agent.loop import SAY_CALLBACK_NUMBER, ConversationLoop
 from api.agent.state import ConversationState
 from api.core.envelope import SAY_ON_FAILURE
+from api.core.errors import OutOfTime
 from api.domain.calls import call_routing
 from api.models import Call, Callback, ServiceConfig
 from api.telephony.adapters.fake import FakeTelephony
@@ -163,10 +165,10 @@ def test_the_model_is_not_asked_again_once_the_time_is_up(session, state, monkey
     loop = _loop(session, model, clock)
     dispatch = loop._dispatch
 
-    def slow_tool(state, name, args):
+    def slow_tool(state, name, args, **more):
         if name == "get_service_status":
             clock.now += 7.0
-        return dispatch(state, name, args)
+        return dispatch(state, name, args, **more)
 
     monkeypatch.setattr(loop, "_dispatch", slow_tool)
 
@@ -240,6 +242,47 @@ def test_a_slow_model_with_nobody_to_reach_and_no_number_asks_for_one(session, s
     result = loop.run_turn(state, "07221 5551234")
     assert result.ended is True and state.stage == "callback"
     assert len(model.given) == 1
+    assert session.scalars(select(Callback)).one().phone == "+4972215551234"
+
+
+def _out_of_time(*_args):
+    raise OutOfTime("a statement ran into the turn's deadline", say=SAY_ON_FAILURE)
+
+
+def test_a_tool_cut_at_the_deadline_hands_over_like_a_late_answer(
+    session, state, monkeypatch
+):
+    """The tool's structured error (`db.bounded_by`) ends the turn the way a
+    late answer does: the team, and the model is not asked again."""
+    monkeypatch.setitem(dispatch_module.TOOLS, "get_service_status", _out_of_time)
+    clock = Clock()
+    tool = LLMTurn(tool_call=ToolCall(name="get_service_status"))
+    model = SlowModel(clock, (9.5, tool), (0.1, LLMTurn(say="Wir haben geöffnet.")))
+    loop = _loop(session, model, clock)
+
+    result = loop.run_turn(state, "Habt ihr offen?")
+
+    assert len(model.given) == 1
+    assert result.ended is True and state.stage == "transferred"
+    assert result.say[-1] == SAY_ON_FAILURE
+
+
+def test_a_tool_cut_with_nobody_to_reach_and_no_number_asks_for_one(
+    session, state, monkeypatch
+):
+    """Not a blind transfer to a team nobody takes: as after a late answer,
+    the core asks for a number itself (#652, rule 5; own deep review)."""
+    monkeypatch.setitem(dispatch_module.TOOLS, "get_service_status", _out_of_time)
+    clock = Clock()
+    tool = LLMTurn(tool_call=ToolCall(name="get_service_status"))
+    model = SlowModel(clock, (9.5, tool))
+    loop = _loop(session, model, clock, now=CLOSED_NOW)
+
+    result = loop.run_turn(state, "Habt ihr offen?")
+
+    assert result.ended is False and result.say == [SAY_CALLBACK_NUMBER]
+    result = loop.run_turn(state, "07221 5551234")
+    assert result.ended is True and state.stage == "callback"
     assert session.scalars(select(Callback)).one().phone == "+4972215551234"
 
 

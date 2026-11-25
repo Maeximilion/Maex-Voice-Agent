@@ -46,6 +46,7 @@ def test_fail_huelle_traegt_code_und_message():
         (errors.BelowMinimum, "below_minimum"),
         (errors.Conflict, "conflict"),
         (errors.ServiceUnavailable, "service_unavailable"),
+        (errors.OutOfTime, "out_of_time"),
     ],
 )
 def test_jede_fehlerklasse_hat_einen_spezifizierten_code(cls, code):

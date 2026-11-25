@@ -25,7 +25,7 @@ The envelope also carries what the framework answers itself (#252): an unknown p
 Below `/gui/` the same envelope keeps an error status (repo audit, 27.10.2026): an unhandled error is 500, a malformed path or field 422, an `AppError` no view catches 500. The tablet's htmx swaps every answer below 400 into the page, so a 200 put the JSON where the header and its pause button stood (`api/main.py` `_status`, `api/gui/static/app.js`). The agent's paths keep 200.
 
 - `say` ist ein **Vorschlag**, kein Zwang. Es hält die Formulierung heikler Fälle (ausverkauft, außerhalb der Zone, Allergene) im Code statt im Modell.
-- **Fehlercodes:** `invalid_input` · `not_found` · `ambiguous` · `closed` · `out_of_zone` · `below_minimum` · `conflict` · `service_unavailable`
+- **Fehlercodes:** `invalid_input` · `not_found` · `ambiguous` · `closed` · `out_of_zone` · `below_minimum` · `conflict` · `service_unavailable` · `out_of_time` (phone line only: a statement of a tool the model called ran into what was left of the guest's turn, `db.bounded_by`; the core hands the call over like after a late answer)
 - **Nie** ein Stacktrace, nie ein HTTP 500 ohne JSON-Körper. Der Agent muss jede Antwort vorlesen können.
 - **Latenzbudget:** 300 ms p95 bei lokaler DB. Wird in den Tests gemessen (`p95_ms` in `api/tests/conftest.py`, 20 Aufrufe je Messreihe).
   - **Messverfahren:** bis zu 3 Messreihen. p95 gilt über alle bisher gemessenen Aufrufe (20, 40, dann 60), keine Reihe wird verworfen; liegt es unter dem Budget, endet die Messung. Die Grenze ist lokal und in CI dieselbe, 300 ms.
