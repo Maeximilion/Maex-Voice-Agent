@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.72
+> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.73
 
 ---
 
@@ -189,6 +189,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.73 · 25.11.2026:** #888 round 3: a tool the model calls on the phone line waits on a lock no longer than its turn has left (never past the 2 s bound), and a timeout hands the call to the team
 - **v2.69.72 · 25.11.2026:** #888 round 3: a joining word (und, aber, dafür) or bitte is cut from a wish only as a word of its own, and every joining word in front of the next part goes, so "ohne Hund" no longer becomes "ohne H"
 - **v2.69.71 · 25.11.2026:** #888 round 3: sync_main.sh warns on a clean main with unpushed commits; the user-level sync-main.sh moved to scripts/claude_user_hooks/ and never fast-forwards over an ignored file
 - **v2.69.70 · 25.11.2026:** deep review of #997: after a refusal for a dish, a retry that names an allergen ("Ja, die ist ohne Erdnüsse") or speaks of the guest's health or tolerance is held again unless the turn's order text names the allergen, a refused sentence with an allergen the dish's own text licenses keeps the strict retry, words of tolerance hold a first answer next to an order step too, and "allergiefrei" goes to the team like "allergenfrei"; the negated licensed allergen left by #798 is #1022
