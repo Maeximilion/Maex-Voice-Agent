@@ -1957,6 +1957,13 @@ Fixed in one PR of #888 round 3 (`sim/scripted_order.py`, `sim/scripted_llm.py`,
 | Quantity of a replacement that is one of the offered dishes (`sim/scripted_order.py` `on_customer`, question branch) | Codex PR #178 (P2 on the merged head, rule 24.09.2026: recorded, not blocking): "Nein, lieber zwei Nummer 13" on "Meinen Sie Nummer 12 oder Nummer 13?" picks the 13 from the part after the rejection, but reads the quantity from the whole ... | with T-2.4 or the next sim change |
 | Scripted model takes a whole pickup order while pickup is closed (`sim/scripted_order.py`) | Eval suite T-5.2: at closing time or on the closed day the stand-in asks for dishes, name and phone and only `draft_order` says "Abholung ist gerade leider nicht möglich"; the outcome is right (nothing booked), the conversation is long. | with T-2.4 |
 
+## Open Points from Reviews (archive, identifier order checked 25.11.2026)
+
+Checked in one PR of #888 round 3 on the own Asterisk 22.12.0 image (#1026): `pjsip show identifiers` lists `ip` first with and without the line; the line only moved `username` and `anonymous` behind `header`, `request_uri` and `auth_username`, and none of them can take the only endpoint, which has `identify_by=ip`. The `[global]` block is gone, and `api/tests/test_asterisk_pjsip_conf.py` keeps `identify_by=ip` on every endpoint.
+
+| Point | Why still open | When due |
+|---|---|---|
+| `[global]` with `endpoint_identifier_order=ip` may do nothing (`deploy/asterisk/conf/pjsip.conf`) | Ponytail review of PR #340 (P2), 20.10.2026: the block's own comment says it does not switch identification by the From user off, `identify_by=ip` on the endpoint does; and Asterisk's default order is believed to start with `ip` already ... | With the next telephony PR |
 ## Open Points from Reviews (archive, lock wait row fixed 25.11.2026)
 
 Fixed in one PR of #888 round 3 (`api/db.py` `bounded_by`, `api/agent/dispatch.py`, `api/agent/loop.py`, tests in `api/tests/test_db.py`, `test_turn_deadline.py` and `test_telephony.py`): every statement of a tool the model calls on the phone line waits no longer than what is left of the turn, never more than the line's 2 s, and a statement cut there is the tool's structured error `out_of_time`, on which the core ends the turn like after a late answer (outage sentence, transfer, or a callback where nobody answers).
