@@ -395,12 +395,19 @@ def test_every_question_to_asterisk_is_bounded():
 
 def test_ci_on_main_judges_every_commit_of_a_push():
     """A stack merge pushes several merge commits at once; the Asterisk gate on
-    `main` reads the whole push, not only its last commit."""
+    `main` reads the whole push, not only its last commit. Its base can lie
+    outside the checkout's depth: fetched first, and a diff that still fails
+    is held out of the pipeline's status whatever the shell's pipefail (Codex
+    on #1026), so `changes` never fails and the empty list builds."""
     ci = (ROOT / ".github/workflows/ci.yml").read_text()
     job = re.search(r"\n  changes:\n(.*?)(?=\n  [a-z-]+:\n)", ci, re.S)
     assert job, "ci.yml has no job changes"
     on_main = job.group(1).split("else", 1)[1]
     assert "github.event.before" in on_main
+    assert re.search(
+        r"git fetch [^\n]*--depth=1 origin \"\$base\"[^\n]*\|\| true", on_main
+    )
+    assert re.search(r"\{ git diff [^\n]*\"\$base\" HEAD \|\| true; \}", on_main)
 
 
 def _compose_asterisk():
