@@ -217,7 +217,7 @@ capture endpoint against Asterisk 22.10.1 and again 22.11.0 (frames, recorded on
 | A crash in the middle of a call, or a transfer asked for by the core | the dialplan asks `voice` after the leg ends; only an explicit "done" hangs up. A crash leaves the call log open: the dispatcher closes it as `error` once the call is `max_call_seconds` plus 10 minutes old (#545) | the dialplan dials the team number |
 | Model, database, a tool | the existing paths in `agent/loop.py` and `telephony/handler.py` | `TelephonyPort.transfer`, to the team number of the day once the routing was read (#674). The key terms for the ear are best effort: their failure changes nothing the caller hears. A caller id longer than 40 characters counts as withheld, not as a reason to refuse the call |
 | A Docker network between `voice` and Asterisk or the database is cut | the dialplan, Asterisk's pings, or the timeouts of the phone line's database sessions (§6) | the dialplan dials the team number |
-| The team does not pick up | the dial status | the team number next, then `TEAM_PHONE`, each number once (T-10.13, #835, below); at both: callback card for the team, and a caller the AI answered hears that the restaurant calls back, or to call again when no card could be written (T-10.8) |
+| The team does not pick up | the dial status | the team number next, then `TEAM_PHONE`, each number once (T-10.13, #835, below); at both: callback card for the team, and a caller the AI answered hears that the restaurant calls back, or to call again when no card could be written (T-10.8); a caller who hangs up while it rings: the card too (`h`, #888 round 3) |
 | The recording: the question, its log, the row or the file | `agent/recording.py`, the session | nothing has to: the call goes on without a recording, and in mode `shadow` the team rings as on a no (§4, T-11.3) |
 | The caller hangs up in mode `shadow` with the recording question, or on the sentence before a transfer of the AI, or on the outage sentence of a failed turn, before the line has the transfer | the session (`closed`), the handler | nothing can: a callback card under the caller id instead, with the card the core wrote for the handover, none for a withheld number; the call is logged `callback` or `abandoned`, never `transferred` (§4, #252 no. 9, #674); the outage sentence's call stays `error` and gets its card too (#741), which names the bookings of the call that stand, from the database, as every card does (#743 follow-up, #764). Only on a call we answered: a leg closed before our first sentence is the row below or a caller who gave up while it rang (#652) |
 | `voice` takes the call and says nothing for 10 s (a slow start of the call, a mouth that hangs) | the dialplan: its `Dial` to `voice` gives up, our leg is closed | the dialplan dials the team number. The call log shows `abandoned`: `voice` cannot tell this from a caller who gave up while it rang (#652) |
@@ -412,6 +412,17 @@ is rung (Maxi, 20.10.2026). The outage paths (paused, shadow, `voice` down, a fa
   heard it say who it is first (L1 of docs/09): the greeting, or, when the outage sentence is
   the first of the call (the database down at the start, a call the process does not know), the
   outage sentence with the AI notice before it (`SAY_OUTAGE_FIRST`, docs/05 §6).
+- A caller who hangs up while a leg of the team rings (#888 round 3, rule 5; Claude's choice,
+  awaiting Maxi): Asterisk runs the extension `h` once the caller is gone, and it sends the same
+  report, so the team gets the card, whose telephone shows only a missed call from our
+  registration (T-10.2). The team leg sets `RANG`, `missed` marks it asked; `h` reports only
+  after a leg that rang and none answered (Dial's status is `CANCEL` then, `ANSWER` after an
+  answered leg stays), never twice and never for a call the team was never rung for: the AI's
+  own hangup, a caller gone in the AI's leg (where `voice` decides on a card itself, #252 no. 9),
+  the loop guard. Nothing is played. Run on the pinned Asterisk 22.11.0 with the dialplan
+  harness (25.11.2026): a caller gone 3 s into a ringing leg, one report and the log line
+  `hung up while the team rang, card [noted]`; an answered leg, a leg nobody took (`missed`
+  reports once) and the AI's hangup, no report from `h`. Not yet in the workbench drill.
 
 | Drill | Result |
 |---|---|
@@ -1218,9 +1229,8 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
   has to be on the list: the team member presses a key to take the call (Dial's `U()` with a spoken
   prompt), else the leg counts as not answered. Maxi's call; it needs a recorded prompt.
 - **From T-10.8, a team that does not pick up (built 20.10.2026, §5):** open around it:
-  - A caller who hangs up while the team rings ends the dialplan, and no card is written; the
-    team's telephone shows a missed call from our registration, not the guest's number (T-10.2).
-    An `h` extension could report it as well (about four lines). Maxi's call.
+  - A caller who hangs up while the team rings: the extension `h` reports it, and the card is
+    written (#888 round 3, above). Claude's choice for rule 5, awaiting Maxi (#1032).
   - The card carries the reason of the transfer and what happened, not the guest's words: the
     conversation's state is gone when the report comes. Kept in the line's memory with the number
     the guest named, if the team asks for it.

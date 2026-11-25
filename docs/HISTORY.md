@@ -1978,3 +1978,11 @@ Fixed in one PR of #888 round 3 (`api/db.py` `bounded_by`, `api/agent/dispatch.p
 | Point | Why still open | When due |
 |---|---|---|
 | A tool's wait on a lock is bounded at 2 s, not by what is left of the turn (`telephony/app.py` `DB_TIMEOUT_MS`, `db.bounded_sessions`) | Codex on `879f51e` (PR #298, P2), 15.10.2026: with 9.5 s of a 10 s turn spent on the model, a tool that waits on a row lock keeps the guest up to 2 s past the deadline; with `turn_deadline_seconds=1` more directly. | Before the first test call with real guests (T-10.7) |
+
+## Open Points from Reviews (archive, hang-up while the team rings fixed 25.11.2026)
+
+Fixed in one PR of #888 round 3 (`deploy/asterisk/conf/extensions.conf`, extension `h`; test in `api/tests/test_telephony_voice.py`, run on the pinned Asterisk 22.11.0 with the dialplan harness): a caller who hangs up while a leg of the team rings is reported to `voice` like a leg nobody answered, and the team gets the callback card. Claude's choice for rule 5, awaiting Maxi (#1032).
+
+| Point | Why still open | When due |
+|---|---|---|
+| A caller who hangs up while the team rings gets no callback card (`deploy/asterisk/conf/extensions.conf`, extension `team`) | T-10.8, 20.10.2026: the dialplan ends with the caller, and the report runs only after a leg nobody answered. | Maxi decides; before the first call from a real customer |

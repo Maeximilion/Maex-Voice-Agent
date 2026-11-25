@@ -893,6 +893,29 @@ def test_the_dialplan_reports_every_missed_leg_and_waits_out_the_row():
     assert "CURLOPT(httptimeout)=4" in missed[:report]
 
 
+def test_a_caller_who_hangs_up_while_the_team_rings_gets_a_card():
+    """T-10.8 open point (rule 5): Asterisk runs `h` once the caller is gone.
+    A team leg rang and none answered: the same report as `missed`, once,
+    and nothing played. No report for a call the team never rang, for an
+    answered leg, or after `missed` asked already."""
+    team = _extension("team")
+    rang = team.index("same => n,Set(RANG=yes)")
+    assert rang < next(i for i, s in enumerate(team) if "Dial(" in s)
+    missed = _extension("missed")
+    asked = next(i for i, s in enumerate(missed) if s.endswith(",Set(RANG=asked)"))
+    assert asked < next(i for i, s in enumerate(missed) if "/missed" in s)
+    gone = _extension("h")
+    assert gone[0] == (
+        'exten => h,1,GotoIf($["${RANG}" != "yes" | "${DIALSTATUS}" = "ANSWER"]?end)'
+    )
+    report = next(i for i, s in enumerate(gone) if "/missed" in s)
+    assert "CURLOPT(httptimeout)=4" in " ".join(gone[:report])
+    assert not [s for s in gone if "Playback(" in s or "Dial(" in s]
+    for line in gone:
+        if "Log(" in line:
+            assert "CALLERID" not in line and "TARGET" not in line, line
+
+
 # -- with the real call handler and a database ----------------------------------------
 
 
