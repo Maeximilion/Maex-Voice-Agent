@@ -25,6 +25,7 @@ import time
 import pytest
 
 from api.domain.menu import split, wishes
+from api.domain.menu.numberwords import fold
 from api.domain.menu.split import raw_pieces, separator_pieces, split_positions
 from api.domain.menu.wishes import classify_wish, wish_candidates
 
@@ -338,7 +339,7 @@ def test_against_allergic_matches_the_old_pattern(text):
 
 
 def _words(text):
-    return split._WORD.findall(split.fold(text))
+    return split._WORD.findall(fold(text))
 
 
 def test_split_words_of_a_joined_part_are_the_words_of_its_pieces():
