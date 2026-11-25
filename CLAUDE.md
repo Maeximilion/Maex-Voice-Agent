@@ -171,7 +171,7 @@ Ask closed questions (yes/no or A/B/C with marked recommendation), **one per int
 A finding is a claim to check against the code before any change; a severity label is no proof. Confirmed: fix with a test; wrong or outdated: answer in its thread with evidence. Every commit that moves the head, a merge from `main` too, needs a new review. `/ponytail-review` and `/security-review` run in `/done` step 1; the security audit only at the triggers of `docs/09_OPERATIONS_LEGAL.md` section 5.
 
 ### Session End
-**Hand over before compression** (Maxi, 2026-10-21): a session never runs into context compression. Measure with `python3 scripts/session_usage.py context` before each large step, at `/done` and after a merge; at 300k tokens before a large step, or 450k at any clean point (`/handover` "When a block is due"): finish the step, push, hand over, tell Maxi to go on in a new session. A chain Maxi starts with "no handover limit" skips both (`chain.md` section 5a).
+**Hand over before compression** (Maxi, 2026-10-21): a session never runs into context compression. Measure with `python3 scripts/session_usage.py context` before each large step, at `/done` and after a merge; at 300k tokens before a large step, or 450k at any clean point (`/handover` "When a block is due"): finish the step, push, hand over, tell Maxi to go on in a new session. A chain skips both (`chain.md` section 4, Maxi 2026-11-24).
 
 ### Cache-friendly sessions
 

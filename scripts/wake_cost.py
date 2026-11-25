@@ -8,7 +8,7 @@ transcript. Cost units weight tokens by list price relative to fresh input:
 cache read 0.1, cache write with 5-minute lifetime 1.25, with 1-hour lifetime
 2.0, output 5. The table shows whether a wake after a wait pays more than a
 working request, and from which gap on the prompt cache is written again.
-First run and findings: 2026-11-23, `.claude/commands/chain.md` section 5.
+First run and findings: 2026-11-23, `docs/HISTORY.md` "Chain command (archive, replaced 25.11.2026)", section 5.
 """
 
 from __future__ import annotations
