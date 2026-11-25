@@ -178,16 +178,18 @@ before naming a base.
 - The chain never waits for Maxi's message and works the same whether he is
   there or away (Maxi, 2026-11-25: "It shouldn't wait for my message. /chain
   should be autonomiously as much as we set it." and "It should be the same
-  rule while i am away as i am here."). A free lane goes, in this order:
-  1. to a heavy step a running item is waiting for ("go heavy"), since active
-     and waiting items finish first (Maxi: "first the Active and Waiting Items
-     should be done because of the lane order and then the next priority is a
-     planned item");
-  2. to a planned item that changes the chain itself (`chain.md`, the chain
-     dashboard, the chain memories), before any other planned item (Maxi,
-     2026-11-25: "planned items for the chain like chain.md changes should be
-     Priority first when a lane gets free"); the ship lane takes their pull
-     requests first too;
+  rule while i am away as i am here."). No planned item gets a session while
+  no lane is free for it; the ship lane's queue is not affected (Maxi,
+  2026-11-25: "it's just about that we don't start the next side sessions or
+  items which are planned when there is no free lane for it"). A free lane
+  goes, in this order:
+  1. to a planned item that changes the chain itself (`chain.md`, the chain
+     dashboard, the chain memories), before everything else (Maxi,
+     2026-11-25: "Priority of planned chain items should be done first over
+     everything else because they are more important of how the chain works");
+     the ship lane takes their pull requests first too;
+  2. to a heavy step a running item is waiting for ("go heavy"), since active
+     and waiting items finish before new ones start;
   3. to the next planned item in queue order.
   The planned item gets a fresh session in a turn Maxi's message began. In
   every other turn the app and auto mode refuse a start (25.11.2026: "Start
