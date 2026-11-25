@@ -21,7 +21,11 @@ per account and per client address, or on the browser alone when it brings the
 device cookie of an earlier sign-in (at the step-up on the account too, #888
 A3), with the waits of a customer's login (every
 third failure in a row, 1 to 5 minutes; `domain/access/sessions.py`); an IPv6
-address also counts in its /48, with a wait every 30th failure (#962). The
+address also counts in its /48, with a wait every 30th failure (#962). A
+sign-in or step-up with a passkey that holds counts on that passkey alone and
+skips the other waits, so a guesser who knows only the account name cannot
+keep the operator out (#990); one behind the operator's own address can still
+fill its cap of sign-in challenges (docs/23 §5, #827 F1). The
 attempt is counted before the slow hash, in a transaction of its own, so a
 parallel burst meets the wait.
 
@@ -192,9 +196,8 @@ def sign_in(
         raise SignInRefused()
     # The counters' key; the audit and the double tap keep the address as sent.
     counted = counted_address(address)
-    stored, account_id, trusted = _count_attempt(db, name, counted, device_token, now)
-    # Taken before the password is looked at: a challenge is spent by the first
-    # post that brings it, whatever else that post got wrong.
+    # Taken before anything is counted or looked at: a challenge is spent by
+    # the first post that brings it, whatever else that post got wrong.
     challenge = (
         passkeys.take(
             db,
@@ -206,6 +209,9 @@ def sign_in(
         if passkey and attempt_token
         else None
     )
+    stored, account_id, trusted, held = _count_attempt(
+        db, name, counted, device_token, now, passkey=passkey, challenge=challenge
+    )
     if not verify_secret(password, stored):
         _note_failure(db, name if account_id else None, address, "password", now)
         raise SignInRefused()
@@ -216,6 +222,8 @@ def sign_in(
     if account is None or account.password_hash != stored:
         db.rollback()
         raise SignInRefused()
+    # Checked again under the account's row, and only now recorded: a passkey
+    # removed meanwhile, or a counter another answer moved, opens nothing.
     factor, why = _second_factor(db, account, code, now, passkey, challenge)
     if factor is None:
         repeat = not passkey and _just_signed_in(db, account, code, address, now)
@@ -225,7 +233,11 @@ def sign_in(
         alarm = reason == "factor" and _known_password_alarm_due(db, name, now)
         _note_failure(db, name, address, reason, now, alarm)
         raise SignInRefused(copy=why == "counter", alarm=alarm)
-    if not trusted:
+    if held is not None:
+        # Counted alone, like a known device: the account's and the address's
+        # failures may be a guesser's, so their waits stay as they are.
+        _forget_passkey_count(db, held)
+    elif not trusted:
         _forgive(db, account, counted)
     device_token = _trust_device(db, account, device_token, now)
     # The browser's own session, and every ended one of the account that no
@@ -327,9 +339,6 @@ def step_up(
     # With the device cookie the account counts too, or a holder of both
     # would get two wait ladders, one with the cookie and one without (#888 A3).
     counted = counted_address(address)
-    _, _, trusted = _count_attempt(
-        db, operator.name, counted, device_token, now, account_too=True
-    )
     challenge = (
         passkeys.take(
             db,
@@ -340,6 +349,18 @@ def step_up(
         )
         if passkey
         else None
+    )
+    # A passkey that holds counts alone here too, or a guesser's account wait
+    # would refuse the step-up every factor change needs (#990).
+    _, _, trusted, held = _count_attempt(
+        db,
+        operator.name,
+        counted,
+        device_token,
+        now,
+        account_too=True,
+        passkey=passkey,
+        challenge=challenge,
     )
     account = _locked(db, operator)
     # Counted again under the row a registration holds too: a first passkey
@@ -372,9 +393,14 @@ def step_up(
         db.commit()
         raise SignInRefused(copy=why == "counter", alarm=alarm)
     if trusted:
+        # The browser's own count; the account's stays to a guesser's waits
+        # when a passkey held, as at the sign-in.
         device = _device(db, account.id, device_token)
         if device is not None:
             device.failures, device.blocked_until, device.last_failed_at = 0, None, None
+    if held is not None:
+        _forget_passkey_count(db, held)
+    elif trusted:
         account.failures, account.blocked_until, account.last_failed_at = 0, None, None
     else:
         _forgive(db, account, counted)
@@ -675,10 +701,19 @@ def _count_attempt(
     device_token: str,
     now: datetime,
     account_too: bool = False,
-) -> tuple[str | None, uuid.UUID | None, bool]:
+    passkey: str = "",
+    challenge: bytes | None = None,
+) -> tuple[str | None, uuid.UUID | None, bool, uuid.UUID | None]:
     """Refuse while a wait runs, otherwise count one more failure. Returns the
-    stored hash, the account and whether a known device was counted. A known
-    device counts alone, or with the account when `account_too`. Commits."""
+    stored hash, the account, whether a known device was counted and the
+    passkey whose `passkey` answer to `challenge` holds, if any. A passkey
+    that holds counts alone and skips every other wait (Maxi, #990): it cannot
+    be guessed, so who knows only the account name can no longer keep the
+    operator out with three wrong passwords every five minutes (#927). It is
+    only checked here, not recorded: the caller checks it again once the
+    password held. Otherwise a known device counts alone, or with the account
+    when `account_too`, and a passkey that does not hold counts as if no
+    passkey had come. Commits."""
     # Addresses are forgotten a day after their last failure, as their count is.
     db.execute(
         delete(OperatorLoginFailure).where(
@@ -692,9 +727,20 @@ def _count_attempt(
         .execution_options(populate_existing=True)
     ).first()
     device = _device(db, account.id, device_token) if account else None
+    held = None
+    if passkey and account:
+        # Under the account's row, the order a passkey removal takes too.
+        try:
+            held = passkeys.verify(
+                db, account.id, challenge, passkey, now, record=False
+            ).id
+        except passkeys.Refused:
+            held = None
     counters: list[OperatorAccount | OperatorDevice | OperatorLoginFailure]
     block = None
-    if device is not None:
+    if held is not None:
+        counters = [_counter(db, _passkey_key(held), now)]
+    elif device is not None:
         counters = [device, account] if account_too and account else [device]
     else:
         counters = [row for row in (account, _counter(db, address, now)) if row]
@@ -724,7 +770,21 @@ def _count_attempt(
     stored = account.password_hash if account else None
     account_id = account.id if account else None
     db.commit()
-    return stored, account_id, device is not None
+    return stored, account_id, device is not None, held
+
+
+def _passkey_key(passkey_id: uuid.UUID) -> str:
+    """The failure row of a passkey that held, beside the addresses under a key
+    no address can have, forgotten the same way."""
+    return f"passkey:{passkey_id}"
+
+
+def _forget_passkey_count(db: Session, passkey_id: uuid.UUID) -> None:
+    db.execute(
+        delete(OperatorLoginFailure).where(
+            OperatorLoginFailure.address == _passkey_key(passkey_id)
+        )
+    )
 
 
 def _counter(db: Session, key: str, now: datetime) -> OperatorLoginFailure:

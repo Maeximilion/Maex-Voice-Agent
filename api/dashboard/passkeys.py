@@ -359,10 +359,14 @@ def verify(
     challenge: bytes | None,
     answer: str,
     now: datetime,
+    record: bool = True,
 ) -> OperatorPasskey:
     """Check an assertion against the challenge taken for it: a passkey of
     this account, this site's origin, the operator verified on the device, a
-    counter that grew. Raises `Refused`; the caller commits."""
+    counter that grew. Raises `Refused`; the caller commits. `record=False`
+    only checks: the counter and the last use stay as they are, so a post
+    whose password then fails moves neither (deep review of #990: a cloned
+    key's counter jump would otherwise refuse the real device for good)."""
     if challenge is None or len(answer) > ANSWER_MAX:
         raise Refused()
     try:
@@ -377,6 +381,7 @@ def verify(
             OperatorPasskey.account_id == account_id,
         )
         .with_for_update()
+        .execution_options(populate_existing=True)
     ).first()
     if (
         row is None
@@ -403,6 +408,7 @@ def verify(
         verified.new_sign_count <= row.sign_count
     ):
         raise Refused("counter")
-    row.sign_count = verified.new_sign_count
-    row.last_used_at = now
+    if record:
+        row.sign_count = verified.new_sign_count
+        row.last_used_at = now
     return row
