@@ -13,6 +13,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "asterisk_image_check.sh"
@@ -246,14 +247,23 @@ PJSIP_MODULES = {
     "acl": "res_pjsip_acl",
     "transport": "chan_pjsip",
     "registration": "res_pjsip_outbound_registration",
-    "auth": "chan_pjsip",
+    # As `outbound_auth`: the registration and the team legs the access challenges.
+    "auth": "res_pjsip_outbound_authenticator_digest",
     "aor": "chan_pjsip",
     "endpoint": "chan_pjsip",
     "identify": "res_pjsip_endpoint_identifier_ip",
 }
 # Not named by any line: the bridge of a team leg, alaw to the media
 # channel's slin16, and the announcements (`.sln16`).
-MEDIA_MODULES = {"bridge_simple", "bridge_native_rtp", "codec_resample", "format_sln"}
+MEDIA_MODULES = {
+    "bridge_simple",
+    "bridge_native_rtp",
+    "codec_resample",
+    "format_sln",
+    # Every PJSIP call: its session and the SDP of its audio.
+    "res_pjsip_session",
+    "res_pjsip_sdp_rtp",
+}
 
 
 def _dialplan_names():
@@ -302,7 +312,6 @@ def test_asterisk_starts_through_the_images_entrypoint_as_its_user(tmp_path):
     _, state = _run(tmp_path)
     created = (state / "create").read_text()
     assert "--entrypoint" not in created
-    assert "/usr/sbin/asterisk -f -n -U asterisk" in created
 
 
 def _copy_of_the_check(tmp_path, extensions):
@@ -358,3 +367,53 @@ def test_ci_on_main_judges_every_commit_of_a_push():
     assert job, "ci.yml has no job changes"
     on_main = job.group(1).split("else", 1)[1]
     assert "github.event.before" in on_main
+
+
+def _compose_asterisk():
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    return compose["services"]["asterisk"]
+
+
+def test_asterisk_starts_with_the_products_command_and_rights(tmp_path):
+    """Same flags (`-p` starts the canary and asks for a real-time priority it
+    may not get) and the same capabilities as the service in
+    docker-compose.yml: a flag or a right the product's start needs and the
+    image refuses would otherwise pass (deep review of #972)."""
+    service = _compose_asterisk()
+    _, state = _run(tmp_path)
+    args = (state / "create").read_text().split()
+    command = service["command"]
+    assert args[-len(command) :] == command
+    pairs = set(zip(args, args[1:]))
+    for flag, key in (
+        ("--cap-drop", "cap_drop"),
+        ("--cap-add", "cap_add"),
+        ("--security-opt", "security_opt"),
+    ):
+        for value in service[key]:
+            assert (flag, value) in pairs, f"{flag} {value}"
+
+
+def test_dependabot_keeps_the_asterisk_base_apart():
+    """An Alpine step in the Asterisk image (patches, package names, the busybox
+    tools render.sh reads) moves by hand with the drills, and never blocks
+    the API's base bump in a shared PR; the image name of our own build is on
+    no registry (deep review of #972)."""
+    config = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text())
+    updates = config["updates"]
+    own = [u for u in updates if "/deploy/asterisk/image" in u.get("directories", [])]
+    assert len(own) == 1 and own[0]["directories"] == ["/deploy/asterisk/image"]
+    ignored = {
+        (rule["dependency-name"], kind)
+        for rule in own[0].get("ignore", [])
+        for kind in rule.get("update-types", [])
+    }
+    assert ("alpine", "version-update:semver-major") in ignored
+    assert ("alpine", "version-update:semver-minor") in ignored
+    compose = [
+        u
+        for u in updates
+        if u["package-ecosystem"] == "docker-compose" and "/" in u["directories"]
+    ]
+    names = {rule["dependency-name"] for rule in compose[0].get("ignore", [])}
+    assert "maex-voice-agent/*" in names

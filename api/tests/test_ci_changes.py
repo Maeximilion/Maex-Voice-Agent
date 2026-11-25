@@ -67,6 +67,8 @@ def test_the_script_prints_the_output_lines_ci_reads():
         ["deploy/asterisk/conf/extensions.conf"],
         ["scripts/asterisk_image_check.sh"],
         [".github/workflows/ci.yml"],
+        # The check starts Asterisk with the service's command and rights.
+        ["docker-compose.yml"],
         # A broken or empty diff never skips the build.
         [],
     ],
@@ -80,7 +82,6 @@ def test_a_change_that_reaches_the_asterisk_image_builds_it(files):
     [
         ["api/telephony/router.py", "docs/20_VOICE_LAYER.md"],
         ["deploy/asterisk/docker-compose.drill.yml", "deploy/asterisk/render.sh"],
-        ["docker-compose.yml"],
     ],
 )
 def test_anything_else_skips_the_asterisk_build(files):
