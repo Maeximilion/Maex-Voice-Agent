@@ -73,7 +73,15 @@ exit 0
 """
 
 
-def _run(tmp_path, *, dies=False, image="maex-asterisk:ci", dial_ms=None, **fake_env):
+def _run(
+    tmp_path,
+    *,
+    dies=False,
+    image="maex-asterisk:ci",
+    dial_ms=None,
+    script=SCRIPT,
+    **fake_env,
+):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(parents=True)
     fake = bin_dir / "docker"
@@ -96,7 +104,7 @@ def _run(tmp_path, *, dies=False, image="maex-asterisk:ci", dial_ms=None, **fake
         env["FAKE_MS"] = str(dial_ms)
     # DIES_AT_INSPECT, NOT_RUNNING: see FAKE_DOCKER.
     env.update({name.upper(): str(value) for name, value in fake_env.items()})
-    args = ["sh", str(SCRIPT)] + ([image] if image else [])
+    args = ["sh", str(script)] + ([image] if image else [])
     run = subprocess.run(args, env=env, capture_output=True, text=True, timeout=60)
     return run, state
 
@@ -295,3 +303,58 @@ def test_asterisk_starts_through_the_images_entrypoint_as_its_user(tmp_path):
     created = (state / "create").read_text()
     assert "--entrypoint" not in created
     assert "/usr/sbin/asterisk -f -n -U asterisk" in created
+
+
+def _copy_of_the_check(tmp_path, extensions):
+    """The check in a tree of its own, with the given extensions.conf."""
+    for part in ("scripts", "deploy/asterisk/conf", "deploy/asterisk/image"):
+        (tmp_path / part).mkdir(parents=True)
+    for name in ("scripts/asterisk_image_check.sh", "deploy/asterisk/image/Dockerfile"):
+        (tmp_path / name).write_text((ROOT / name).read_text(), newline="\n")
+    conf = ROOT / "deploy/asterisk/conf/websocket_client.conf"
+    (tmp_path / "deploy/asterisk/conf/websocket_client.conf").write_text(
+        conf.read_text()
+    )
+    (tmp_path / "deploy/asterisk/conf/extensions.conf").write_text(extensions)
+    return tmp_path / "scripts/asterisk_image_check.sh"
+
+
+def test_a_dialplan_without_the_media_dial_is_named(tmp_path):
+    """`set -e` ended the check at the empty grep, exit 1 without a word, before
+    its own message (deep review of #972)."""
+    script = _copy_of_the_check(tmp_path, "[ai]\nexten => s,1,Hangup()\n")
+    run = subprocess.run(
+        ["sh", str(script), "img"], capture_output=True, text=True, timeout=60
+    )
+    assert run.returncode == 2, run.stdout + run.stderr
+    assert "no media Dial in extensions.conf" in run.stderr
+
+
+def test_a_commented_media_dial_is_not_the_one_dialled(tmp_path):
+    """The check dials the product's line, never one in a comment above it."""
+    script = _copy_of_the_check(
+        tmp_path,
+        "; was: Dial(WebSocket/old/c(slin16),5)\n"
+        "[ai]\nexten => s,1,Dial(WebSocket/voice/c(slin16),10)\n",
+    )
+    _, state = _run(tmp_path / "run", script=script)
+    seen = (state / "seen" / "extensions.conf").read_text()
+    assert "Dial(WebSocket/voice/c(slin16),10)" in seen
+    assert "WebSocket/old" not in seen
+
+
+def test_every_question_to_asterisk_is_bounded():
+    """A deadlocked loader or a held lock (#2121) would hang `asterisk -rx`
+    until the job's 30 minutes, without the check's message."""
+    cli = re.search(r"^cli\(\) \{(.*)\}$", SCRIPT.read_text(), re.M)
+    assert cli and "timeout " in cli.group(1)
+
+
+def test_ci_on_main_judges_every_commit_of_a_push():
+    """A stack merge pushes several merge commits at once; the Asterisk gate on
+    `main` reads the whole push, not only its last commit."""
+    ci = (ROOT / ".github/workflows/ci.yml").read_text()
+    job = re.search(r"\n  changes:\n(.*?)(?=\n  [a-z-]+:\n)", ci, re.S)
+    assert job, "ci.yml has no job changes"
+    on_main = job.group(1).split("else", 1)[1]
+    assert "github.event.before" in on_main
