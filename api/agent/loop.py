@@ -1437,8 +1437,10 @@ class ConversationLoop:
             # The model's own last sentence was for reading the guest's words,
             # and that is done once a tool was called. Left in sight next to a
             # tool result, a real model said it again word for word instead
-            # of the read-back the tool had just delivered (13.10.2026).
+            # of the read-back the tool had just delivered (13.10.2026). The
+            # same for what the guest did not hear (`guards.note_unheard`).
             data.pop("last_say", None)
+            data.pop("unheard_say", None)
         if called:
             # Also within the turn only. A model sees one tool result at a
             # time and not that it asked for it: without this a real model
