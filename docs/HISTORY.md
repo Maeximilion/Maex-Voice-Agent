@@ -1958,7 +1958,7 @@ Fixed in one PR of #888 round 3 (`sim/scripted_order.py`, `sim/scripted_llm.py`,
 
 ## Open Points from Reviews (archive, barge-in row fixed 25.11.2026)
 
-Fixed in one PR of #888 round 3: after a barge-in the session reports the sentences the line did not play to their end (`CallEvents.on_cut_off`), and `guards.note_cut` keeps in `last_say` only the sentences heard to their end, or none; a read-back cut off is no read-back. Tests in `api/tests/test_agent_guards.py`, `api/tests/test_telephony_session.py` and `api/tests/test_telephony.py`.
+Fixed in one PR of #888 round 3: before the caller's words become a turn, the session reports the sentences they had not heard to their end (`CallEvents.on_unheard`: cut off by a barge-in, or not yet playing when they spoke), and `guards.note_unheard` keeps in `last_say` only what was heard, or none, and the rest in `unheard_say` for the model and the allergy readers; a read-back cut off is no read-back. Tests in `api/tests/test_agent_guards.py`, `api/tests/test_telephony_session.py`, `api/tests/test_telephony.py` and `api/tests/test_recording_consent.py`.
 
 | Point | Why still open | When due |
 |---|---|---|

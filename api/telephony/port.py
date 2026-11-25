@@ -108,12 +108,14 @@ class CallEvents(Protocol):
         leg."""
         ...
 
-    def on_cut_off(self, session_id: str, unheard: str) -> None:
-        """The caller talked over what may be interrupted, and playback was
-        dropped: `unheard` is the queued sentences the line did not play to
-        their end, joined by a space, in order. Reported before the words
-        that cut it off reach the core as a turn: they answer only what was
-        heard (Codex PR #291)."""
+    def on_unheard(self, session_id: str, unheard: str) -> None:
+        """The caller spoke before they heard the end of what was said:
+        `unheard` is the queued sentences they had not heard to their end,
+        joined by a space, in order. Either they talked over sentences that
+        may be interrupted, which were dropped, or they spoke before the
+        answer began to play, which plays on. Reported before their words
+        reach the core as a turn: they answer only what was heard (Codex PR
+        #291)."""
         ...
 
     def on_voice_failure(self, session_id: str) -> None:

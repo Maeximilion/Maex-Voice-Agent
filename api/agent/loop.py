@@ -351,10 +351,11 @@ class ConversationLoop:
         recording.withdraw(self._session, state, self._now)
         if only_stops_recording(user_text):
             # What the guest was asked stands: said again, it changes nothing
-            # of a read-back that waits for its yes.
-            return TurnResult(
-                state=state, say=[recording.SAY_RECORDING_STOPPED, _still_open(state)]
-            )
+            # of a read-back that waits for its yes, and a question the guest
+            # talked over is now heard (`guards.note_unheard`).
+            again = _still_open(state)
+            guards.note_said(state, again)
+            return TurnResult(state=state, say=[recording.SAY_RECORDING_STOPPED, again])
         result = self._guest_sentence(state, user_text, addressed)
         result.say.insert(0, recording.SAY_RECORDING_STOPPED)
         return result
@@ -569,7 +570,10 @@ class ConversationLoop:
         # fixed question about the dish of a later allergy the hint was given
         # the turn before: a draft without it gets the guest's words at once,
         # never the question again each turn (#929).
-        allergy_hint_given = guards.SAY_ASK_ALLERGY_DISH in (state.last_say or "")
+        # Also when the guest talked over it (`guards.note_unheard`).
+        allergy_hint_given = guards.SAY_ASK_ALLERGY_DISH in (
+            f"{state.last_say or ''} {state.unheard_say or ''}"
+        )
         # The core's allergen sentences of this turn, one per dish looked up:
         # the only allergen words the guest hears (#669, #717, rule 1).
         allergen_says: list[str] = []
@@ -1950,12 +1954,16 @@ def _note_allergy_said(state: ConversationState, text: str) -> bool:
     to such a question takes back what `_taken_back` says. True for every
     sentence kept: a read-back waiting for its yes may not carry it."""
     asked = _asked_about_an_allergy(state)
-    if escalation.bare_denial(text, asked=asked):
+    # A question the guest talked over (`guards.note_unheard`): an answer to
+    # it is kept, a bare denial takes nothing back, as for one said into a
+    # sentence that may not be interrupted (`heard_over`).
+    unheard = not asked and _asked_about_an_allergy(state, unheard=True)
+    if escalation.bare_denial(text, asked=asked or unheard):
         if asked:
             state.allergy_said = _taken_back(state.allergy_said, text)
         return False
     armed = escalation.arms_the_net(text)
-    if armed or asked:
+    if armed or asked or unheard:
         # A sentence said again is kept once, as the newest, also in other
         # case or punctuation ("ich habe eine Erdnussallergie!").
         said = text.strip()
@@ -1973,7 +1981,7 @@ def _note_allergy_said(state: ConversationState, text: str) -> bool:
         state.allergy_said = kept
     # An answer to the model's question ("Gegen Erdnüsse.") is new health
     # information too: a read-back before it lacks it (Codex PR #788, P1).
-    return armed or asked
+    return armed or asked or unheard
 
 
 def _taken_back(kept: list[str], denial: str) -> list[str]:
@@ -2033,11 +2041,12 @@ def _names_any(said: str) -> bool:
     return _names_something(said) or bool(_ingredients(said))
 
 
-def _asked_about_an_allergy(state: ConversationState) -> bool:
+def _asked_about_an_allergy(state: ConversationState, *, unheard: bool = False) -> bool:
     """Did the model's last sentence ask about an allergy ("Wogegen sind Sie
     allergisch?", "Haben Sie eine Allergie?")? Never a read-back: its note
-    names the allergy, and the "Ja" to it answers the order."""
-    say = state.last_say or ""
+    names the allergy, and the "Ja" to it answers the order. With `unheard`:
+    the part the guest did not hear to its end (`guards.note_unheard`)."""
+    say = (state.unheard_say if unheard else state.last_say) or ""
     if guards.SAY_ASK_ALLERGY in say:
         # The fixed question of an allergy turn (#798).
         return True

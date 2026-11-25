@@ -178,7 +178,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.77 · 25.11.2026:** #888 round 3: after a barge-in `last_say` keeps only the sentences the caller heard to their end, or none, and a read-back cut off is no read-back (Codex PR #291, docs/24 row closed)
+- **v2.69.77 · 25.11.2026:** #888 round 3: words said before the caller heard the end of a sentence (a barge-in, or speech before the answer began to play) no longer answer it: `last_say` keeps only what was heard, the rest goes to the model as `unheard_say`, an answer to an allergy question talked over is still kept, and a read-back cut off is no read-back (Codex PR #291; two timing cases left in docs/24)
 - **v2.69.76 · 25.11.2026:** /chain: no queued sessions; planned items keep their order and get a session only when a lane is free (Maxi)
 - **v2.69.75 · 25.11.2026:** /chain: a build session never ends a turn while CI or Codex run (auto_archive_on_close is refused in auto mode, the coordinator archives); a session with a background task gets "merged #N: stop" before it is archived; merged PRs on the ship lane are cleared by Maxi with the x (Maxi)
 - **v2.69.74 · 25.11.2026:** #888 round 3: splitting a sentence into positions keeps the words of the growing part instead of reading it again at every separator, so that cut costs linear time on a long sentence; the card checks after it in search.py stay a docs/24 row
