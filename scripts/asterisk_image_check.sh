@@ -71,8 +71,14 @@ alive() { [ "$(docker inspect -f '{{.State.Running}}' "$tag-ast" 2>/dev/null)" =
 lines() { docker logs "$tag-ast" 2>&1 | grep -c "$1" || true; }
 
 docker network create "$tag" >/dev/null
-docker run -d --name "$tag-ast" --network "$tag" -v "$work:/etc/asterisk:ro" \
-    --entrypoint /usr/sbin/asterisk "$image" -f -n >/dev/null
+# Started as the product starts it (docker-compose.yml): through the image's
+# entrypoint, which hands the runtime folders to the asterisk user, and with
+# the drop to that user. The configuration is copied in, not mounted: the
+# entrypoint owns /etc/asterisk too, which a read-only mount would refuse.
+docker create --name "$tag-ast" --network "$tag" "$image" \
+    /usr/sbin/asterisk -f -n -U asterisk >/dev/null
+docker cp "$work/." "$tag-ast:/etc/asterisk/"
+docker start "$tag-ast" >/dev/null
 booted=no
 for _ in $(seq 1 60); do
     if cli "core waitfullybooted" >/dev/null; then booted=yes; break; fi
