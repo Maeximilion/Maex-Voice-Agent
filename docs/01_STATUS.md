@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.94
+> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.96
 
 ---
 
@@ -178,8 +178,10 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.94 · 25.11.2026:** #888 round 3: a handover card that names an open delivery says so and gives its address in front of the order lines: the unconfirmed draft's (said or stored, L12), else the one the guest said; a floor note that names health stands as a note to clear (L13), also on a card judged again; the docs/24 row moved to HISTORY (item 16)
-- **v2.69.93 · 25.11.2026:** #888 round 3: on a tool hop the model still sees the question the guest's words answer, as `answered_say` next to `guest_said`, so an answer not yet written into `slots` before a tool call keeps its question (Codex PR #291; the real-model comparison waits for the workbench model, #1050)
+- **v2.69.96 · 25.11.2026:** #888 round 3: a handover card that names an open delivery says so and gives its address in front of the order lines: the unconfirmed draft's (said or stored, L12), else the one the guest said; a floor note that names health stands as a note to clear (L13), also on a card judged again; the docs/24 row moved to HISTORY (item 16)
+- **v2.69.95 · 25.11.2026:** #888 round 3: on a tool hop the model still sees the question the guest's words answer, as `answered_say` next to `guest_said`, so an answer not yet written into `slots` before a tool call keeps its question (Codex PR #291; the real-model comparison waits for the workbench model, #1050)
+- **v2.69.94 · 25.11.2026:** #888 round 3: the scripted stand-in answers "Warum kostet das mehr?" with the option's `reason` from the menu through a narrow why-clause pattern (Maxi, 25.11.2026) and searches what follows the clause, so a dish named with it is still ordered; the docs/24 row moved to HISTORY
+- **v2.69.93 · 25.11.2026:** #888 round 3 item 12: the Whisper and Piper loaders sit behind an adapter-owned factory (`api/telephony/adapters/speech_engines.py`), the watchdog in `api/telephony/watchdog.py`; `telephony/app.py` picks an ear and a mouth by name only, and a missing model file is named at start in every image; the docs/24 row moved to HISTORY
 - **v2.69.92 · 25.11.2026:** docs/24 sweep: three built rows moved to HISTORY, #888 B3 ticked, sync-main install noted
 - **v2.69.91 · 25.11.2026:** #888 round 3: every eval run is kept as one row in the new table `eval_runs` (migration 048): model, prompt version, case folder, tags, passed and failed, accuracy, verdict, the whole report and the commit `make eval` passes; the docs/24 row moved to HISTORY
 - **v2.69.90 · 25.11.2026:** Dialplan: a caller who hangs up after the handover and before a team leg answers gets a callback card that says so (extension h, left=1; #888 round 3 item 10, rule 5)
