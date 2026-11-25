@@ -68,6 +68,7 @@ ENDINGS_KEPT = 1000
 # A statement of the phone line that takes longer fails, and the call goes to
 # the team (`db.bounded_sessions`). Its tools answer in milliseconds (budget
 # 300 ms, docs/04 §1), so a wait this long is a lock that is not coming free.
+# A tool the model calls waits less when its turn has less left (`db.bounded_by`).
 DB_TIMEOUT_MS = 2000
 # An engine call that works longer hangs. The session's own deadlines
 # (`session.SPEAK_SECONDS`, `session.UTTERANCE_SECONDS`) have sent its call to
