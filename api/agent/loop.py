@@ -1447,11 +1447,13 @@ class ConversationLoop:
             # vier" not yet in `slots` loses its question (Codex PR #291), but
             # not as `last_say`: next to a tool result a real model said that
             # again word for word instead of the read-back the tool had just
-            # delivered (13.10.2026). `unheard_say` stays as it is, so a hop
-            # knows what the turn's first request knew (#1040).
+            # delivered (13.10.2026). What the guest did not hear
+            # (`guards.note_unheard`) stays off hops: one more sentence next
+            # to a tool result, not measured on a real model yet.
             answered = data.pop("last_say", None)
             if answered:
                 data["answered_say"] = answered
+            data.pop("unheard_say", None)
         if called:
             # Also within the turn only. A model sees one tool result at a
             # time and not that it asked for it: without this a real model

@@ -1163,8 +1163,8 @@ def test_last_sentence_reaches_the_next_turn_and_a_tool_hop_as_answered(session,
     # Gone with the turn, like `guest_said`.
     assert "answered_say" not in third
 
-    # After a barge-in (#1040) a hop sees what the turn's first request saw:
-    # the part heard as the sentence answered, the rest as `unheard_say`.
+    # After a barge-in (#1040) the sentence answered is the part heard; what
+    # was not heard is for the turn's first request only.
     state.last_said = "Gern. Und um wie viel Uhr?"
     note_unheard(state, "Und um wie viel Uhr?")
     first_request = loop._prompt_state(state)
@@ -1173,12 +1173,12 @@ def test_last_sentence_reaches_the_next_turn_and_a_tool_hop_as_answered(session,
     on_hop = loop._prompt_state(state, guest_said="Um sieben")
     assert "last_say" not in on_hop
     assert on_hop["answered_say"] == "Gern."
-    assert on_hop["unheard_say"] == "Und um wie viel Uhr?"
+    assert "unheard_say" not in on_hop
     # Heard nothing of it: the guest's words answer no sentence.
     note_unheard(state, "Gern. Und um wie viel Uhr?")
     on_hop = loop._prompt_state(state, guest_said="Um sieben")
     assert "answered_say" not in on_hop
-    assert on_hop["unheard_say"] == "Gern. Und um wie viel Uhr?"
+    assert "unheard_say" not in on_hop
     # NOW is eight in the morning: closed, and known for the rest of the call.
     assert hop["service"] == {
         "is_open": False,
