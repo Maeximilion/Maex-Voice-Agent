@@ -178,7 +178,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.75 · 25.11.2026:** /chain: a build session sets auto_archive_on_close when its PR opens and never ends a turn while CI or Codex run; a session with a background task gets "merged #N: stop" before it is archived; merged PRs on the ship lane are cleared by Maxi with the x (Maxi)
+- **v2.69.75 · 25.11.2026:** /chain: a build session never ends a turn while CI or Codex run (auto_archive_on_close is refused in auto mode, the coordinator archives); a session with a background task gets "merged #N: stop" before it is archived; merged PRs on the ship lane are cleared by Maxi with the x (Maxi)
 - **v2.69.73 · 25.11.2026:** deep review of #972: the Asterisk image check meets a really frozen voice, starts Asterisk as the product does, checks the dialplan's modules by whole name, fails a late crash; a failed patch stops the image build; docs/24 rows for cold-cache rebuilds and the 22.12.0 wire contract
 - **v2.69.72 · 25.11.2026:** #888 round 3: a joining word (und, aber, dafür) or bitte is cut from a wish only as a word of its own, and every joining word in front of the next part goes, so "ohne Hund" no longer becomes "ohne H"
 - **v2.69.71 · 25.11.2026:** #888 round 3: sync_main.sh warns on a clean main with unpushed commits; the user-level sync-main.sh moved to scripts/claude_user_hooks/ and never fast-forwards over an ignored file

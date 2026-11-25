@@ -47,13 +47,14 @@ clean, fixes every finding of that first round itself (a P0 or P1 too), and
 ends with "PR #N ready, first review clean". Then it is done: one item per
 session (Maxi, 2026-11-24 evening, popup "One item per session"), archived
 by the coordinator once its pull request is merged, so the sidebar shows no
-merged pull request and no session grows over several items. As soon as its
-pull request opens, the session calls `set_monitor` with
-`auto_archive_on_close: true`, so the app archives it at the merge even when
-no note reaches the coordinator (Maxi, 2026-11-25: a finished session stayed
-open after its merge). It never ends a turn while CI or Codex still run on
-its head; it waits inside the turn and ends with the "ready" message or a
-blocked one.
+merged pull request and no session grows over several items. It never ends a
+turn while CI or Codex still run on its head; it waits inside the turn and
+ends with the "ready" message or a blocked one (Maxi, 2026-11-25: a finished
+session stayed open after its merge). The session cannot switch on
+`auto_archive_on_close` itself: auto mode's classifier refuses its
+`set_monitor` (25.11.2026), and the app's global "archive on PR close" setting
+would also archive the ship lane at its first merge, so archiving stays the
+coordinator's step (section 4).
 
 **The ship lane** (Maxi, 2026-11-24, "One Sonnet ship lane"): one fresh Sonnet
 `medium` session, started in Maxi's turn together with the first build
