@@ -56,8 +56,10 @@ from api.models import (
 )
 from evals.judge import (
     CaseError,
+    TurnSeen,
     heard_readback,
     judge,
+    missed_turns,
     missing_tools,
     observe,
     offered_alternatives,
@@ -67,14 +69,21 @@ from evals.judge import (
     unsaid,
     validate_case,
 )
-from evals.recorder import RecordingLLM
+from evals.recorder import Recording, RecordingLLM
 from evals.report import CaseResult, RunReport, previous_run, write
 from evals.scratch_db import create_scratch_db, drop_scratch_db, migrate
 from scripts.import_menu import read_files
 from scripts.seed import seed
 from sim.replay import customer_lines, replay
 from sim.scripted_order import MenuNumbers
-from sim.session import SCRIPTED, SimCall, make_llm, menu_numbers, resolve_tenant
+from sim.session import (
+    SCRIPTED,
+    SimCall,
+    Turn,
+    make_llm,
+    menu_numbers,
+    resolve_tenant,
+)
 
 HERE = Path(__file__).resolve().parent
 # The zone of the delivery cases: every other postal code is out of it. Fee,
@@ -258,6 +267,27 @@ def _count_usage(result: CaseResult, llm: RecordingLLM | None) -> None:
     result.turn_seconds = list(llm.recording.turn_seconds) if llm else []
 
 
+class TurnCuts:
+    """Cuts the recording at the end of every turn: what the recorder took in
+    during a turn belongs to that turn (`expected.turns`, `judge.missed_turns`)."""
+
+    def __init__(self, recording: Recording):
+        self._rec = recording
+        self._cut = (0, 0, 0)
+        self.seen: dict[int, TurnSeen] = {}
+
+    def take(self, turn: Turn) -> None:
+        rec = self._rec
+        ok, errors, calls = self._cut
+        self.seen[turn.line] = TurnSeen(
+            said=" ".join(turn.say),
+            ok_results=rec.ok_results[ok:],
+            error_results=rec.error_results[errors:],
+            ok_calls=rec.ok_calls[calls:],
+        )
+        self._cut = (len(rec.ok_results), len(rec.error_results), len(rec.ok_calls))
+
+
 def run_case(
     session: Session,
     case: dict[str, Any],
@@ -294,7 +324,16 @@ def run_case(
             tenant.id,
             {int(day): minutes for day, minutes in case.get("notices", {}).items()},
         )
-        call, turns = replay(session, case, tenant, now=now, llm=llm, hear=hear)
+        seen_turns = TurnCuts(llm.recording)
+        call, turns = replay(
+            session,
+            case,
+            tenant,
+            now=now,
+            llm=llm,
+            hear=hear,
+            on_turn=seen_turns.take,
+        )
         result.readback = heard_readback(turns)
         repeated = _repeat_confirm(session, case, call, tenant, llm, now)
         call.finish()
@@ -315,6 +354,9 @@ def run_case(
                 diffs.append(
                     f"readback: expected {expected['readback']!r} in {spoken!r}"
                 )
+        diffs += missed_turns(
+            expected.get("turns", []), customer_lines(case), seen_turns.seen
+        )
         missed = unsaid(expected.get("said", []), turns)
         if missed:
             diffs.append(f"said: never heard {missed!r}")
@@ -341,7 +383,7 @@ def run_case(
 
     rec = llm.recording
     missing = missing_tools(
-        expected.get("tools", []), rec.ok_results, rec.error_results
+        expected.get("tools", []), rec.ok_results, rec.error_results, rec.ok_calls
     )
     unchecked = unchecked_address(expected, rec.ok_calls)
     if unchecked:

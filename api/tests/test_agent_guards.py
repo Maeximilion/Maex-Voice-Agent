@@ -33,6 +33,7 @@ from api.agent.guards import (
     left_twice,
     note_said,
     note_tool,
+    note_unheard,
     order_changed,
     price_says,
     refusal,
@@ -464,6 +465,88 @@ def test_only_the_last_sentence_counts_as_the_read_back():
 
     note_said(state, f"Gern. {READBACK}")
     assert refusal(state, begin_turn(state), "Ja", confirm(draft_id)) is None
+
+
+def test_a_cut_keeps_only_the_sentences_the_guest_heard():
+    """The guest talked over the second of two queued sentences (Codex PR
+    #291): their next words answer the first one, not a question they never
+    heard to its end. The whole sentence stays what was said."""
+    state = new_state()
+    note_said(state, "Gern. Für wie viele Personen?")
+
+    note_unheard(state, "Für wie viele Personen?")
+
+    assert state.last_say == "Gern."
+    assert state.last_said == "Gern. Für wie viele Personen?"
+    assert state.to_prompt_json()["unheard_say"] == "Für wie viele Personen?"
+
+    note_said(state, "Zu viert, gern.")
+    assert state.unheard_say is None
+    assert "unheard_say" not in state.to_prompt_json()
+
+
+def test_a_cut_of_the_whole_sentence_leaves_no_last_say():
+    """Nothing heard to its end: no sentence the guest answers. A cut that does
+    not end the sentence the state kept (older sentences cut with it) leaves
+    none either, and an empty cut changes nothing."""
+    state = new_state()
+    note_said(state, "Möchten Sie noch etwas trinken?")
+    note_unheard(state, "")
+    assert state.last_say == "Möchten Sie noch etwas trinken?"
+
+    note_unheard(state, "Möchten Sie noch etwas trinken?")
+    assert state.last_say is None
+    assert "last_say" not in state.to_prompt_json()
+    assert state.unheard_say == "Möchten Sie noch etwas trinken?"
+
+    note_said(state, "Gern. Für wie viele Personen?")
+    older = "Gern. Für wie viele Personen? Und um wie viel Uhr?"
+    note_unheard(state, older)
+    assert state.last_say is None and state.unheard_say == older
+
+
+def test_a_cut_read_back_is_no_read_back():
+    """Rule 3: a yes after a read-back the guest talked over confirms nothing,
+    and a cut never makes a read-back heard."""
+    state, draft_id = drafted()
+    note_said(state, f"Gern. {READBACK}")
+    assert state.readback_heard
+
+    note_unheard(state, READBACK)
+
+    assert not state.readback_heard and state.last_say == "Gern."
+    assert refusal(state, begin_turn(state), "Ja", confirm(draft_id))
+
+    # A read-back with a question behind it is no read-back: cutting the
+    # question off does not make the read-back in front of it one.
+    note_said(state, f"{READBACK} Möchten Sie noch etwas trinken?")
+    assert not state.readback_heard
+    note_unheard(state, "Möchten Sie noch etwas trinken?")
+    assert state.last_say == READBACK and not state.readback_heard
+
+
+def test_an_answer_to_an_allergy_question_talked_over_is_kept():
+    """L13, #1003: the guest answers the allergy question while it plays and
+    cuts it off. The answer is kept for the kitchen like one to a question
+    heard to its end, and a bare "Nein" takes nothing back: the guest did not
+    hear the question to its end."""
+    state = new_state()
+    note_said(state, SAY_ASK_ALLERGY)
+    note_unheard(state, SAY_ASK_ALLERGY)
+
+    assert _note_allergy_said(state, "Auf Erdnüsse.")
+    assert state.allergy_said == ["Auf Erdnüsse."]
+
+    state = new_state(allergy_said=["Ich habe eine Allergie."])
+    note_said(state, SAY_ASK_ALLERGY)
+    note_unheard(state, SAY_ASK_ALLERGY)
+    assert not _note_allergy_said(state, "Nein.")
+    assert state.allergy_said == ["Ich habe eine Allergie."]
+
+    # Heard to its end, the same "Nein." takes the plain sentence back.
+    note_said(state, SAY_ASK_ALLERGY)
+    _note_allergy_said(state, "Nein.")
+    assert state.allergy_said == []
 
 
 def test_a_booked_draft_is_not_handed_to_the_model_again():

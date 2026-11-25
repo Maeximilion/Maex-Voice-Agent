@@ -545,6 +545,13 @@ transcript:
   `greeted`). An offer of several dishes is therefore in sight for the one turn that
   answers it, by name and card number, never with an id; the order still takes only dishes
   the core knows (`guards.take_cart`).
+- `unheard_say`: on the phone, what the guest had not heard to its end when they spoke: they
+  talked over it, or spoke before it began to play (`guards.note_unheard`, docs/20 §4).
+  `last_say` then keeps only the part heard, or is absent mid-call (with `greeted`, so no
+  second greeting). The guest's words may not answer it. Not on a tool hop, like `last_say`,
+  and no sentence in the prompt contract: its name says it, and every word added to that
+  contract is paid on every call (07.10.2026). Gone with the next sentence said (Codex PR
+  #291).
 - `customer`: `{"found": true, "address_id": "…"}` once `find_customer` answered in this call, ids only (L12).
 - `service`: `{"is_open": true, "pickup_enabled": true, "delivery_enabled": true, "reservations_enabled": true}` once `get_service_status` answered in this call, all flags or nothing (pickup can be off while the restaurant is open, Codex PR #291). A model
   asked for the status at the start of every turn, one request each time, and then answered

@@ -17,6 +17,7 @@ from api.config import settings
 from api.domain.confirm import confirm
 from api.domain.customers.lookup import objected
 from api.domain.ordering import draft_order
+from api.domain.ordering.validation import SAY_OPTION_MISSING
 from api.models import Address, AuditLog, Customer, MenuItem, Tenant
 from api.schemas.confirm import ConfirmRequest
 from api.schemas.orders import DraftOrderRequest, OrderCustomer, OrderItemIn
@@ -1576,8 +1577,6 @@ def test_case_check_wants_the_arguments_of_an_expected_rejection(tmp_path):
     assert not _valid_tool(
         {"tool": "check_delivery", "error": "out_of_zone", "args": ["postal_code"]}
     )
-    # `args` only names the call of a rejection.
-    assert not _valid_tool({"tool": "check_delivery", "args": {"postal_code": "1"}})
 
 
 def test_zone_check_has_to_cover_the_final_address():
@@ -2283,3 +2282,164 @@ def test_report_without_a_model_or_without_turns_shows_no_times():
     assert scripted.to_json()["turn_seconds_p50"] is None
     assert empty.to_json()["turn_seconds_p95"] is None
     assert "| Model turn p50 / p95 (s) | - / - |" in scripted.to_markdown()
+
+
+# --- Turn-level assertions (docs/24, Codex PR #145) --------------------------------
+
+# The core's question for a mandatory option left open, filled from the
+# search result: no pattern over German words (AGENTS.md, Codex on #1039).
+ASKS_FOR_MEAT = SAY_OPTION_MISSING.format(group="Fleisch", name="Ente knusprig")[:-1]
+MEAT_LEFT_OPEN = [
+    "Guten Tag, ich moechte etwas zum Abholen bestellen.",
+    "Zweimal die 23 und einmal die knusprige Ente.",
+    "Huhn bitte.",
+    "Nein, das wars.",
+    "Auf den Namen Mueller.",
+    "Ja, passt so.",
+]
+
+
+def _meat_case(case_id: str, turns: list[dict]) -> dict:
+    return fall(
+        case_id,
+        MEAT_LEFT_OPEN,
+        {"intent": "pickup", "confirmed": True, "turns": turns},
+        caller_id="+497215551234",
+    )
+
+
+def test_a_turn_assertion_judges_the_turn_it_names(migrated_db_url, tmp_path):
+    """The final state of a pickup with "Huhn" cannot tell whether the agent
+    asked for the meat or took "Huhn bitte" without a question. The case says
+    so at the turn: the question in turn 2, the search in turn 2, no draft
+    before the name."""
+    right = _meat_case(
+        "right",
+        [
+            {"line": 2, "tools": ["search_menu"], "said": [ASKS_FOR_MEAT]},
+            {"line": 3, "never_said": [ASKS_FOR_MEAT]},
+        ],
+    )
+    # The same call, asserted at the wrong turns: the question came in turn 2,
+    # not 3, and turn 2 drafted nothing.
+    wrong = _meat_case(
+        "wrong",
+        [
+            {"line": 2, "tools": ["draft_order"], "never_said": [ASKS_FOR_MEAT]},
+            {"line": 3, "said": [ASKS_FOR_MEAT]},
+        ],
+    )
+    cases = write_cases(tmp_path / "c", right, wrong)
+
+    report = run(migrated_db_url, cases, tmp_path / "r")
+
+    by_id = {c.id: c for c in report.cases}
+    assert by_id["right"].passed, by_id["right"].diffs
+    diffs = by_id["wrong"].diffs
+    assert len(diffs) == 2, diffs
+    two, three = diffs
+    assert two.startswith('turn 2 ("Zweimal die 23 und einmal die knusprige Ente.")')
+    assert "no successful call ['draft_order']" in two
+    assert f"said {ASKS_FOR_MEAT!r}" in two
+    assert three.startswith('turn 3 ("Huhn bitte.")')
+    assert f"never said {ASKS_FOR_MEAT!r}" in three
+
+
+def test_a_turn_the_call_never_reached_is_red(migrated_db_url, tmp_path):
+    """The stand-in hands the call over on "Mitarbeiter" and ends it: the lines
+    after it are never played, and an assertion on one of them is red, not
+    skipped."""
+    case = fall(
+        "ended",
+        ["Ich moechte bitte mit einem Mitarbeiter sprechen.", "Hallo?"],
+        {"escalated": True, "turns": [{"line": 2, "said": ["Hallo"]}]},
+    )
+    cases = write_cases(tmp_path / "c", case)
+
+    report = run(migrated_db_url, cases, tmp_path / "r")
+
+    [result] = report.cases
+    assert result.diffs == [
+        'turn 2 ("Hallo?"): never played, the call ended or the ear missed it'
+    ]
+
+
+def test_missed_turns_matches_calls_by_their_arguments():
+    """A turn's tool entry is the same as one of `expected.tools`; `args` now
+    names a successful call too, compared like a rejection's (#1020)."""
+    from evals.judge import TurnSeen, missed_turns
+
+    zone = {"postal_code": "12345", "city": "Musterdorf"}
+    seen = {
+        1: TurnSeen(
+            said="An welche Adresse duerfen wir liefern?",
+            ok_results=[("check_delivery", {"zone": "Evalzone"})],
+            error_results=[("check_delivery", "out_of_zone", {"postal_code": "54321"})],
+            ok_calls=[("check_delivery", zone)],
+        )
+    }
+    lines = ["12345 Musterdorf, Lindenstrasse 12."]
+    hit = {"tool": "check_delivery", "args": {"postal_code": "12 345"}}
+    other = {"tool": "check_delivery", "args": {"postal_code": "12346"}}
+    rejected = {
+        "tool": "check_delivery",
+        "error": "out_of_zone",
+        "args": {"postal_code": "54321"},
+    }
+
+    assert missed_turns([{"line": 1, "tools": [hit, rejected]}], lines, seen) == []
+    [diff] = missed_turns([{"line": 1, "tools": [other]}], lines, seen)
+    assert diff.startswith('turn 1 ("12345 Musterdorf, Lindenstrasse 12.")')
+    assert "no successful call" in diff and "12346" in diff
+
+
+def test_missing_tools_reads_the_arguments_of_a_successful_call():
+    from evals.judge import missing_tools
+
+    want = [{"tool": "check_delivery", "args": {"postal_code": "12345"}}]
+    asked = ("check_delivery", {"postal_code": "12345"})
+    assert missing_tools(want, [("check_delivery", {})]) == want
+    assert (
+        missing_tools(want, [], ok_calls=[("check_delivery", {"postal_code": "1"})])
+        == want
+    )
+    assert missing_tools(want, [], ok_calls=[asked]) == []
+
+
+TURN_LINES = [{"role": "customer", "text": t} for t in ("Hallo", "Einmal die 13.")]
+
+
+@pytest.mark.parametrize(
+    "turns",
+    [
+        {"line": 1, "said": ["x"]},
+        [{"line": 0, "said": ["x"]}],
+        [{"line": 3, "said": ["x"]}],
+        [{"line": "1", "said": ["x"]}],
+        [{"line": True, "said": ["x"]}],
+        [{"line": 1}],
+        [{"line": 1, "said": []}],
+        [{"line": 1, "said": "x"}],
+        [{"line": 1, "said": [3]}],
+        [{"line": 1, "never_said": [""]}],
+        [{"line": 1, "tools": ["search_menu"], "saïd": ["x"]}],
+        [{"line": 1, "tools": [{"tool": "search_menu", "nummer": "13"}]}],
+        [{"line": 1, "said": ["x"]}, {"line": 1, "never_said": ["y"]}],
+        [],
+    ],
+)
+def test_a_broken_turn_assertion_breaks_the_case(turns):
+    case = {"id": "x", "transcript": TURN_LINES, "expected": {"turns": turns}}
+    with pytest.raises(CaseError, match="turns is a list"):
+        validate_case(case, "x.json")
+
+
+def test_args_name_a_successful_call_but_never_next_to_a_number():
+    from evals.judge import _valid_tool
+
+    assert _valid_tool({"tool": "check_delivery", "args": {"postal_code": "1"}})
+    assert not _valid_tool({"tool": "check_delivery", "args": {}})
+    # `number` reads the result, `args` the call: two records, never one entry.
+    assert not _valid_tool(
+        {"tool": "get_item_details", "number": "23", "args": {"query": "23"}}
+    )

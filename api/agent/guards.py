@@ -238,6 +238,7 @@ def note_said(state: ConversationState, say: str) -> None:
     # with a first sentence said the call has begun: no second greeting.
     state.last_say = last_words(say)
     state.last_said = say
+    state.unheard_say = None
     state.greeted = True
     state.asked_for_phone = asks_for_a_phone_number(
         say, asked_before=state.asked_for_phone
@@ -254,6 +255,42 @@ def note_said(state: ConversationState, say: str) -> None:
         for item_id, label in state.offered_items.items()
         if item_id not in named
     }
+
+
+def note_unheard(state: ConversationState, unheard: str) -> None:
+    """Call when the guest spoke before they heard the end of what was said:
+    they talked over it, or spoke before it began to play
+    (`telephony/session.py`). `unheard` is the sentences they had not heard to
+    their end, as they were queued; one cut in its middle counts as unheard,
+    as how far it got is not known. Their words answer only what they heard
+    (Codex PR #291):
+
+    - `last_say` keeps the part of the sentence in front of `unheard`, or
+      nothing: what the guest heard, or no sentence they answer. A cut that
+      does not end the kept sentence took older sentences with it.
+    - `unheard_say` holds the rest for the model and for an answer to an
+      allergy question, which is kept all the same, while a bare denial takes
+      nothing back (`loop._note_allergy_said`, as in `heard_over`).
+    - A read-back not heard to its end is none (rule 3).
+    - `last_said` stays what was said, the sentence to say again
+      (`loop._still_open`) and the core's own words in it.
+
+    Nothing else `note_said` decides is undone: a sentence that asks for the
+    guest's number or names a dish is never interrupted
+    (`telephony/handler.py` `_turn`), and an allergen offer the guest talked
+    over leaves its question open, so a dish named next gets the core's table
+    or the team: the safe side."""
+    if not unheard:
+        return
+    said = state.last_said or ""
+    heard = said[: -len(unheard)].rstrip() if said.endswith(unheard) else ""
+    state.last_say = last_words(heard) if heard else None
+    state.unheard_say = last_words(unheard)
+    state.readback_heard = (
+        state.readback_heard
+        and state.readback is not None
+        and read_out(heard, state.readback)
+    )
 
 
 # What a model may never claim about allergens (L17, E14), and the fixed
