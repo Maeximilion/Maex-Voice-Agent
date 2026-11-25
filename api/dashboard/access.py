@@ -84,6 +84,9 @@ REPEAT_WINDOW = timedelta(minutes=2)
 # A right password with a wrong factor is pushed once in this time, so a thief
 # with the password cannot flood the operator's phone (#888 A2).
 KNOWN_PASSWORD_ALARM_EVERY = timedelta(hours=1)
+# An account without a passkey uses its code every day: its code is pushed
+# once in this time, not on each use (#990, Maxi 24.11.2026).
+CODE_PUSH_EVERY = timedelta(days=1)
 # Every this many wrong step-ups in a row on an account are pushed (#888 A2).
 STEP_UP_ALARM_EVERY = 3
 # An IPv6 /64 also counts in its /48, which a home line (/56) or a server
@@ -135,6 +138,8 @@ class Signed(NamedTuple):
     factor: str
     # A browser without this account's device cookie (#888 A1).
     new_browser: bool
+    # A TOTP code from a known browser whose push is due (`_code_push_due`).
+    push_code: bool
 
 
 @dataclass(frozen=True)
@@ -284,11 +289,11 @@ def sign_in(
     if factor == "recovery":
         left = recovery_left(db, account.id)
         audit(db, account.name, "operator.recovery_code_used", {"left": left})
-    audit(
-        db, account.name, "operator.signed_in", {"factor": factor, "address": address}
-    )
+    # A new browser's push names the code itself.
+    push_code = factor == "totp" and trusted and _code_push_due(db, account, now)
+    _audit_code(db, account.name, "operator.signed_in", factor, address, push_code, now)
     db.commit()
-    return Signed(token, device_token, factor, not trusted)
+    return Signed(token, device_token, factor, not trusted, push_code)
 
 
 def resolve(
@@ -335,11 +340,12 @@ def step_up(
     now: datetime,
     device_token: str = "",
     passkey: str = "",
-) -> str:
+) -> bool:
     """A fresh second factor on a signed-in session (docs/23 §5): a passkey or
     a TOTP code. A recovery code is a way in, not a step-up. Wrong answers
     count and wait as at the sign-in, or a stolen session could guess codes.
-    Returns the factor that held. Commits."""
+    Returns whether its code is to be pushed (`_code_push_due`); a passkey
+    step-up is not. Commits."""
     # No factor at all says nothing: not counted, not audited (#816).
     if not passkey and not code.strip():
         raise SignInRefused()
@@ -404,9 +410,10 @@ def step_up(
     session.stepped_up_at = now
     if factor == "passkey":
         session.passkey_stepped_up_at = now
-    audit(db, operator.name, "operator.stepped_up", {"factor": factor})
+    push_code = factor != "passkey" and _code_push_due(db, account, now)
+    _audit_code(db, operator.name, "operator.stepped_up", factor, None, push_code, now)
     db.commit()
-    return factor
+    return push_code
 
 
 def add_passkey(
@@ -880,6 +887,49 @@ def _known_password_alarm_due(db: Session, name: str, now: datetime) -> bool:
             OperatorAudit.at > now - KNOWN_PASSWORD_ALARM_EVERY,
         )
     )
+
+
+def _code_push_due(db: Session, account: OperatorAccount, now: datetime) -> bool:
+    """A sign-in or step-up with a TOTP code is pushed (#888 A1). On an account
+    with a passkey the code is only the way back in, so each use is; on one
+    without, once in `CODE_PUSH_EVERY` (#990), measured from the last push and
+    not the last use, so daily use cannot keep it quiet for good. Read under
+    the account's row, held by the caller: two at once cannot both miss it."""
+    if passkeys.count(db, account.id):
+        return True
+    return not db.scalar(
+        select(func.count())
+        .select_from(OperatorAudit)
+        .where(
+            OperatorAudit.actor == account.name,
+            OperatorAudit.action.in_(("operator.signed_in", "operator.stepped_up")),
+            OperatorAudit.detail["pushed"].astext == "true",
+            OperatorAudit.at > now - CODE_PUSH_EVERY,
+        )
+    )
+
+
+def _audit_code(
+    db: Session,
+    name: str,
+    action: str,
+    factor: str,
+    address: str | None,
+    pushed: bool,
+    now: datetime,
+) -> None:
+    """The audit row of a sign-in or step-up. One whose code is pushed is
+    marked and stamped with the request's clock, which `_code_push_due`
+    reads, as `_note_failure` stamps a failure."""
+    detail: dict[str, Any] = {"factor": factor}
+    if address is not None:
+        detail["address"] = address
+    if pushed:
+        detail["pushed"] = True
+    row = OperatorAudit(actor=name, action=action, detail=detail)
+    if pushed:
+        row.at = now
+    db.add(row)
 
 
 def _failed_step_ups(db: Session, name: str) -> int:

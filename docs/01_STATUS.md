@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.93
+> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.95
 
 ---
 
@@ -178,6 +178,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.95 · 25.11.2026:** #888 round 3 item 22 (#990, Maxi): an operator account without a passkey pushes its TOTP code once a day, measured from the last push, instead of on every sign-in and step-up; an account with a passkey, a new browser and a recovery code still push each time
 - **v2.69.93 · 25.11.2026:** #888 round 3 item 21 (#990, Maxi): an operator sign-in with a passkey that holds counts on that passkey alone and skips the account's and the address's waits, so who knows only the account name can no longer keep the operator out (#927); codes still wait
 - **v2.69.92 · 25.11.2026:** docs/24 sweep: three built rows moved to HISTORY, #888 B3 ticked, sync-main install noted
 - **v2.69.91 · 25.11.2026:** #888 round 3: every eval run is kept as one row in the new table `eval_runs` (migration 048): model, prompt version, case folder, tags, passed and failed, accuracy, verdict, the whole report and the commit `make eval` passes; the docs/24 row moved to HISTORY
