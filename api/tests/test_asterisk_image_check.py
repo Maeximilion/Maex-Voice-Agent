@@ -22,15 +22,18 @@ pytestmark = pytest.mark.skipif(shutil.which("sh") is None, reason="needs sh")
 # A docker that answers like a healthy Asterisk, or one that dies at the first
 # failed media connection (DIES set), or one that is seen dead from the
 # DIES_AT_INSPECT-th liveness check on. Every failed Dial takes FAKE_MS; the
-# module NOT_RUNNING is listed as loaded but not running. It copies the configuration it is handed
-# to SEEN and counts the originated calls, so `logs` shows what ran.
+# module NOT_RUNNING is listed as loaded but not running. It keeps how the
+# Asterisk container was created in `create`, copies the configuration it is
+# handed to `seen` and counts the originated calls, so `logs` shows what ran.
 FAKE_DOCKER = r"""#!/bin/sh
 state=$FAKE_STATE
 case "$1" in
+  create)
+    echo "$*" > "$state/create"
+    echo id ;;
+  cp)
+    cp -r "${2%/.}" "$state/seen" ;;
   run)
-    for arg in "$@"; do
-      case "$arg" in *:/etc/asterisk:ro) cp -r "${arg%%:/etc/asterisk:ro}" "$state/seen" ;; esac
-    done
     echo id ;;
   inspect)
     calls=$(cat "$state/calls" 2>/dev/null || echo 0)
@@ -280,3 +283,15 @@ def test_the_check_runs_every_module_the_product_uses():
     loop = re.search(r"for module in (.*?); do", SCRIPT.read_text(), re.S)
     assert loop, "the check has no module loop"
     assert needed - set(loop.group(1).split()) == set()
+
+
+def test_asterisk_starts_through_the_images_entrypoint_as_its_user(tmp_path):
+    """The product starts Asterisk through the image's entrypoint, which hands
+    the runtime folders to the asterisk user, and drops to that user
+    (`-U asterisk`, docker-compose.yml). Started as root past the entrypoint,
+    the check would stay green on a recipe that breaks either (deep review of
+    #972)."""
+    _, state = _run(tmp_path)
+    created = (state / "create").read_text()
+    assert "--entrypoint" not in created
+    assert "/usr/sbin/asterisk -f -n -U asterisk" in created
