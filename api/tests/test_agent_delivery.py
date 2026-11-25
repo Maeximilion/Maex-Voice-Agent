@@ -12,7 +12,12 @@ from api.agent import guards
 from api.agent.dispatch import TOOLS, dispatch
 from api.agent.intent import heard
 from api.agent.llm import FakeLLM, LLMTurn, ToolCall
-from api.agent.loop import SUMMARY_DELIVERY, ConversationLoop
+from api.agent.loop import (
+    SUMMARY_DELIVERY,
+    SUMMARY_READ_BACK,
+    SUMMARY_SAID_IN_CALL,
+    ConversationLoop,
+)
 from api.agent.state import (
     apply_state_patch,
     apply_tool_result,
@@ -447,6 +452,44 @@ def test_a_card_names_the_address_the_guest_said(session, tenant_id, call_id):
     loop = _reading_loop(session, [*_opening(dish), LLMTurn(say="READBACK")])
     state = _state(call_id, tenant_id)
     loop.run_turn(state, SENTENCE)
+
+    loop.offer_unanswered(state)
+
+    card = session.scalars(select(Callback)).one().summary
+    assert f"{SUMMARY_DELIVERY} Lindenstraße 12, 12345 Musterdorf; 2x 23" in card
+
+
+def test_a_card_after_the_models_callback_names_both_addresses(
+    session, tenant_id, call_id
+):
+    """The model wrote its own callback after the read-back, and the guest
+    then named another house number: the draft still says 12. The card names
+    what was read back and what was said since, never one for the other
+    (sweep of the deep review of item 16)."""
+    dish = item(session, tenant_id, "23")
+    loop = _reading_loop(session, [*_opening(dish), LLMTurn(say="READBACK")])
+    state = _state(call_id, tenant_id)
+    loop.run_turn(state, SENTENCE)
+    state.stage = "callback"
+    state.slots.update({**ADDRESS, "house_number": "7"})
+
+    loop.offer_unanswered(state)
+
+    card = session.scalars(select(Callback)).one().summary
+    assert (
+        f"{SUMMARY_DELIVERY} Lindenstraße 12, 12345 Musterdorf ({SUMMARY_READ_BACK}), "
+        f"{SUMMARY_SAID_IN_CALL} Lindenstraße 7, 12345 Musterdorf; 2x 23"
+    ) in card
+
+
+def test_the_draft_address_said_again_is_named_once(session, tenant_id, call_id):
+    """The slots name the draft's address in another spelling: one address."""
+    dish = item(session, tenant_id, "23")
+    loop = _reading_loop(session, [*_opening(dish), LLMTurn(say="READBACK")])
+    state = _state(call_id, tenant_id)
+    loop.run_turn(state, SENTENCE)
+    state.stage = "callback"
+    state.slots.update({**ADDRESS, "street": " lindenstraße"})
 
     loop.offer_unanswered(state)
 
