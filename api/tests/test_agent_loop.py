@@ -39,6 +39,7 @@ from api.agent.loop import (
     SAY_TABLE_BOOKED,
     SAY_TABLE_NOT_BOOKED,
     SAY_TEAM_OFFER,
+    SUMMARY_ADDRESS_STORED,
     SUMMARY_DELIVERY,
     SUMMARY_DELIVERY_NO_ADDRESS,
     SUMMARY_DELIVERY_STORED,
@@ -3389,6 +3390,20 @@ def test_a_known_guest_without_a_draft_has_a_stored_address(state):
     state.customer = {"found": True, "address_id": str(uuid.uuid4())}
 
     assert f"{SUMMARY_DELIVERY_STORED}; 1x 13 Pho Bo." in _with_open_order(state, "x")
+
+
+def test_a_said_address_of_a_known_guest_names_the_stored_one_too(state):
+    """No draft stands (a dish added after the read-back took it away): the
+    slots may hold an address the guest gave up for the stored one, so the
+    card says that one is stored (sweep of the deep review of item 16)."""
+    _delivery(state)
+    state.customer = {"found": True, "address_id": str(uuid.uuid4())}
+    state.slots.update(street="Lindenstraße", house_number="12")
+
+    assert (
+        f"{SUMMARY_DELIVERY} Lindenstraße 12, {SUMMARY_ADDRESS_STORED}; 1x 13 Pho Bo."
+        in _with_open_order(state, "x")
+    )
 
 
 def test_only_words_and_numbers_of_a_slot_are_an_address(state):
