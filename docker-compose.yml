@@ -180,6 +180,8 @@ services:
       - ./.claude/hooks/sync_main.sh:/app/.claude/hooks/sync_main.sh:ro
       - ./.claude/hooks/merge_gate.sh:/app/.claude/hooks/merge_gate.sh:ro
       - ./.claude/settings.json:/app/.claude/settings.json:ro
+      # test_hooks_sync_main.py checks the Codex copy against the Claude hook.
+      - ./.codex/hooks/sync_main.sh:/app/.codex/hooks/sync_main.sh:ro
       # /done references the PR template; test_commands.py checks that path too.
       - ./.github/PULL_REQUEST_TEMPLATE.md:/app/.github/PULL_REQUEST_TEMPLATE.md:ro
       # README tests read the committed images and their source hashes.

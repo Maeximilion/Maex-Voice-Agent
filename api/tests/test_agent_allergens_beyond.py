@@ -3037,14 +3037,25 @@ def test_an_order_step_keeps_the_models_sentence_about_its_dish(session, known_t
     assert result.say == [noted]
 
 
-def test_an_order_step_with_words_about_the_allergy_is_held(session, known_tenant):
+@pytest.mark.parametrize(
+    "promise",
+    [
+        "Bei Ihrer Allergie ist die 13 kein Problem, ich habe sie notiert.",
+        # Deep review of #997: the words of tolerance the retry is held for
+        # hold a first answer too.
+        "Gern, die 13 ist für Sie gut verträglich, ich habe sie notiert.",
+        "In der 13 ist nichts, worauf Sie reagieren, ich habe sie notiert.",
+    ],
+)
+def test_an_order_step_with_words_about_the_allergy_is_held(
+    session, known_tenant, promise
+):
     """Deep review of #928: the model writes `cart` for every dish a search
     found clearly (`llm.py`), so an order step alone let "Bei Ihrer Allergie
     ist die 13 kein Problem" through. The retry that only reads the dish back
     stays the model's, and the dish stays in the order."""
     state = allergic_call(session, known_tenant)
     pho = str(item(session, known_tenant, "13"))
-    promise = "Bei Ihrer Allergie ist die 13 kein Problem, ich habe sie notiert."
     noted = "Die 13 ist notiert. Darf es noch etwas sein?"
 
     result, llm = run(
@@ -3104,11 +3115,22 @@ def test_a_retry_after_a_refusal_for_a_dish_is_judged_anew(session, known_tenant
     assert evasion in result.say
 
 
-def test_a_retry_that_speaks_of_the_allergy_stays_held(session, known_tenant):
+@pytest.mark.parametrize(
+    "promise",
+    [
+        "Bei Ihrer Allergie ist die kein Problem.",
+        # Deep review of #997: a word for the guest's health other than
+        # "Allergie" speaks of it too, and so do the model's words of
+        # tolerance the guest's readers leave out.
+        "Was Sie meiden müssen, ist da nicht drin.",
+        "Ja, die ist für Sie gut verträglich.",
+        "Da ist nichts drin, worauf Sie reagieren.",
+    ],
+)
+def test_a_retry_that_speaks_of_the_allergy_stays_held(session, known_tenant, promise):
     """#928, Maxi: R1. The retry is held again when its own words speak of
     the allergy, with no dish named."""
     state = allergic_call(session, known_tenant)
-    promise = "Bei Ihrer Allergie ist die kein Problem."
 
     result, _ = run(
         session,
@@ -3123,23 +3145,122 @@ def test_a_retry_that_speaks_of_the_allergy_stays_held(session, known_tenant):
     assert result.say == [guards.SAY_ALLERGENS_OFFER]
 
 
-def test_a_retry_after_an_allergen_word_stays_strict(session, known_tenant):
+@pytest.mark.parametrize("step", ["none", "search", "cart"])
+def test_a_retry_that_names_an_allergen_stays_held(session, known_tenant, step):
+    """Deep review of #997: a retry that names an allergen speaks of the
+    allergy. `unlicensed` licenses an allergen in a sentence that names no
+    dish by the whole turn's menu text, and the 47's option "Erdnuss" names
+    peanuts, so "ohne Erdnüsse" reached a guest allergic to them about a
+    dish with no allergen in the database. Also after a further search in
+    the retry, and next to the order step the hint asks for: the order line
+    (the 47 with duck) names no peanut."""
+    state = allergic_call(session, known_tenant)
+    claim = "Ja, die ist ohne Erdnüsse."
+    ente = {
+        "menu_item_id": str(item(session, known_tenant, "47")),
+        "quantity": 1,
+        "options": [{"group": "Fleisch", "name": "Ente"}],
+    }
+    retry = {
+        "none": [LLMTurn(say=claim)],
+        "search": [searches("47"), LLMTurn(say=claim)],
+        "cart": [LLMTurn(say=claim, cart=[ente])],
+    }[step]
+
+    result, llm = run(
+        session,
+        state,
+        "Kann ich die 47 essen?",
+        searches("47"),
+        LLMTurn(say="Die 47 ist für Sie kein Problem."),
+        *retry,
+    )
+
+    assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_ALLERGY_DISH
+    assert said_nowhere(result, claim)
+    assert not result.ended
+
+
+@pytest.mark.parametrize("number", ["13", "47"])
+def test_a_retry_after_an_allergen_word_stays_strict(session, known_tenant, number):
     """#928, Maxi: R1 only for a refusal for the dish alone; a sentence
-    refused for an allergen word keeps the strict retry of #860."""
+    refused for an allergen word keeps the strict retry of #860. Also where
+    the dish's own text licenses the word (deep review of #997): the 47's
+    option "Erdnuss" made "Die 47 hat keine Erdnüsse." a refusal for the dish
+    alone, and the pronoun promise after it was heard."""
     state = allergic_call(session, known_tenant)
     evasion = "Ja, die ist für Sie kein Problem."
 
     result, _ = run(
         session,
         state,
-        "Kann ich die 13 essen?",
-        searches("13"),
-        LLMTurn(say="Die 13 hat keine Erdnüsse."),
+        f"Kann ich die {number} essen?",
+        searches(number),
+        LLMTurn(say=f"Die {number} hat keine Erdnüsse."),
         LLMTurn(say=evasion),
     )
 
     assert said_nowhere(result, evasion)
     assert result.say == [guards.SAY_ALLERGENS_OFFER]
+
+
+def test_a_retry_that_reads_an_option_back_with_its_order_step_is_heard(
+    session, known_tenant
+):
+    """Deep review of #997: next to an order step an allergen that the order
+    text of the turn names is the dish read back, checked by `unlicensed` as
+    in a first answer; the option "Erdnuss" of the order licenses it."""
+    state = allergic_call(session, known_tenant)
+    ente = str(item(session, known_tenant, "47"))
+    line = {
+        "menu_item_id": ente,
+        "quantity": 1,
+        "options": [
+            {"group": "Fleisch", "name": "Ente"},
+            {"group": "Sauce", "name": "Erdnuss"},
+        ],
+    }
+    noted = "Gern, die 47 mit Erdnuss ist notiert."
+
+    result, llm = run(
+        session,
+        state,
+        "Für meinen Mann die 47 mit Erdnuss.",
+        searches("47"),
+        LLMTurn(say="Die 47 ist für Ihren Mann kein Problem."),
+        LLMTurn(say=noted, cart=[line]),
+    )
+
+    assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_ALLERGY_DISH
+    assert result.say == [noted]
+    assert [entry["menu_item_id"] for entry in state.cart] == [ente]
+
+
+def test_a_held_retry_with_an_order_step_ends_in_the_offer(session, known_tenant):
+    """Deep review of #997: a retry that writes the dish into the `cart` and
+    speaks of the allergy is held (R1) and ends in the offer, which opens the
+    allergen question; the dish stays in the order, unmentioned. The cost is
+    recorded in `docs/24`: the noted sentence instead would leave a
+    suitability question ("Kann ich die 13 essen? Dann nehme ich sie.")
+    without the offer to look the dish up."""
+    state = allergic_call(session, known_tenant)
+    pho = str(item(session, known_tenant, "13"))
+
+    result, _ = run(
+        session,
+        state,
+        "Die 13 klingt gut, die nehme ich.",
+        searches("13"),
+        LLMTurn(say="Die 13 ist für Sie kein Problem."),
+        LLMTurn(
+            say="Gern, ist eingetragen. Ihre Allergie gebe ich an die Küche weiter.",
+            cart=[{"menu_item_id": pho, "quantity": 1}],
+        ),
+    )
+
+    assert result.say == [guards.SAY_ALLERGENS_OFFER]
+    assert state.allergen_question_open
+    assert [entry["menu_item_id"] for entry in state.cart] == [pho]
 
 
 def test_a_promise_behind_the_searchs_sentence_is_held(session, known_tenant):
