@@ -178,7 +178,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.95 · 25.11.2026:** #888 round 3 item 21 (#990, Maxi): an operator sign-in with a passkey that holds counts on that passkey alone and skips the account's and the address's waits, so who knows only the account name can no longer keep the operator out (#927); codes still wait
+- **v2.69.95 · 25.11.2026:** #888 round 3 item 21 (#990, Maxi): an operator sign-in or step-up with a passkey that holds counts on that passkey alone (checked before the password, recorded only after it) and skips the account's and the address's waits, so who knows only the account name can no longer keep the operator out (#927); codes still wait
 - **v2.69.94 · 25.11.2026:** #888 round 3: the scripted stand-in answers "Warum kostet das mehr?" with the option's `reason` from the menu through a narrow why-clause pattern (Maxi, 25.11.2026) and searches what follows the clause, so a dish named with it is still ordered; the docs/24 row moved to HISTORY
 - **v2.69.93 · 25.11.2026:** #888 round 3 item 12: the Whisper and Piper loaders sit behind an adapter-owned factory (`api/telephony/adapters/speech_engines.py`), the watchdog in `api/telephony/watchdog.py`; `telephony/app.py` picks an ear and a mouth by name only, and a missing model file is named at start in every image; the docs/24 row moved to HISTORY
 - **v2.69.92 · 25.11.2026:** docs/24 sweep: three built rows moved to HISTORY, #888 B3 ticked, sync-main install noted
