@@ -208,6 +208,48 @@ def test_a_wait_at_the_lines_own_bound_stays_a_database_error(bounded):
         db.rollback()
 
 
+def test_a_savepoint_rolled_back_under_a_lowered_bound_keeps_the_transaction(
+    bounded_db,
+):
+    """A failed statement in a savepoint aborts the transaction until the
+    rollback to the savepoint; that rollback must get through, as the
+    replay of `create_callback` on a duplicate needs it (own deep review)."""
+    from sqlalchemy.exc import DataError
+
+    with bounded_db(2000)() as db, db_module.bounded_by(db, 0.5):
+        db.execute(text("select 1"))
+        nested = db.begin_nested()
+        with pytest.raises(DataError):
+            db.execute(text("select 1 / 0"))
+        nested.rollback()
+        assert db.scalar(text("select 2")) == 2
+
+
+def test_another_cancel_stays_a_database_error(bounded_db, migrated_db_url):
+    """Only the turn's own bound is the tool's `OutOfTime`: a statement an
+    operator cancelled goes the outage path of the handler like before."""
+    from sqlalchemy.exc import OperationalError
+
+    with bounded_db(5000)() as db:
+        pid = db.scalar(text("select pg_backend_pid()"))
+        holder = create_engine(migrated_db_url)
+        cancel = threading.Timer(
+            0.3,
+            lambda: holder.connect().execute(
+                text("select pg_cancel_backend(:pid)"), {"pid": pid}
+            ),
+        )
+        cancel.start()
+        with (
+            pytest.raises(OperationalError, match="user request"),
+            db_module.bounded_by(db, 4.0),
+        ):
+            db.execute(text("select pg_sleep(2)"))
+        cancel.join()
+        holder.dispose()
+        db.rollback()
+
+
 def test_the_deadline_holds_only_on_the_thread_of_the_tool(bounded):
     """A statement of another thread, on another session of the line, keeps
     the line's bound while the tool runs (the handler can get events of a

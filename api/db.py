@@ -5,7 +5,9 @@ from collections.abc import Generator, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from typing import Any
 
+from psycopg import pq
 from sqlalchemy import create_engine, event
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
@@ -87,7 +89,9 @@ def bounded_sessions(
         # Before every statement, so waits that add up stop at the deadline
         # too, and a statement after a commit inside the tool is bounded alike.
         turn = _turn.get()
-        if turn is None:
+        # An aborted transaction waits on nothing and takes only the rollback
+        # to its savepoint, which a SET in front of it would refuse.
+        if turn is None or _aborted(cursor.connection):
             return
         left = int((turn.deadline - time.monotonic()) * 1000)
         if left < ms:
@@ -101,8 +105,16 @@ def bounded_sessions(
 
 
 _BOUND = "statement_timeout_ms"
-# Postgres' code for a statement its timeout cancelled.
+# Postgres' code for a cancelled statement; a timeout says so in its message,
+# a cancel by an operator does not.
 _QUERY_CANCELED = "57014"
+_BY_TIMEOUT = "statement timeout"
+
+
+def _aborted(dbapi_connection: Any) -> bool:
+    return bool(
+        dbapi_connection.info.transaction_status == pq.TransactionStatus.INERROR
+    )
 
 
 @dataclass
@@ -143,7 +155,11 @@ def bounded_by(session: Session, seconds_left: float | None) -> Iterator[None]:
     # A read leaves its transaction open with the lowered bound: the next
     # statements of the call get the line's bound again. This statement runs
     # under the lowered bound itself, and may be cut by it like the others.
-    if turn.lowered and session.in_transaction():
+    if (
+        turn.lowered
+        and session.in_transaction()
+        and not _aborted(session.connection().connection.dbapi_connection)
+    ):
         try:
             session.connection().exec_driver_sql(
                 f"set local statement_timeout = {session.info[_BOUND]}"
@@ -156,7 +172,12 @@ def bounded_by(session: Session, seconds_left: float | None) -> Iterator[None]:
 def _out_of_time(turn: _Turn, exc: OperationalError) -> None:
     """A statement the lowered bound cancelled raises the tool's `OutOfTime`;
     any other failure stays what it was, for the handler's outage path."""
-    if turn.lowered and getattr(exc.orig, "sqlstate", None) == _QUERY_CANCELED:
+    cause = exc.orig
+    if (
+        turn.lowered
+        and getattr(cause, "sqlstate", None) == _QUERY_CANCELED
+        and _BY_TIMEOUT in str(cause)
+    ):
         raise OutOfTime(
             "a statement ran into the turn's deadline", say=SAY_ON_FAILURE
         ) from exc
