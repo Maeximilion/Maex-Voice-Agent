@@ -536,6 +536,22 @@ def test_joining_words_in_front_of_a_removal_are_not_asked_back():
     )
 
 
+@pytest.mark.parametrize(
+    ("part", "left"),
+    [
+        ("ohne Zwiebeln und.\t", "ohne Zwiebeln"),
+        ("ohne Zwiebeln;\n", "ohne Zwiebeln"),
+        ("ohne Hund, ", "ohne Hund"),
+        ("bitte ohne Zwiebeln, aber", "bitte ohne Zwiebeln"),
+        ("und", "und"),
+    ],
+)
+def test_the_part_in_front_of_the_next_one_loses_only_its_tail(part, left):
+    """A joining word at the very start stays; whitespace and punctuation at
+    the end go in any order (the copying version left "ohne Zwiebeln;\\n")."""
+    assert wishes._without_glue(part) == left
+
+
 def test_bitte_with_a_comma_behind_it_is_cut():
     """Own review: "bitte," stayed in the note."""
     wish = wish_of("ohne Zwiebeln, bitte,", BEILAGE)

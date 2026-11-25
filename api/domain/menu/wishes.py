@@ -2042,14 +2042,27 @@ def _split_addition(text: str) -> tuple[str, str | None]:
     return removal, text[tokens[begin].start() :].strip(" ,.;")
 
 
+# What may stand at either end of such a part besides whitespace.
+_PART_END = " ,.;!?"
+
+
 def _without_glue(part: str) -> str:
     """The part of a wish in front of the next one, without the joining words
     at its end, each a word of its own: "ohne Zwiebeln, aber bitte" and "ohne
     Zwiebeln und. Aber" -> "ohne Zwiebeln", "ohne Hund" stays (docs/HISTORY.md).
-    Each round takes at least one character off the end, so it stays linear."""
-    while (cut := _drop_trailing_glue(part.strip(" ,.;!?")).strip(" ,.;!?")) != part:
-        part = cut
-    return part
+    One end index walks back and the part is cut once, so a long chain of
+    joining words costs linear time, not a copy per word (Codex PR #1025)."""
+    part = part.lstrip(_PART_END)
+    end = len(part)
+    while True:
+        while end and (part[end - 1] in _PART_END or part[end - 1].isspace()):
+            end -= 1
+        word = end
+        while word and not _is_separator(part[word - 1]):
+            word -= 1
+        if word == 0 or _GLUE_WORD.fullmatch(part, word, end) is None:
+            return part[:end]
+        end = word
 
 
 def _swaps(words: list[str], i: int) -> bool:

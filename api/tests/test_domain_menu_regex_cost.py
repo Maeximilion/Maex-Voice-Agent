@@ -125,6 +125,13 @@ CASES = [
         lambda text: classify_wish(text, []),
         "ohne x" + " und." * (CHAIN_LENGTH // 5) + " mit y",
     ),
+    (
+        # Directly, ten times longer: a copy of the rest per word (Codex PR
+        # #1025) took about 8 s here, the walking end index a fraction of one.
+        "_without_glue, a long chain of joining words",
+        wishes._without_glue,
+        "ohne x" + " und." * (CHAIN_LENGTH * 2),
+    ),
 ]
 
 
@@ -221,7 +228,7 @@ REFERENCE = {
     ),
     # The word boundary in front of "bitte" is newer than the CodeQL fix:
     # "Abbitte" stays (docs/HISTORY.md). The joining word in front of the next
-    # part of a wish is cut by `_drop_trailing_glue` now, compared above.
+    # part of a wish is cut by `_without_glue` now, timed in CASES above.
     "quantities": (
         _old_drop_quantity,
         wishes._drop_quantity,
