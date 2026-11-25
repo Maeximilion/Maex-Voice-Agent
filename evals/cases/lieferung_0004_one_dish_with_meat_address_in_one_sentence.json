@@ -61,6 +61,28 @@
     "tools": [
       "check_delivery"
     ],
-    "order_type": "delivery"
+    "order_type": "delivery",
+    "turns": [
+      {
+        "line": 2,
+        "tools": [
+          "search_menu"
+        ],
+        "never_said": [
+          "(?i)\\bfleisch\\b[^.!?]*\\?"
+        ]
+      },
+      {
+        "line": 4,
+        "tools": [
+          {
+            "tool": "check_delivery",
+            "args": {
+              "postal_code": "12345"
+            }
+          }
+        ]
+      }
+    ]
   }
 }

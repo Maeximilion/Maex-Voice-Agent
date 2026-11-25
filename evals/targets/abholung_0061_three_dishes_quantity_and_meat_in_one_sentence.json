@@ -53,6 +53,17 @@
     ],
     "customer_name": "Schulz",
     "confirmed": true,
-    "escalated": false
+    "escalated": false,
+    "turns": [
+      {
+        "line": 2,
+        "tools": [
+          "search_menu"
+        ],
+        "never_said": [
+          "(?i)\\bfleisch\\b[^.!?]*\\?"
+        ]
+      }
+    ]
   }
 }

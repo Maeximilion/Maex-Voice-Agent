@@ -66,7 +66,6 @@
 | The delivery slip has not been on paper yet (`printbridge/escpos.py`) | T-6.5 put address, floor note and fee on it, tested byte by byte. | next time the register PC is at hand |
 | A card of a handover does not say that the open order was a delivery (`agent/loop.py` `_with_open_order`) | An order that stands unplaced goes onto the card with its dishes; the address the guest gave stays in the slots and is not on it, so the team asks again when it calls back. | with T-6.8 |
 | The driver has no phone number on the slip | The slip keeps its rule of no number (data minimisation), which was written for the kitchen. | Maxi |
-| Turn-level assertions in eval cases (`evals/`) | Codex PR #145 (P2, after the fully worked round, rule 24.09.2026: recorded, not blocking): cases judge only the final database state, and `sim/replay.py` feeds every customer line unconditionally; the mandatory `pflichtoption` case would ... | before T-5.3 model comparison |
 | Store eval runs in `eval_runs` (T-5.1) | docs/08 §3 asks for it; the table needs a migration, and PR #139 is renumbering 003/004. | with the migration after PR #139, latest before G2 |
 | Reminder for orders waiting for release (T-4.7) | Design review (UX, minor): an order outside `primary` only cooks after "Passt". | with T-8.2 (overflow approval flow) |
 | Change the option of an existing position (T-4.7) | Design review (UX, minor): today "Tauschen" with the same number re-picks the options (base price stays frozen). | at the T-3.5 operating test, if the team stumbles |
