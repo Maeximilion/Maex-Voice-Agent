@@ -2510,3 +2510,11 @@ Fixed in one PR of #888 round 3 (migration 048, `evals/runner.py` `record`): eve
 | Point | Why still open | When due |
 |---|---|---|
 | Store eval runs in `eval_runs` (T-5.1) | docs/08 §3 asks for it; the table needs a migration, and PR #139 is renumbering 003/004. | with the migration after PR #139, latest before G2 |
+
+## Open Points from Reviews (archive, engine factory row fixed 25.11.2026)
+
+Fixed in one PR of #888 round 3: the Whisper and Piper loaders and `EARS`, `MOUTHS` live in `api/telephony/adapters/speech_engines.py`, the watchdog in `api/telephony/watchdog.py`; `telephony/app.py` picks an ear and a mouth by name only.
+
+| Point | Why still open | When due |
+|---|---|---|
+| `telephony/app.py` builds Whisper and Piper itself (`_whisper`, `_piper`) | Codex on `879f51e` (PR #298, P2), 15.10.2026: AGENTS.md wants a provider only under `api/telephony/adapters/`; the loaders should move behind an adapter-owned factory, so `app.py` only picks an `Ear` and a `Mouth` by name. | With that row |

@@ -1178,7 +1178,7 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
 - **From T-10.3, licences:** the Piper package (`piper-tts` 1.8) is GPL-3.0-or-later, the voice
   `thorsten` is from a CC0 data set; Parakeet v3 is CC-BY-4.0, its ONNX runtime wrapper MIT; Whisper
   and its wrapper are MIT. On the T-10.3 bench they ran as separate programs; the service `voice`
-  imports Piper in-process (`api/telephony/adapters/tts_piper.py`, loaded by `telephony/app.py`).
+  imports Piper in-process (`api/telephony/adapters/tts_piper.py`, loaded by `telephony/adapters/speech_engines.py`).
   **Legal check, 20.10.2026 (`docs/09_OPERATIONS_LEGAL.md` §1 L16):** no duty while the software
   runs only as our own service; once a copy is handed to anyone else (E16), a shipped `voice` would
   be one combined work with Piper, and Maxi then picks Piper behind a process boundary, `voice`

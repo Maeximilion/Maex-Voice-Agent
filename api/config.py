@@ -118,8 +118,9 @@ class Settings(BaseSettings):
     # Seconds of silence after a sentence before the code asks "Sind Sie noch
     # da?" (docs/20 §4). An assumption until real calls say otherwise.
     voice_silence_seconds: float = Field(default=8.0, gt=0)
-    # Ear and mouth by the names of their engines in `telephony/app.py`
-    # (`EARS`, `MOUTHS`), the local engines of the test phase (docs/20 §6).
+    # Ear and mouth by the names of their engines in
+    # `telephony/adapters/speech_engines.py` (`EARS`, `MOUTHS`), the local
+    # engines of the test phase (docs/20 §6).
     # `fake` is the drill pair of the workbench, an ear that hears nothing and
     # a mouth of noise, and is refused outside dev and test, as is the ear
     # `drill`, which hears "Ja" in a tone.
