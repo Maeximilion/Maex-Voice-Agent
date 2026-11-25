@@ -178,8 +178,9 @@ counters. So each attempt without a known device also counts on its /48 (#962), 
 30th failure in a row (the same 1 to 5 minutes): a spray of made-up names from one /48 reaches the
 hash 30 times, then at most 30 times per 5 minutes, about 2 seconds of scrypt (69 ms a run,
 measured) instead of roughly 650 runs a second. Every attempt counts there, a known name too, so the
-wait tells no names; a right sign-in without a passkey that holds forgets its /48 as it does its
-address and the account's count (a passkey's leaves them to the guesser's waits, #990). The price: while a
+wait tells no names; a right sign-in from a new browser forgets its /48 as it does its address and
+the account's count, unless a passkey that holds signed in (that one leaves them to the guesser's
+waits, #990). The price: while a
 spray holds the operator's own /48, a new browser there waits too; a browser with the device
 cookie counts alone and signs in, and so does a passkey that holds (#990, below). Left open: an attacker with many /48s (a /32) or many IPv4
 addresses still meets a fresh count in each. An unknown name still costs the dummy hash, so the
@@ -409,7 +410,10 @@ factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webau
   address, not global: a global one would let a flood shut out the operator's passkey. An IPv6
   client counts by its /64 here too (#888 S11), so one host cannot hold ten per /128; the price is
   that a neighbour on the same /64 can fill the cap for five minutes and leave the operator the
-  TOTP code, whose sign-in is pushed, as anyone behind the operator's IPv4 NAT could already.
+  TOTP code, whose sign-in is pushed, as anyone behind the operator's IPv4 NAT could already. Since
+  #990 a passkey that holds skips the account's wait but needs such a challenge, so a neighbour who
+  fills the cap and keeps the account's wait running too keeps the operator out from that address;
+  the remedy is the runbook's (block the guessing address, docs/09), or another network.
 - **An answer is input from outside.** At most 32,768 characters are parsed, and whatever the
   parsing or the check raises is a refusal, never a server error: at the sign-in that runs after
   the password check, and an error there would tell that the password was right.

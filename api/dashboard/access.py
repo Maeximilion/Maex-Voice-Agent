@@ -22,8 +22,10 @@ device cookie of an earlier sign-in (at the step-up on the account too, #888
 A3), with the waits of a customer's login (every
 third failure in a row, 1 to 5 minutes; `domain/access/sessions.py`); an IPv6
 address also counts in its /48, with a wait every 30th failure (#962). A
-sign-in with a passkey that holds counts on that passkey alone and skips the
-other waits, so a guesser cannot keep the operator out (#990). The
+sign-in or step-up with a passkey that holds counts on that passkey alone and
+skips the other waits, so a guesser who knows only the account name cannot
+keep the operator out (#990); one behind the operator's own address can still
+fill its cap of sign-in challenges (docs/23 §5, #827 F1). The
 attempt is counted before the slow hash, in a transaction of its own, so a
 parallel burst meets the wait.
 
@@ -390,12 +392,15 @@ def step_up(
         )
         db.commit()
         raise SignInRefused(copy=why == "counter", alarm=alarm)
-    if held is not None:
-        _forget_passkey_count(db, held)
-    elif trusted:
+    if trusted:
+        # The browser's own count; the account's stays to a guesser's waits
+        # when a passkey held, as at the sign-in.
         device = _device(db, account.id, device_token)
         if device is not None:
             device.failures, device.blocked_until, device.last_failed_at = 0, None, None
+    if held is not None:
+        _forget_passkey_count(db, held)
+    elif trusted:
         account.failures, account.blocked_until, account.last_failed_at = 0, None, None
     else:
         _forgive(db, account, counted)

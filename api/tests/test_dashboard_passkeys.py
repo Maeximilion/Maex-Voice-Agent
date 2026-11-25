@@ -2362,13 +2362,16 @@ def test_a_code_from_a_new_browser_still_meets_the_wait(client, factors, clock):
 
 def test_a_passkey_that_does_not_hold_meets_the_wait(client, factors, clock):
     """Junk in the passkey field, or a device without user verification, must
-    not open a way past the wait for password guesses."""
+    not open a way past the account's wait for password guesses."""
     device = _with_passkey(client, factors, clock)
     client.cookies.clear()
-    _guesser_keeps_the_account_waiting(clock)
+    _guesser_keeps_the_account_waiting(clock, ELSEWHERE)
     wait = web.WAIT.format(minutes=1)
     _refused(client, _passkey_sign_in(client, device, verified=False), wait)
     _refused(client, _passkey_sign_in(client, device, origin=EVIL_ORIGIN), wait)
+    _asked(client)
+    junk = _post(client, "/login", name="maxi", password=PASSWORD, passkey="{}")
+    _refused(client, junk, wait)
 
 
 def test_wrong_passwords_with_a_right_passkey_wait_on_the_passkey(
@@ -2490,3 +2493,24 @@ def test_a_counter_moved_while_the_password_was_checked_is_seen(
     _refused(client, _passkey_sign_in(client, device))
     failed = _audited(sessions, "operator.sign_in_failed")
     assert failed[-1].detail["reason"] == "counter"
+
+
+def test_a_passkey_step_up_clears_the_browsers_own_count(
+    client, factors, clock, sessions
+):
+    """A held passkey leaves the account's count to a guesser's waits, but
+    the browser's own failures are its own and go (sweep of the deep review
+    of #990)."""
+    device = _with_passkey(client, factors, clock)
+    assert _passkey_sign_in(client, device).status_code == 303
+    for _ in range(2):
+        asked = _post(client, "/step-up/passkey/options")
+        bent = device.get(asked.text, ORIGIN, verified=False)
+        assert _post(client, "/step-up", passkey=bent).status_code == 401
+    _passkey_step_up(client, device)
+    with sessions() as db:
+        mine = token_hash(client.cookies.get("ops_device", ""))
+        row = db.scalars(
+            select(OperatorDevice).where(OperatorDevice.token_hash == mine)
+        ).one()
+        assert (row.failures, row.blocked_until) == (0, None)
