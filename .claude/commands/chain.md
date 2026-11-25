@@ -47,7 +47,14 @@ clean, fixes every finding of that first round itself (a P0 or P1 too), and
 ends with "PR #N ready, first review clean". Then it is done: one item per
 session (Maxi, 2026-11-24 evening, popup "One item per session"), archived
 by the coordinator once its pull request is merged, so the sidebar shows no
-merged pull request and no session grows over several items.
+merged pull request and no session grows over several items. It never ends a
+turn while CI or Codex still run on its head; it waits inside the turn and
+ends with the "ready" message or a blocked one (Maxi, 2026-11-25: a finished
+session stayed open after its merge). The session cannot switch on
+`auto_archive_on_close` itself: auto mode's classifier refuses its
+`set_monitor` (25.11.2026), and the app's global "archive on PR close" setting
+would also archive the ship lane at its first merge, so archiving stays the
+coordinator's step (section 4).
 
 **The ship lane** (Maxi, 2026-11-24, "One Sonnet ship lane"): one fresh Sonnet
 `medium` session, started in Maxi's turn together with the first build
@@ -242,7 +249,13 @@ before naming a base.
 - Archives its own side sessions without asking once their items are merged or
   stopped without a pull request (Maxi, 2026-11-23: "archive Items which are
   done for now and in future", "But just for the chain"); other sessions only on
-  his word.
+  his word. The app refuses to archive a session that still runs a background
+  task: the coordinator then sends it "merged #N: stop every background task and
+  end your turn" and archives it at its next note. The coordinator also sends
+  that message whenever it ships an item that has not reported "ready" itself
+  (25.11.2026: #1026's session ended a turn with CI and Codex still running, the
+  coordinator shipped it from its own check, and the session kept waiting on a
+  head that was already merged, so it could not be archived).
 - Never stops for its own context either (Maxi, 2026-11-24: "Don't stop the
   chain any more"): auto compaction carries it. So it keeps the chain state
   outside its context at all times: `~/.claude/chain/notes.txt` gets a line at
@@ -253,11 +266,14 @@ before naming a base.
   its next action (seen 24.11.2026: three Dependabot pull requests sat open and
   unqueued for seven hours across a compaction).
 - Open Dependabot pull requests go to the ship lane's queue whenever it idles.
-- Merged pull requests stay on the ship lane's sidebar row: the app binds each
-  pull request it ships, and auto mode refuses both its own `unbind_pr` and a
-  coordinator's message asking for it (24.11.2026, "Undermining Oversight").
-  So only Maxi clears them, with the x on its pull request bar; build sessions
-  need nothing, since they are archived after their merge.
+- Merged pull requests stay on the ship lane's bar until Maxi clears them with
+  the x (Maxi, 2026-11-25, popup "Clear with the x"). The app binds each pull
+  request the ship lane ships, and auto mode's classifier refuses its
+  `unbind_pr`, also with Maxi's quoted words (24.11.2026, "Undermining
+  Oversight"; 25.11.2026, "judged this action dangerous"); an allow rule for
+  `mcp__ccd_pr__unbind_pr` would loosen a permission check, so Claude neither
+  adds it nor tries the unbind. Build sessions need nothing: they are archived
+  after their merge.
 
 ## 5. Usage pacing (in every brief)
 
