@@ -1955,3 +1955,11 @@ Fixed in one PR of #888 round 3 (`sim/scripted_order.py`, `sim/scripted_llm.py`,
 | "doch" between a rejection and its replacement (`sim/scripted_order.py` `_replacement`) | Codex PR #178 (P2, after the fully worked round, rule 24.09.2026: recorded, not blocking): "Nein, doch die 23." is searched as "doch die 23.", which is not read as the one card number; per Codex the search finds nothing and the guest has ... | with T-2.4 or the next sim change |
 | Quantity of a replacement that is one of the offered dishes (`sim/scripted_order.py` `on_customer`, question branch) | Codex PR #178 (P2 on the merged head, rule 24.09.2026: recorded, not blocking): "Nein, lieber zwei Nummer 13" on "Meinen Sie Nummer 12 oder Nummer 13?" picks the 13 from the part after the rejection, but reads the quantity from the whole ... | with T-2.4 or the next sim change |
 | Scripted model takes a whole pickup order while pickup is closed (`sim/scripted_order.py`) | Eval suite T-5.2: at closing time or on the closed day the stand-in asks for dishes, name and phone and only `draft_order` says "Abholung ist gerade leider nicht möglich"; the outcome is right (nothing booked), the conversation is long. | with T-2.4 |
+
+## Open Points from Reviews (archive, identifier order checked 25.11.2026)
+
+Checked in one PR of #888 round 3 on the own Asterisk 22.12.0 image (#1026): `pjsip show identifiers` lists `ip` first with and without the line; the line only moved `username` and `anonymous` behind `header`, `request_uri` and `auth_username`, and none of them can take the only endpoint, which has `identify_by=ip`. The `[global]` block is gone, and `api/tests/test_asterisk_pjsip_conf.py` keeps `identify_by=ip` on every endpoint.
+
+| Point | Why still open | When due |
+|---|---|---|
+| `[global]` with `endpoint_identifier_order=ip` may do nothing (`deploy/asterisk/conf/pjsip.conf`) | Ponytail review of PR #340 (P2), 20.10.2026: the block's own comment says it does not switch identification by the From user off, `identify_by=ip` on the endpoint does; and Asterisk's default order is believed to start with `ip` already ... | With the next telephony PR |
