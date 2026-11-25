@@ -31,6 +31,7 @@ from api.agent.guards import (
     is_open,
     leaves_a_question,
     left_twice,
+    note_cut,
     note_said,
     note_tool,
     order_changed,
@@ -464,6 +465,54 @@ def test_only_the_last_sentence_counts_as_the_read_back():
 
     note_said(state, f"Gern. {READBACK}")
     assert refusal(state, begin_turn(state), "Ja", confirm(draft_id)) is None
+
+
+def test_a_cut_keeps_only_the_sentences_the_guest_heard():
+    """The guest talked over the second of two queued sentences (Codex PR
+    #291): their next words answer the first one, not a question they never
+    heard to its end. The whole sentence stays what was said."""
+    state = ConversationState()
+    note_said(state, "Gern. Für wie viele Personen?")
+
+    note_cut(state, "Für wie viele Personen?")
+
+    assert state.last_say == "Gern."
+    assert state.last_said == "Gern. Für wie viele Personen?"
+
+
+def test_a_cut_of_the_whole_sentence_leaves_no_last_say():
+    """Nothing heard to its end: no sentence the guest answers. A cut that does
+    not end the sentence the state kept (older sentences cut with it) leaves
+    none either, and an empty cut changes nothing."""
+    state = ConversationState()
+    note_said(state, "Möchten Sie noch etwas trinken?")
+    note_cut(state, "")
+    assert state.last_say == "Möchten Sie noch etwas trinken?"
+
+    note_cut(state, "Möchten Sie noch etwas trinken?")
+    assert state.last_say is None
+    assert "last_say" not in state.to_prompt_json()
+
+    note_said(state, "Gern. Für wie viele Personen?")
+    note_cut(state, "Gern. Für wie viele Personen? Und um wie viel Uhr?")
+    assert state.last_say is None
+
+
+def test_a_cut_read_back_is_no_read_back():
+    """Rule 3: a yes after a read-back the guest talked over confirms nothing,
+    and a cut never makes a read-back heard."""
+    state, draft_id = drafted()
+    note_said(state, f"Gern. {READBACK}")
+    assert state.readback_heard
+
+    note_cut(state, READBACK)
+
+    assert not state.readback_heard and state.last_say == "Gern."
+    assert refusal(state, begin_turn(state), "Ja", confirm(draft_id))
+
+    note_said(state, "Wir haben bis 22 Uhr geöffnet.")
+    note_cut(state, "geöffnet.")
+    assert not state.readback_heard
 
 
 def test_a_booked_draft_is_not_handed_to_the_model_again():
