@@ -71,7 +71,14 @@ sessions to Remote Control" off on 25.11.2026), so nothing outside the chain
 holds them open. One pull request merges at a time
 anyway, so one lane is enough. Why: a long build session ships in a big Opus
 context, and every CI or Codex wake rereads all of it; the ship lane rereads a
-small Sonnet context. A P1 in an `xhigh` path of the ship round is fixed on
+small Sonnet context. The ship lane never ends a turn while CI, Codex or the
+evals on its head are pending, and it answers every wait that returns at once
+(`.claude/commands/ship.md` step 2: exit 2 waits again, exit 3 gets the one
+scoped `@codex review`; Maxi, 2026-11-25: a hangup in the shipping lane "is
+critical for the chain"; 25.11.2026 on #1038 it ended a turn on "Codex wait
+still running" after a merge from `main` left Codex unstarted on the new
+head). It owns the branch of every PR it ships: a build session pushes to its
+PR no more after "PR ready". A P1 in an `xhigh` path of the ship round is fixed on
 Opus: the ship lane asks the coordinator, which switches its model and effort
 (`set_session_model`, `set_session_effort`) and back afterwards. When its
 context passes 300k, the coordinator starts a fresh ship lane in Maxi's next
@@ -119,7 +126,16 @@ The brief is the session's only context. It has, in this order:
    the same files and the base is not merged yet (`/done` step 7c).
 7. "Wait inside the turn for tests, CI and Codex; do not end the turn with a
    status line." A child's ended turn does not always wake the coordinator
-   (item 12).
+   (item 12). Add: "Every wait that returns 'not done yet' (`codex_review.py`
+   exit 2) or 'stalled' (exit 3) is answered in the same turn: wait again, or
+   one scoped `@codex review` on a stalled head, then wait again. 'CI green,
+   Codex still running' is a stall to check, never a state to sleep on:
+   nothing wakes you for a clean Codex result (25.11.2026: #1039 and #1040
+   slept clean and green). After 'PR ready' you push to your PR no more: a
+   conflict or an Auto-fix event on it goes to the coordinator, the ship lane
+   owns the branch (25.11.2026: #1040's build session merged `main` into its
+   PR while the ship lane held the queue)." (Maxi, 2026-11-25: "A hangup is
+   critical for the chain and its flow".)
 8. "Report once, at the end": PR number, merge commit, choices, usage.
 9. The usage block of section 5 with the model's numbers.
 10. Exceptions to `CLAUDE.md` quoted in Maxi's words with the date; a session
@@ -131,7 +147,9 @@ The brief is the session's only context. It has, in this order:
 12. The coordinator's session id and this line: "Send the coordinator
    (`SendMessage` to `<its local_ id>`) one short message at each milestone:
    PR ready, merged, stopped or blocked, reserve taken, a choice that needs
-   Maxi. Nothing in between." (Maxi, 2026-11-23, asked for this fix "with
+   Maxi. Nothing in between." "Waiting for CI or Codex" is no milestone: it
+   is a wait you do inside your turn (item 7), and a "PR ready" is sent only
+   when CI, the evals and Codex are done on the head. (Maxi, 2026-11-23, asked for this fix "with
    the milestones".) Why: the app wakes the coordinator after a child's
    ended turn only when no other side session it started still works, so with
    one long build running every other note waits for Maxi's next message (#955
@@ -282,6 +300,17 @@ before naming a base.
   (25.11.2026: #1026's session ended a turn with CI and Codex still running, the
   coordinator shipped it from its own check, and the session kept waiting on a
   head that was already merged, so it could not be archived).
+- On every child note that says "waiting for CI" or "waiting for Codex" (or a
+  turn that ended on a wait), before it reports or sleeps: run
+  `python3 scripts/codex_review.py <N>` and read `gh pr checks <N>`. Both done
+  (Codex clean, checks green on the same head) means the session slept on a
+  finished wait: nudge it at once with `SendMessage` ("CI and Codex are done on
+  <sha>, go on") or ship it from the ship lane. Codex stalled or not started on
+  the head for over 10 minutes: tell the session to post the one scoped
+  `@codex review`. Maxi, 2026-11-25: a hangup "breaks the chain and its flow so
+  we loose unnecessary Tokens just to keep the sessions cache hot". (25.11.2026:
+  #1039 and #1040 were clean and green for a while before the coordinator saw
+  it.)
 - Never stops for its own context either (Maxi, 2026-11-24: "Don't stop the
   chain any more"): auto compaction carries it. So it keeps the chain state
   outside its context at all times: `~/.claude/chain/notes.txt` gets a line at
