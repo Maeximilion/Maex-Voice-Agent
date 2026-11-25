@@ -80,6 +80,8 @@ def test_a_change_that_reaches_the_asterisk_image_builds_it(files):
     [
         ["api/telephony/router.py", "docs/20_VOICE_LAYER.md"],
         ["deploy/asterisk/docker-compose.drill.yml", "deploy/asterisk/render.sh"],
+        # The check copies the service's command and rights, and a test in
+        # the suite keeps them equal: a change here fails that test first.
         ["docker-compose.yml"],
     ],
 )
