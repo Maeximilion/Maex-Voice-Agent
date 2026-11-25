@@ -571,16 +571,17 @@ def main(argv: list[str] | None = None) -> int:
     from piper import PiperVoice
 
     from api.config import settings
-    from api.telephony import app as voice_app
+    from api.telephony import watchdog as voice_watchdog
+    from api.telephony.adapters import speech_engines
     from api.telephony.adapters.tts_piper import PiperMouth
 
     models = Path(os.environ.get("SPEECH_MODELS", "/models"))
-    voice_app.MODELS = models
+    speech_engines.MODELS = models
     device = os.environ.get("SPEECH_DEVICE", settings.voice_ear_device)
     settings.voice_ear_device = "cpu" if device == "cpu" else "cuda"
-    watchdog = voice_app.Watchdog()
-    make_ear = voice_app._whisper(watchdog)
-    mouth = voice_app._piper(watchdog)()
+    watchdog = voice_watchdog.Watchdog()
+    make_ear = speech_engines._whisper(watchdog)
+    mouth = speech_engines._piper(watchdog)()
     caller = PiperMouth(
         Steady(PiperVoice.load(models / "piper" / f"{args.voice}.onnx"))
     )
