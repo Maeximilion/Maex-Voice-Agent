@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from api.agent.guards import HINT_GUEST_NAME, HINT_GUEST_PHONE
+from api.core.errors import SAY_ON_FAILURE
 from sim.scripted_llm import (
     _PRICE_QUESTION,
     GREETING,
@@ -160,6 +161,10 @@ def test_fehlgeschlagenes_tool_ohne_satz_uebergibt_wirklich(llm):
         # Nobody there: the tool answers, the team is not reachable (docs/04).
         tool_result("transfer_to_team", data={"available": False}),
         tool_result("transfer_to_team", ok=False, error_code="not_found"),
+        # The core's own sentence of a fault promises the team too.
+        tool_result(
+            "transfer_to_team", ok=False, error_code="not_found", say=SAY_ON_FAILURE
+        ),
     ],
 )
 def test_a_failed_transfer_is_never_answered_with_a_promise(llm, failed):

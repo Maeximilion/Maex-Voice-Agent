@@ -544,7 +544,9 @@ class ScriptedLLM:
             again = self._asked_again(result.get("hint"))
             if again is not None:
                 return again
-            return self._after_failure(say)
+            # A transfer's own sentence promises the team (SAY_ON_FAILURE):
+            # the core carries it out instead.
+            return self._after_failure(None if name == "transfer_to_team" else say)
         if name == "create_callback":
             self._out_of_scope_request = None
             return LLMTurn(say=say or SAY_HANDOVER)
