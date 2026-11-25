@@ -1,6 +1,6 @@
 # Every text file is stored with LF; the working tree follows core.autocrlf.
 # A commit can then never bring CRLF into the repository again (e935646e,
-# 25.11.2026, rewrote 411 files to CRLF).
+# 25.11.2026, rewrote 411 files to CRLF; #1037 restored them).
 * text=auto
 
 # Shell scripts and the crontab run on Linux and in Git Bash; CRLF breaks both.
