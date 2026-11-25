@@ -195,19 +195,20 @@ before naming a base.
   Items should start like when I would be here"): sessions take the best option
   and list it in the PR under "Claude's choice, awaiting Maxi"; money, law,
   security design and production data wait for him. Planned items keep taking
-  free lanes. Since a note turn cannot start a session, the coordinator starts
-  in every turn Maxi's message begins a fresh session for each planned item
-  that has no session yet and fits no lane now (one item per session, Maxi,
-  2026-11-24 evening, popup "One item per session"; it replaces the finisher
-  rule of that afternoon, which let one session gather several items, a big
-  context and two lane counts at once). Such a queued session reads its brief,
-  then waits with background sleeps of 50 minutes on the baton file
-  (`next-lane.txt`, section 5) and takes the lane when the file names it.
-  Context size never stops a session (Maxi, 2026-11-24: "Don't stop the chain
-  any more"): no handover at 300k or 450k; auto compaction carries it, so it
-  commits and pushes at every step and keeps its state in the PR and in files.
-  If no queued session is left while a lane is free, the coordinator sends
-  Maxi one push notification that the chain waits for his message. "Nothing new"
+  free lanes. Planned items keep their queue order in the plan, but get no
+  session before a lane is free for them (Maxi, 2026-11-25: "Planned items get
+  a que order but not in side sessions just when a lane gets free the first in
+  que gets the free lane and so on"; queued sessions waiting on the baton,
+  used on 24 and 25.11, made every hold and slow mode pause more sessions). In
+  every turn Maxi's message begins, the coordinator starts a fresh session for
+  the first items in order that fit a free lane (one item per session, Maxi,
+  2026-11-24 evening, popup "One item per session"). Since a note turn cannot
+  start a session, a lane that frees in such a turn stays empty until his next
+  message, and the coordinator sends him one push notification that the chain
+  waits for it. Context size never stops a session (Maxi, 2026-11-24: "Don't
+  stop the chain any more"): no handover at 300k or 450k; auto compaction
+  carries it, so it commits and pushes at every step and keeps its state in the
+  PR and in files. "Nothing new"
   while he is away means only work outside the plan. When the plan runs empty,
   the coordinator plans about 20 new items and goes on; a decisions issue such
   as #990 can add items when he answers it.
