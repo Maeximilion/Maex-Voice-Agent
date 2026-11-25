@@ -62,7 +62,13 @@ sessions of the chain, ships the queue: it waits until the coordinator sends
 "ship #N", merges `origin/main` in, gets CI, Codex and the evals on the new
 head, fixes what that round finds, merges, messages the coordinator "merged
 #N" before anything else (no sleep or pause comes between the merge and that
-message; Maxi, 2026-11-24), and waits for the next "ship #N". One pull request merges at a time
+message; Maxi, 2026-11-24), then archives that pull request's build session,
+whose id the coordinator names in "ship #N" (Maxi, 2026-11-25, popup "Ship
+lane archives it"; if the app refuses, the "merged" message says so and the
+coordinator or Maxi archives it), and waits for the next "ship #N". New
+sessions start without a Remote Control link (Maxi switched "Connect new
+sessions to Remote Control" off on 25.11.2026), so nothing outside the chain
+holds them open. One pull request merges at a time
 anyway, so one lane is enough. Why: a long build session ships in a big Opus
 context, and every CI or Codex wake rereads all of it; the ship lane rereads a
 small Sonnet context. A P1 in an `xhigh` path of the ship round is fixed on
