@@ -270,12 +270,13 @@ before naming a base.
 - Open Dependabot pull requests go to the ship lane's queue whenever it idles.
 - Merged pull requests leave the ship lane's sidebar row at once: the app binds
   each pull request it ships, and the ship lane unbinds it right after its
-  "merged #N" message (section 2; Maxi's rule of 2026-11-25, which his quote in
-  the ship lane's brief carries, since auto mode refused the unbind on
-  24.11.2026 when it came without his words, "Undermining Oversight"). If auto
-  mode still refuses, the ship lane reports the refusal text and Maxi clears
-  the pull request with the x on its bar. Build sessions need nothing: they are
-  archived after their merge.
+  "merged #N" message (section 2; Maxi's rule of 2026-11-25). Auto mode's
+  classifier refuses `unbind_pr` even with his quoted words (24.11.2026,
+  "Undermining Oversight"; 25.11.2026, "judged this action dangerous"), so it
+  works only once Maxi has added `mcp__ccd_pr__unbind_pr` to `permissions.allow`
+  in his user settings; Claude does not add that rule itself. Until then the
+  ship lane reports the refusal once and Maxi clears the pull request with the x
+  on its bar. Build sessions need nothing: they are archived after their merge.
 
 ## 5. Usage pacing (in every brief)
 
