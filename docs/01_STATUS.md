@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.82
+> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.83
 
 ---
 
@@ -178,7 +178,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.82 · 25.11.2026:** #888 round 3: an eval case can assert what the agent does in the turn of one customer line (`expected.turns`: a tool call by name or by its arguments, a sentence by pattern), and the judge names the turn that failed; the `pflichtoption` cases check that the meat is asked for when left open and not asked again when named
+- **v2.69.83 · 25.11.2026:** #888 round 3: an eval case can assert what the agent does in the turn of one customer line (`expected.turns`: a tool call by name or by its arguments, a sentence by pattern), and the judge names the turn that failed; the `pflichtoption` cases check that the meat is asked for when left open and not asked again when named
+- **v2.69.82 · 25.11.2026:** `* text=auto` in .gitattributes: every text file is stored with LF, so a commit can no longer bring CRLF into the repository (after e935646e and #1037)
 - **v2.69.81 · 25.11.2026:** /chain: the ship lane archives each PR's build session right after its merge; new sessions start without a Remote Control link (Maxi)
 - **v2.69.80 · 25.11.2026:** #888 round 3: pjsip.conf drops endpoint_identifier_order, which on 22.12.0 only reordered the identifiers after ip; a test keeps identify_by=ip on every endpoint; the docs/24 row moved to HISTORY
 - **v2.69.79 · 25.11.2026:** fix: line endings of 411 files restored to LF (a commit of 25.11.2026 had written CRLF into them; content unchanged)
