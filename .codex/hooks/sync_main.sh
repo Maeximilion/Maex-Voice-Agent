@@ -145,8 +145,14 @@ elif [ -z "$blocking" ]; then
   # Another session may have moved it in the meantime (14.10.2026: a warning for a folder
   # that was in sync); only a folder still behind is worth a word.
   behind="$(git -C "$main_dir" rev-list --count main..origin/main 2>/dev/null)"
-  [ "${behind:-0}" -gt 0 ] \
-    && warn "main in $main_dir is $behind commits behind origin/main and could not be fast-forwarded (git: ${failed##*$'\n'})"
+  # In step but ahead: git says "already up to date", and a task branched from this
+  # main carries commits nobody has published (Codex PR #278).
+  ahead="$(git -C "$main_dir" rev-list --count origin/main..main 2>/dev/null)"
+  if [ "${behind:-0}" -gt 0 ]; then
+    warn "main in $main_dir is $behind commits behind origin/main and could not be fast-forwarded (git: ${failed##*$'\n'})"
+  elif [ "${ahead:-0}" -gt 0 ]; then
+    warn "main in $main_dir has $ahead commits origin/main lacks (unpushed), a branch started from it carries them"
+  fi
 else
   behind="$(git -C "$main_dir" rev-list --count main..origin/main 2>/dev/null)"
   count="$(printf '%s\n' "$blocking" | wc -l | tr -d ' ')"
