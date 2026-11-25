@@ -47,6 +47,7 @@ LATER_TABLES = {
     "gui_devices",
     "gui_login_failures",
     "staff_changes",
+    "eval_runs",
 }
 
 
