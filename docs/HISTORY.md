@@ -1962,7 +1962,7 @@ Fixed in one PR of #888 round 3 (`sim/scripted_order.py`, `sim/scripted_llm.py`,
 
 ## Open Points from Reviews (archive, tool-hop question fixed 25.11.2026)
 
-Fixed in one PR of #888 round 3: on a tool hop the state carries the sentence the guest's words answer as `guest_answered`, next to `guest_said` (`agent/loop.py` `_prompt_state`), never as `last_say`, which a real model said again word for word next to a tool result (13.10.2026). After a barge-in it is the part heard (#1040); with nothing heard it is absent. No sentence in the prompt contract: the core prompt has no room left in its token budget, and the name says it, as for `unheard_say`.
+Fixed in one PR of #888 round 3: on a tool hop the state carries the sentence the guest's words answer as `answered_say`, next to `guest_said` (`agent/loop.py` `_prompt_state`), never as `last_say`, which a real model said again word for word next to a tool result (13.10.2026); the row's `asked` became `answered_say`, as every agent sentence in the state ends in `_say` and a `guest_` key would read as the guest's words. After a barge-in it is the part heard (#1040), with nothing heard it is absent, and `unheard_say` now stays on hops as well. No sentence in the prompt contract: the core prompt has 11 tokens left in its budget, and the name says it, as for `unheard_say`. The real-model comparison the row asked for: see the PR.
 
 | Point | Why still open | When due |
 |---|---|---|

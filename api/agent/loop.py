@@ -1443,18 +1443,15 @@ class ConversationLoop:
             # Within one guest turn only: the next turn starts from the
             # compact state again, never from a transcript (docs/05 §5).
             data["guest_said"] = guest_said
-            # The model's own last sentence was for reading the guest's words,
-            # and that is done once a tool was called. Left in sight next to a
-            # tool result, a real model said it again word for word instead
-            # of the read-back the tool had just delivered (13.10.2026). The
-            # same for what the guest did not hear (`guards.note_unheard`).
-            # The question the guest's words answer stays in sight under its
-            # own name, or a "Für vier" not yet in `slots` loses it (Codex
-            # PR #291).
-            asked = data.pop("last_say", None)
-            if asked:
-                data["guest_answered"] = asked
-            data.pop("unheard_say", None)
+            # The sentence the guest's words answer stays in sight, or a "Für
+            # vier" not yet in `slots` loses its question (Codex PR #291), but
+            # not as `last_say`: next to a tool result a real model said that
+            # again word for word instead of the read-back the tool had just
+            # delivered (13.10.2026). `unheard_say` stays as it is, so a hop
+            # knows what the turn's first request knew (#1040).
+            answered = data.pop("last_say", None)
+            if answered:
+                data["answered_say"] = answered
         if called:
             # Also within the turn only. A model sees one tool result at a
             # time and not that it asked for it: without this a real model
