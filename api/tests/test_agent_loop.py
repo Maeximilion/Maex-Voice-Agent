@@ -1154,6 +1154,11 @@ def test_last_sentence_reaches_the_next_turn_but_no_tool_hop(session, state):
     assert second["last_say"] == "Für wie viele Personen?"
     assert second["greeted"] is True
     assert "last_say" not in hop
+
+    # Nor what the guest did not hear to its end (Codex PR #291).
+    state.unheard_say = "Und um wie viel Uhr?"
+    assert "unheard_say" not in loop._prompt_state(state, guest_said="Um sieben")
+    assert loop._prompt_state(state)["unheard_say"] == "Und um wie viel Uhr?"
     # NOW is eight in the morning: closed, and known for the rest of the call.
     assert hop["service"] == {
         "is_open": False,

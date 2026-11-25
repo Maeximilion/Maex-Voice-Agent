@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.73
+> Status: 25.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.86
 
 ---
 
@@ -178,6 +178,19 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.86 · 25.11.2026:** /chain and /ship: a turn never ends on a pending CI, Codex or evals wait (exit 2 waits again, exit 3 gets one scoped @codex review); after PR ready the build session pushes no more; the coordinator checks codex_review.py and gh pr checks on every waiting note (Maxi)
+- **v2.69.85 · 25.11.2026:** README refresh: Documentation lists docs/24, HISTORY, design, superpowers and vorlagen, docs/21 described as the working rules in force, eval-nummern make target and the /project and /chain commands (item 26 of chain #888)
+- **v2.69.84 · 25.11.2026:** #888 round 3: words said before the caller heard the end of a sentence (a barge-in, or speech before the answer began to play) no longer answer it: `last_say` keeps only what was heard, the rest goes to the model as `unheard_say`, an answer to an allergy question talked over is still kept, and a read-back cut off is no read-back (Codex PR #291; two timing cases left in docs/24)
+- **v2.69.83 · 25.11.2026:** #888 round 3: an eval case can assert what the agent does in the turn of one customer line (`expected.turns`: a tool call by name or by its arguments, a sentence by pattern), and the judge names the turn that failed; the `pflichtoption` cases check that the meat is asked for when left open and not asked again when named
+- **v2.69.82 · 25.11.2026:** `* text=auto` in .gitattributes: every text file is stored with LF, so a commit can no longer bring CRLF into the repository (after e935646e and #1037)
+- **v2.69.81 · 25.11.2026:** /chain: the ship lane archives each PR's build session right after its merge; new sessions start without a Remote Control link (Maxi)
+- **v2.69.80 · 25.11.2026:** #888 round 3: pjsip.conf drops endpoint_identifier_order, which on 22.12.0 only reordered the identifiers after ip; a test keeps identify_by=ip on every endpoint; the docs/24 row moved to HISTORY
+- **v2.69.79 · 25.11.2026:** fix: line endings of 411 files restored to LF (a commit of 25.11.2026 had written CRLF into them; content unchanged)
+- **v2.69.78 · 25.11.2026:** /chain: no planned item gets a session before a lane is free; a free lane goes first to a chain change (chain.md, dashboard), then to a waiting heavy step, then to the next planned item; big AFK decisions go into the round's decisions issue (Maxi)
+- **v2.69.77 · 25.11.2026:** #888 round 3: a tool the model calls on the phone line waits on the database no longer than its turn has left, all its statements together and never past the 2 s bound; a statement cut there ends the turn like a late answer (out_of_time)
+- **v2.69.76 · 25.11.2026:** /chain: no queued sessions; planned items keep their order and get a session only when a lane is free (Maxi)
+- **v2.69.75 · 25.11.2026:** /chain: a build session never ends a turn while CI or Codex run (auto_archive_on_close is refused in auto mode, the coordinator archives); a session with a background task gets "merged #N: stop" before it is archived; merged PRs on the ship lane are cleared by Maxi with the x (Maxi)
+- **v2.69.74 · 25.11.2026:** #888 round 3: splitting a sentence into positions keeps the words of the growing part instead of reading it again at every separator, so that cut costs linear time on a long sentence; the card checks after it in search.py stay a docs/24 row
 - **v2.69.73 · 25.11.2026:** deep review of #972: the Asterisk image check meets a really frozen voice, starts Asterisk as the product does, checks the dialplan's modules by whole name, fails a late crash; a failed patch stops the image build; docs/24 rows for cold-cache rebuilds and the 22.12.0 wire contract
 - **v2.69.72 · 25.11.2026:** #888 round 3: a joining word (und, aber, dafür) or bitte is cut from a wish only as a word of its own, and every joining word in front of the next part goes, so "ohne Hund" no longer becomes "ohne H"
 - **v2.69.71 · 25.11.2026:** #888 round 3: sync_main.sh warns on a clean main with unpushed commits; the user-level sync-main.sh moved to scripts/claude_user_hooks/ and never fast-forwards over an ignored file

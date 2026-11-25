@@ -27,6 +27,7 @@ from api.core.ids import idempotency_key
 from api.core.logging import get_logger, log
 from api.core.time import to_utc, tz
 from api.core.tool_log import append_tool_call
+from api.db import bounded_by
 from api.domain.callbacks import create_callback, transfer_to_team
 from api.domain.confirm import confirm
 from api.domain.customers import normalize_phone, recognize
@@ -456,10 +457,13 @@ def dispatch(
     *,
     now: datetime | None = None,
     pending_order: uuid.UUID | EllipsisType | None = ...,
+    seconds_left: float | None = None,
 ) -> ToolResult:
     """`pending_order`: the order the conversation holds for a yes, None for
     none; it decides whether `draft_order` may replay a stored draft (#952).
-    The default is a caller without a conversation."""
+    The default is a caller without a conversation. `seconds_left`: what is
+    left of the guest's turn, which bounds the tool's waits on the phone
+    line (`db.bounded_by`); its log entry below keeps the line's own bound."""
     started = time.perf_counter()
     adapter = TOOLS.get(name)
     # Call and tenant come from the code, never from the model. A real model
@@ -472,11 +476,12 @@ def dispatch(
         if adapter is None:
             raise InvalidInput(f"unbekanntes Tool: {name}")
         try:
-            result = (
-                _draft_order(session, call_id, tenant_id, args, now, pending_order)
-                if adapter is _draft_order
-                else adapter(session, call_id, tenant_id, args, now)
-            )
+            with bounded_by(session, seconds_left):
+                result = (
+                    _draft_order(session, call_id, tenant_id, args, now, pending_order)
+                    if adapter is _draft_order
+                    else adapter(session, call_id, tenant_id, args, now)
+                )
         except ValidationError as exc:
             hint = validation_hint(exc)
             raise InvalidInput(str(exc)) from exc

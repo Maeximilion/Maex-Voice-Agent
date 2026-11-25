@@ -111,6 +111,9 @@ class Core:
     def on_talked_over(self, session_id: str, text: str) -> None:
         self.seen.append(("talked_over", text))
 
+    def on_unheard(self, session_id: str, unheard: str) -> None:
+        self.seen.append(("unheard", unheard))
+
     def on_call_ended(self, session_id: str, speech=None, **_) -> None:
         self.seen.append(("ended",))
 
