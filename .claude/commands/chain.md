@@ -61,10 +61,7 @@ sessions of the chain, ships the queue: it waits until the coordinator sends
 "ship #N", merges `origin/main` in, gets CI, Codex and the evals on the new
 head, fixes what that round finds, merges, messages the coordinator "merged
 #N" before anything else (no sleep or pause comes between the merge and that
-message; Maxi, 2026-11-24), then removes that pull request from its own bar
-with `unbind_pr` (Maxi, 2026-11-25: "Auch wollte ich, dass die Ship Lane nach
-dem Merge immer sofort das Gemergte PR ausblendet, damit es nicht mehr
-angezeigt wird in der Ship lane"), and waits for the next "ship #N". One pull request merges at a time
+message; Maxi, 2026-11-24), and waits for the next "ship #N". One pull request merges at a time
 anyway, so one lane is enough. Why: a long build session ships in a big Opus
 context, and every CI or Codex wake rereads all of it; the ship lane rereads a
 small Sonnet context. A P1 in an `xhigh` path of the ship round is fixed on
@@ -268,15 +265,14 @@ before naming a base.
   its next action (seen 24.11.2026: three Dependabot pull requests sat open and
   unqueued for seven hours across a compaction).
 - Open Dependabot pull requests go to the ship lane's queue whenever it idles.
-- Merged pull requests leave the ship lane's sidebar row at once: the app binds
-  each pull request it ships, and the ship lane unbinds it right after its
-  "merged #N" message (section 2; Maxi's rule of 2026-11-25). Auto mode's
-  classifier refuses `unbind_pr` even with his quoted words (24.11.2026,
-  "Undermining Oversight"; 25.11.2026, "judged this action dangerous"), so it
-  works only once Maxi has added `mcp__ccd_pr__unbind_pr` to `permissions.allow`
-  in his user settings; Claude does not add that rule itself. Until then the
-  ship lane reports the refusal once and Maxi clears the pull request with the x
-  on its bar. Build sessions need nothing: they are archived after their merge.
+- Merged pull requests stay on the ship lane's bar until Maxi clears them with
+  the x (Maxi, 2026-11-25, popup "Clear with the x"). The app binds each pull
+  request the ship lane ships, and auto mode's classifier refuses its
+  `unbind_pr`, also with Maxi's quoted words (24.11.2026, "Undermining
+  Oversight"; 25.11.2026, "judged this action dangerous"); an allow rule for
+  `mcp__ccd_pr__unbind_pr` would loosen a permission check, so Claude neither
+  adds it nor tries the unbind. Build sessions need nothing: they are archived
+  after their merge.
 
 ## 5. Usage pacing (in every brief)
 
