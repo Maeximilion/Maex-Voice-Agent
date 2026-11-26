@@ -1,6 +1,6 @@
 # Chain: rules for every item session
 
-Every build or queued session of a chain reads this file and `~/.claude/chain/round.txt` first. `round.txt` is written by the coordinator for the running round: its session id, the ship lane's id, the plan link, the decisions issue, the reserve item (missing: your brief names them). The coordinator's side: `.claude/commands/chain.md`. Maxi's full quotes: `docs/HISTORY.md` "Chain command (archive, replaced 25.11.2026)". You build one item, the ship lane merges it; you never merge.
+Every build or queued session of a chain reads this file and `~/.claude/chain/round.txt` first. `round.txt` is written by the coordinator for the running round: its session id, the ship lane's id, the plan link, the decisions issue, the weekly stop, the reserve item (missing: your brief names them). The coordinator's side: `.claude/commands/chain.md`. Maxi's full quotes: `docs/HISTORY.md` "Chain command (archive, replaced 25.11.2026)". You build one item, the ship lane merges it; you never merge.
 
 ## Queued (only if your brief says so)
 - Do no work yet. Loop: one background `sleep 3000` (50 minutes, never 60 or more), then read `~/.claude/chain/next-lane.txt` and `~/.claude/chain/notes.txt`. Never end a turn without that sleep running.
@@ -8,7 +8,7 @@ Every build or queued session of a chain reads this file and `~/.claude/chain/ro
 - An item that runs after another one starts only once that one is merged (`gh pr list --state merged --search <its PR>`).
 
 ## While you build
-- Maxi's exceptions to `CLAUDE.md` (quote them where a rule seems to say otherwise): "Full wave don't stop at 90 go on until 100%" (24.11.2026: weekly stop at 100); "Don't stop the chain any more" (24.11.2026: no handover at 300k or 450k, auto compaction carries you, so commit and push at every step and keep your state in the PR and in files); "Don't ever wait for my message to start new sessions ever again" (25.11.2026).
+- Maxi's exceptions to `CLAUDE.md` (quote them where a rule seems to say otherwise): "Don't stop the chain any more" (24.11.2026: no handover at 300k or 450k, auto compaction carries you, so commit and push at every step and keep your state in the PR and in files); "Don't ever wait for my message to start new sessions ever again" (25.11.2026).
 - Title: your item, for example "13 last_say after barge-in" (25.11.2026). Ignore the title hook. Never call `set_monitor`.
 - Maxi away: take every choice with the best option and list it in the PR under "Claude's choice, awaiting Maxi". Money, law, security design, production data or a product behaviour he has not decided: also add it to the round's decisions issue.
 - `xhigh` triggers (hard rules 1, 2, 3, 5): red test first, deep review in `/done`, evals where the call path reads the change. A write path: look for a write that passes validation but puts a reader into a wrong state, and for a write that leaves a stale sibling row.
@@ -19,6 +19,7 @@ Every build or queued session of a chain reads this file and `~/.claude/chain/ro
 
 ## Usage
 Read `get_usage` at the start, before and after every agent, before every large step and at the end. `ahead = 5-hour percentUsed + minutes to reset / 3 - 97`.
+Weekly stop: the value in `round.txt` and your brief; 90 percent, and 100 only for a round Maxi named (26.11.2026, #1061).
 - Opus: over +25 at a task boundary: one background sleep of exactly 30 minutes, repeated while over. Over +40 at any reading: finish the step, commit, push, sleep 30.
 - Fable: the same with +15 and +30, sleeps of 50 minutes.
 - Sonnet: no new fix round at 85 percent of the 5-hour window; at 90: commit, push, sleep to the reset.
