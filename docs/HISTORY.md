@@ -2636,3 +2636,43 @@ Replaced in `.claude/commands/chain.md` section 3 and `.claude/chain/brief-commo
 
 - Week: stop at 100 percent (24.11: "Full wave don't stop at 90 go on until 100%").
 - Maxi's exceptions to `CLAUDE.md`: "Full wave don't stop at 90 go on until 100%" (24.11.2026: weekly stop at 100).
+
+## Chain command (archive, queued sessions replaced 27.11.2026)
+
+Replaced by chain round 4 item 11 (#1066). Maxi, 27.11.2026: "Why did you started 5 lanes? Auto mode just says 3 lanes at the time", "Don't start every session", "They should be planned and first get created when a lane get's free.", "Generely no queued sessions. Active sessions and planned sessions. As soon as a lane gets Free one of the planned sessions get's the free spot. Sessions or items which are done should be archived. PRs should be hidden after merge on the shipping lane." The quote of 25.11.2026 behind the replaced step 1 ("Don't ever wait for my message to start new sessions ever again") no longer means a session for every planned item.
+
+Replaced or removed lines of `.claude/commands/chain.md`:
+
+> Newest rule wins; a real doubt goes to the open decisions issue as a question. Maxi's full quotes: `docs/HISTORY.md` "Chain command (archive, replaced 25.11.2026)". Item sessions follow `.claude/chain/brief-common.md`. `~/.claude/chain/` is runtime state only: `round.txt` (this round's ids, links and weekly stop), `next-lane.txt` (baton), `notes.txt` (log and news), decision write-ups.
+>
+> 1. **Every turn Maxi's message begins: start a session for EVERY planned item that has none yet** (25.11: "Don't ever wait for my message to start new sessions ever again"). Items that fit a free lane (section 3) start building, the rest start queued on the baton. A start works only in such a turn and in a `<side-sessions-event>` turn that follows it (the app's note when all child sessions are idle), never in a turn begun by a child's own message (`SendMessage`, e.g. "merged #N"), a timer or an agent report. Remote Control on the coordinator and auto mode's classifier refuse too: the coordinator runs with Remote Control off, in bypass mode (Maxi, 25.11). Order in that turn: scouts (section 2), the starts, a ship lane if none runs, then the open decisions as popups (section 4); nothing waits for an answer.
+>
+> 5. **When a lane frees,** it goes, in this order (25.11): (a) a planned item that changes the chain itself (this command, the brief file, the dashboard, chain memories); (b) a heavy step a running item waits for: send "go heavy"; (c) the next planned item. For (a) and (c): write `item N` into `next-lane.txt` and message that queued session "go on item N" (a message wakes it at once from any turn); on "lane taken item N" write `none` back. Super slow: section 3.
+>
+> 6. **On "merged #N":** mark it done on the dashboard at once, archive the build session if the ship lane could not, rewrite the state memory, re-read the mode. Note the free lane: at the next `<side-sessions-event>` turn start the next planned item (26.11: "after an Item gets merged you pick another one and start a sub session which get's into the new free lane"). Refused there too: one push, and in Maxi's next turn start the next items as baton-queued sessions.
+>
+> 8. **Plan runs empty:** plan about 20 new items on the plan issue and go on; they get sessions in the next turn that can start one (step 1). **Last item merged:** section 5.
+>
+> 8. Queued or not, and an item it runs after (it starts only once that one is merged).
+>
+> - Merged PRs stay on its bar until Maxi clears them with the x (25.11); no `unbind_pr` (refused), no allow rule for it.
+>
+> - Never route a new task into a finished session to get around a refused start (auto mode refuses it, 25.11); a queued session already holds its item.
+>
+> - Archives its own side sessions without asking once merged or stopped without a PR; other sessions only on Maxi's word (23.11). Refused for a running background task: send "merged #N: stop every background task and end your turn", archive at the next note; the same for an item shipped before its own "ready" (25.11).
+
+Replaced or removed lines of `.claude/chain/brief-common.md`:
+
+> Every build or queued session of a chain reads this file and `~/.claude/chain/round.txt` first. `round.txt` is written by the coordinator for the running round: its session id, the ship lane's id, the plan link, the decisions issue, the weekly stop, the reserve item (missing: your brief names them). The coordinator's side: `.claude/commands/chain.md`. Maxi's full quotes: `docs/HISTORY.md` "Chain command (archive, replaced 25.11.2026)". You build one item, the ship lane merges it; you never merge.
+>
+> ## Queued (only if your brief says so)
+>
+> - Do no work yet. Loop: one background `sleep 3000` (50 minutes, never 60 or more), then read `~/.claude/chain/next-lane.txt` and `~/.claude/chain/notes.txt`. Never end a turn without that sleep running.
+>
+> - The baton names your item (`item 14`) or the coordinator messages "go on item N" (a message wakes you at once): message the coordinator "lane taken item N" and start. Otherwise renew the sleep.
+>
+> - An item that runs after another one starts only once that one is merged (`gh pr list --state merged --search <its PR>`).
+>
+> - Maxi's exceptions to `CLAUDE.md` (quote them where a rule seems to say otherwise): "Don't stop the chain any more" (24.11.2026: no handover at 300k or 450k, auto compaction carries you, so commit and push at every step and keep your state in the PR and in files); "Don't ever wait for my message to start new sessions ever again" (25.11.2026).
+>
+> - Slow mode: a 45-minute sleep after each finished part. Super slow or Hold: the coordinator tells you; sleep 50 minutes, renewed, and read the baton on every wake.
