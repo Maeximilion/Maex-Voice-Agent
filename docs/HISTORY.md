@@ -2629,3 +2629,10 @@ Moved unchanged from `docs/01_STATUS.md` section "Changelog" by the weekly STATU
 - **v2.66.17 · 19.11.2026:** Settle #562: no-handover-limit chain option with auto compaction at 550k, plugin sets note, Maxi's decisions on #845, #850, #855 recorded
 - **v2.66.16 · 18.11.2026:** Dependabot #872: types-pyyaml 6.0.12.20261113 in api.
 - **v2.66.15 · 18.11.2026:** Dependabot #871: webauthn 2.8.0 to 3.0.1 (cbor2 5.9.0 to 6.3.0 as its dependency) in api.
+
+## Chain command (archive, weekly stop replaced 27.11.2026)
+
+Replaced in `.claude/commands/chain.md` section 3 and `.claude/chain/brief-common.md` (#1061, Maxi on #1032, 26.11.2026: 100 percent only for rounds Maxi names):
+
+- Week: stop at 100 percent (24.11: "Full wave don't stop at 90 go on until 100%").
+- Maxi's exceptions to `CLAUDE.md`: "Full wave don't stop at 90 go on until 100%" (24.11.2026: weekly stop at 100).
