@@ -162,7 +162,8 @@ ENDED_STAGES = frozenset({"transferred", "ended"})
 CART = "cart"
 # The same for a sentence the core did not let through (`guards.false_booking`).
 SAY = "say"
-# What the model hands a complaint over with. The core reads a rule first (D19).
+# What the model hands a call over with. For a complaint the core reads a rule
+# first (D19).
 _COMPLAINT_TOOLS = ("transfer_to_team", "create_callback")
 # The model's handover did not go out: a rule of the catalogue was offered.
 _RULE_FIRST = ToolResult(ok=False, error_code="conflict")
@@ -703,12 +704,15 @@ class ConversationLoop:
                 reported_failures.add(turn.understanding_failure)
                 self._ladder.record_failure(turn.understanding_failure)
                 if self._ladder.should_end_call(turn.understanding_failure):
+                    # With nobody there and no number, the core asks for one
+                    # to call back, unless the number is what failed.
                     return self._handoff(
                         state,
                         SAY_NOT_UNDERSTOOD,
                         reason="not_understood",
                         detail=user_text,
                         table=open_table,
+                        ask_number=turn.understanding_failure != "phone",
                     )
 
             if turn.cart is not None:
@@ -722,8 +726,11 @@ class ConversationLoop:
                         self._session, state.call_id, state.tenant_id, CART, refused
                     )
                     called.append(CART)
-                    pending_input = _tool_result_as_input(CART, refused, zone)
-                    continue
+                    # A handover does not act on the order: dropped, the
+                    # model announced the team with nothing behind it (#655).
+                    if not (turn.tool_call and turn.tool_call.name in _COMPLAINT_TOOLS):
+                        pending_input = _tool_result_as_input(CART, refused, zone)
+                        continue
 
             if turn.tool_call is None:
                 say = turn.say

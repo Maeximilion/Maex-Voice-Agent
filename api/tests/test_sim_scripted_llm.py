@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from api.agent.guards import HINT_GUEST_NAME, HINT_GUEST_PHONE
+from api.core.errors import SAY_ON_FAILURE
 from sim.scripted_llm import (
     _PRICE_QUESTION,
     GREETING,
@@ -151,6 +152,29 @@ def test_fehlgeschlagenes_tool_ohne_satz_uebergibt_wirklich(llm):
         "", START, tool_result("create_reservation", ok=False, error_code="conflict")
     )
 
+    assert turn.tool_call.name == "transfer_to_team"
+
+
+@pytest.mark.parametrize(
+    "failed",
+    [
+        # Nobody there: the tool answers, the team is not reachable (docs/04).
+        tool_result("transfer_to_team", data={"available": False}),
+        tool_result("transfer_to_team", ok=False, error_code="not_found"),
+        # The core's own sentence of a fault promises the team too.
+        tool_result(
+            "transfer_to_team", ok=False, error_code="not_found", say=SAY_ON_FAILURE
+        ),
+    ],
+)
+def test_a_failed_transfer_is_never_answered_with_a_promise(llm, failed):
+    """Codex PR #244 (P1): a handover sentence after a transfer that found
+    nobody promised the team, and neither a transfer nor a callback followed.
+    The stand-in hands the call to the core again, which carries it out with
+    the callback (`loop._handoff`), as a real model's call is (#655)."""
+    turn = llm.next_turn("", {**START, "slots": {"phone": "+4972215551234"}}, failed)
+
+    assert turn.say is None
     assert turn.tool_call.name == "transfer_to_team"
 
 
@@ -497,6 +521,27 @@ def test_below_the_minimum_asks_for_more_dishes():
 def test_the_stand_in_reads_a_price_question_for_one_card_number(said, number):
     found = _PRICE_QUESTION.search(said)
     assert (found.group(1) if found else None) == number
+
+
+def test_a_price_question_with_two_dishes_found_asks_which(llm):
+    """Deep review of #888 round 3 item 17: "7" finds "7" and "07" (rule 2):
+    the stand-in asks the search's question instead of the first hit's price."""
+    asked = llm.next_turn("", START, "Was kostet die 7?")
+    assert asked.tool_call.name == "search_menu"
+    question = "Meinen Sie Nummer 07, Suppe oder Nummer 7, Ente?"
+    hits = [
+        {"number": "07", "name": "Suppe", "price_cents": 450},
+        {"number": "7", "name": "Ente", "price_cents": 1290},
+    ]
+    found = tool_result(
+        "search_menu",
+        data={"match_type": "ambiguous", "results": hits},
+        say=question,
+    )
+
+    turn = llm.next_turn("", START, found)
+
+    assert turn.say == question
 
 
 @pytest.mark.parametrize(

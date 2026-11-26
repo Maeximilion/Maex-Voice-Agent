@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 26.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.99
+> Status: 26.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.100
 
 ---
 
@@ -178,6 +178,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.100 · 26.11.2026:** #888 round 3 item 17: a transfer the model asks for and that finds nobody leaves a callback, whatever reason it gives (a test pins all of them; the loop has done so since #655); a handover sent with an order the core refuses is still carried out; the end of the understanding ladder asks for a number to call back unless the number is what failed (rule 5); the scripted stand-in no longer answers a transfer that found nobody with a handover sentence, and asks which dish when a price question finds two; the docs/24 row (Codex PR #244, P1) moved to HISTORY
 - **v2.69.99 · 26.11.2026:** #888 round 3 item 22 (#990, Maxi): an operator account without a passkey pushes its TOTP code once a day, measured from the last push, instead of on every sign-in and step-up; an account with a passkey, a new browser and a recovery code still push each time
 - **v2.69.98 · 26.11.2026:** #888 round 3: a handover card that names an open delivery says so and gives its address in front of the order lines: the unconfirmed draft's (said or stored, L12), else the one the guest said; a floor note that names health stands as a note to clear (L13), also on a card judged again; the docs/24 row moved to HISTORY (item 16)
 - **v2.69.97 · 26.11.2026:** chain.md: a session start also works in a side-sessions-event turn after Maxi's, never in a child's message turn; a merged lane is refilled at the next such turn (chain item 28)

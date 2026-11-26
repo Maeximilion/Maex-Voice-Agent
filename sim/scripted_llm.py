@@ -477,7 +477,8 @@ class ScriptedLLM:
             number, self._price_for = self._price_for, None
             hits = data.get("results") or []
             if name == "search_menu" and hits and "price_cents" in hits[0]:
-                if hits[0].get("sold_out") and say:
+                # Two dishes found ("7" and "07"): the search asks which (rule 2).
+                if (hits[0].get("sold_out") or len(hits) > 1) and say:
                     return LLMTurn(say=say)
                 euros, cents = divmod(hits[0]["price_cents"], 100)
                 return LLMTurn(say=f"Die {number} kostet {euros},{cents:02d} Euro.")
@@ -543,7 +544,9 @@ class ScriptedLLM:
             again = self._asked_again(result.get("hint"))
             if again is not None:
                 return again
-            return self._after_failure(name, say)
+            # A transfer's own sentence promises the team (SAY_ON_FAILURE):
+            # the core carries it out instead.
+            return self._after_failure(None if name == "transfer_to_team" else say)
         if name == "create_callback":
             self._out_of_scope_request = None
             return LLMTurn(say=say or SAY_HANDOVER)
@@ -601,6 +604,9 @@ class ScriptedLLM:
             return LLMTurn(say=say or "Zu der Zeit ist leider nichts frei.")
         if name == "create_reservation":
             return LLMTurn(say=data["readback"])
+        if name == "transfer_to_team" and not data.get("available"):
+            # Nobody there: as after a failed tool, the core carries it out.
+            return self._after_failure(None)
         return LLMTurn(say=say or SAY_HANDOVER)
 
     def _after_opening_search(
@@ -632,14 +638,15 @@ class ScriptedLLM:
             return LLMTurn(say=question, understanding_failure="guest_name")
         return None
 
-    def _after_failure(self, name: str | None, say: str | None) -> LLMTurn:
+    def _after_failure(self, say: str | None) -> LLMTurn:
         """Ein Fehlschlag mit vorgeschriebenem Satz geht an den Kunden zurück, der
         dann etwas anderes vorschlagen kann. Ohne Satz bleibt nur die echte Übergabe
-        an das Team, nie eine erfundene Auskunft (CLAUDE.md §2 Regeln 2 und 5)."""
+        an das Team, nie eine erfundene Auskunft (CLAUDE.md §2 Regeln 2 und 5).
+        A failed transfer too: the core carries the new one out with the callback
+        where nobody answers (`loop._handoff`); a handover sentence here promised
+        the team with nothing behind it (Codex PR #244, P1)."""
         if say:
             return LLMTurn(say=say)
-        if name == "transfer_to_team":
-            return LLMTurn(say=SAY_HANDOVER)
         return LLMTurn(
             tool_call=ToolCall("transfer_to_team", {"reason": "not_understood"})
         )
