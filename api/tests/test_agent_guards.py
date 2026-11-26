@@ -1778,8 +1778,9 @@ def test_a_note_naming_an_allergen_nobody_said_goes_back(note):
 
 def test_a_note_moved_to_another_dish_is_checked_again():
     """Codex review of #860 (P1): the 47's option "Erdnuss" licenses the note
-    on the 47; copied onto the 13 it is a new note there."""
-    note = "Enthält keine Erdnüsse"
+    on the 47; copied onto the 13 it is a new note there. An affirmative note:
+    a denial the option never licenses (#1022)."""
+    note = "Bitte extra Erdnuss"
     ente = {"menu_item_id": ENTE, "quantity": 1, "note": note}
     _, state = allergen_turn("Die 47 bitte.", search(ENTE), cart=[ente])
     _, state = allergen_turn("Und die 13.", search(PHO), state=state)

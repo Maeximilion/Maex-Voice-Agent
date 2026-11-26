@@ -3659,3 +3659,313 @@ def test_a_sold_out_dish_gets_its_sold_out_sentence(session, known_tenant):
     )
 
     assert result.say == ["Die 13, Pho Bo, ist heute leider aus."]
+
+
+ENTE_LINE = [{"group": "Fleisch", "name": "Ente"}]
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "Gern, die 47 ist ohne Erdnüsse, ich trage sie ein.",
+        "Die 47 hat keine Erdnüsse, ist notiert.",
+        "Gern, die 47 ist frei von Erdnüssen.",
+    ],
+)
+def test_a_denied_allergen_next_to_an_order_step_never_reaches_the_guest(
+    session, known_tenant, claim
+):
+    """#1022 (Maxi: the negation rule): the 47's option "Erdnuss" licensed
+    every word for peanuts in a clause about the 47, also one that denies
+    them. In a call about a peanut allergy, with an order step in the turn,
+    "die 47 ist ohne Erdnüsse" reached the guest; the database holds no
+    allergen for the 47 (hard rule 1). The dish's own text names what it may
+    hold, never what it lacks."""
+    state = allergic_call(session, known_tenant)
+    line = {
+        "menu_item_id": str(item(session, known_tenant, "47")),
+        "quantity": 1,
+        "options": ENTE_LINE,
+    }
+
+    result, _ = run(
+        session,
+        state,
+        "Dann nehme ich die 47.",
+        searches("47"),
+        LLMTurn(say=claim, cart=[line]),
+        LLMTurn(say=claim, cart=[line]),
+    )
+
+    assert said_nowhere(result, claim)
+
+
+def test_a_denied_allergen_about_a_dish_is_refused_outside_an_allergy_call(
+    session, known_tenant
+):
+    """#1022: the same in a call that never spoke of an allergy: a clause
+    about the 47 may name its peanut option, not deny it."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    claim = "Die 47 hat keine Erdnüsse."
+
+    result, _ = run(
+        session,
+        state,
+        "Was ist die 47?",
+        searches("47"),
+        LLMTurn(say=claim),
+        LLMTurn(say=claim),
+    )
+
+    assert said_nowhere(result, claim)
+
+
+def test_the_guests_own_wish_without_an_allergen_is_read_back(session, known_tenant):
+    """#1022: a denial the guest asked for in this turn is the order read
+    back, licensed by the guest's own wish ("ohne Erdnuss")."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    line = {
+        "menu_item_id": str(item(session, known_tenant, "47")),
+        "quantity": 1,
+        "options": ENTE_LINE,
+        "note": "ohne Erdnuss",
+    }
+    noted = "Gern, die 47 mit Ente ohne Erdnuss ist notiert."
+
+    result, _ = run(
+        session,
+        state,
+        "Die 47 mit Ente, aber ohne Erdnuss bitte.",
+        searches("47"),
+        LLMTurn(say=noted, cart=[line]),
+    )
+
+    assert result.say == [noted]
+
+
+def test_a_dish_read_back_with_its_allergen_option_is_still_heard(
+    session, known_tenant
+):
+    """#1022: the negation rule leaves an affirmative read-back alone; the
+    option "Erdnuss" of the order licenses "mit Erdnuss"."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    line = {
+        "menu_item_id": str(item(session, known_tenant, "47")),
+        "quantity": 1,
+        "options": [*ENTE_LINE, {"group": "Sauce", "name": "Erdnuss"}],
+    }
+    noted = "Gern, die 47 mit Ente und Erdnuss, ohne Koriander, ist notiert."
+
+    result, _ = run(
+        session,
+        state,
+        "Die 47 mit Ente und Erdnuss, ohne Koriander.",
+        searches("47"),
+        LLMTurn(say=noted, cart=[line]),
+    )
+
+    assert result.say == [noted]
+
+
+@pytest.mark.parametrize(
+    ("text", "strict", "denied"),
+    [
+        # Deep review of #1022: every form the first reader missed.
+        ("Die 47 ohne Koriander und ohne Erdnüsse ist notiert", True, {"E"}),
+        ("Kein Fleisch und keine Erdnüsse", True, {"E"}),
+        ("Die 47 ohne Koriander, Zwiebeln und Erdnüsse", True, {"E"}),
+        ("Die 47 enthält keinerlei Erdnüsse", True, {"E"}),
+        ("Die 47 enthält weder Erdnüsse noch Koriander", True, {"E"}),
+        ("Erdnüsse hat die 47 keine", True, {"E"}),
+        ("Erdnüsse sind in der 47 keine drin", True, {"E"}),
+        ("Die 47 ist ganz ohne jegliche Spuren von Erdnüssen", True, {"E"}),
+        ("Die 47 ohne Soja- und Erdnusssauce", True, {"E", "F"}),
+        ("Die 47 ohne (Erdnuss)", True, {"E"}),
+        # A new part starts the denial at its negation.
+        ("Die 47 mit Ente und Erdnuss, ohne Koriander", True, set()),
+        ("Die 47 mit Erdnusssauce ohne Koriander", True, set()),
+        ("Die 47 hat Erdnusssauce, aber keine Nüsse", True, {"H"}),
+        ("Die 47 ohne Koriander, dafür mit Erdnuss", True, set()),
+        # An offered variant and a sold-out dish deny nothing outside a call
+        # about an allergy, and count inside one.
+        ("Möchten Sie die 47 mit oder ohne Erdnusssauce?", False, set()),
+        ("Möchten Sie die 47 mit oder ohne Erdnusssauce?", True, {"E"}),
+        ("Leider haben wir heute keine Garnelen mehr", False, set()),
+        ("Leider haben wir heute keine Garnelen mehr", True, {"B"}),
+        ("Keine Sorge, die 47 mit Erdnuss ist notiert", True, set()),
+        # Sweep of the review: stock phrases, "dazu" and "extra" start no
+        # denial; a bare "oder ohne" stays one.
+        ("Kein Problem, Erdnusssauce ist dabei", True, set()),
+        ("Die 47 ohne Koriander, dazu die Erdnusssauce", True, set()),
+        ("Die 47 ohne Koriander und extra Erdnüssen", True, set()),
+        ("Die 47 gibt es auch mit Tofu oder ohne Erdnüsse", False, {"E"}),
+        ("Die 47 hat keine Erdnüsse mehr", True, {"E"}),
+    ],
+)
+def test_the_denial_reader(text, strict, denied):
+    lenient = not strict
+    assert guards._denied(text, choice=lenient, sold_out=lenient) == denied
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "Gern, die 47 ohne Koriander und ohne Erdnüsse ist notiert.",
+        "Gern, die 47 ohne Koriander, Zwiebeln und Erdnüsse, ist notiert.",
+        "Gern, die 47 enthält keinerlei Erdnüsse, ich trage sie ein.",
+        "Gern, ich trage die 47 ein. Erdnüsse hat die 47 keine.",
+        "Gern, die 47 ist ganz ohne jegliche Spuren von Erdnüssen.",
+    ],
+)
+def test_every_form_of_the_denial_stays_held(session, known_tenant, claim):
+    """Deep review of #1022: a second negation, a list across commas,
+    "keinerlei", the allergen in front and a long window let the 47's option
+    license the denial again."""
+    state = allergic_call(session, known_tenant)
+    line = {
+        "menu_item_id": str(item(session, known_tenant, "47")),
+        "quantity": 1,
+        "options": ENTE_LINE,
+        "note": "ohne Koriander",
+    }
+
+    result, _ = run(
+        session,
+        state,
+        "Dann nehme ich die 47 ohne Koriander.",
+        searches("47"),
+        LLMTurn(say=claim, cart=[line]),
+        LLMTurn(say=claim, cart=[line]),
+    )
+
+    assert said_nowhere(result, claim)
+
+
+def test_a_guests_question_is_no_wish_the_model_may_deny(session, known_tenant):
+    """Deep review of #1022: the guest only asks whether the 47 has peanuts;
+    the model's own note "ohne Erdnuss" licenses no "ohne Erdnuss" in its
+    answer."""
+    state = allergic_call(session, known_tenant)
+    line = {
+        "menu_item_id": str(item(session, known_tenant, "47")),
+        "quantity": 1,
+        "options": ENTE_LINE,
+        "note": "ohne Erdnuss",
+    }
+    claim = "Gern, die 47 ohne Erdnuss ist notiert."
+
+    result, _ = run(
+        session,
+        state,
+        "Ist in der 47 Erdnuss? Sonst nehme ich die.",
+        searches("47"),
+        LLMTurn(say=claim, cart=[line]),
+        LLMTurn(say=claim, cart=[line]),
+    )
+
+    assert said_nowhere(result, claim)
+
+
+def test_an_offered_variant_is_heard_outside_an_allergy_call(session, known_tenant):
+    """Deep review of #1022: "mit oder ohne Erdnusssauce" asks the guest to
+    choose an option (docs/14); outside a call about an allergy it is heard."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    asked = "Gern. Möchten Sie die 47 mit oder ohne Erdnusssauce?"
+
+    result, _ = run(
+        session, state, "Ich nehme die 47 mit Ente.", searches("47"), LLMTurn(say=asked)
+    )
+
+    assert result.say == [asked]
+
+
+def test_a_wish_of_an_earlier_turn_is_read_back_later(session, known_tenant):
+    """Deep review of #1022: a line the order already holds licenses its own
+    "ohne Erdnuss" in a later turn's recap."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    line = {
+        "menu_item_id": str(item(session, known_tenant, "47")),
+        "quantity": 1,
+        "options": ENTE_LINE,
+        "note": "ohne Erdnuss",
+    }
+    noted = "Gern, die 47 mit Ente ohne Erdnuss ist notiert."
+    run(
+        session,
+        state,
+        "Die 47 mit Ente, aber ohne Erdnuss bitte.",
+        searches("47"),
+        LLMTurn(say=noted, cart=[line]),
+    )
+    recap = "Die 47 mit Ente ohne Erdnuss kostet 15 Euro 50."
+
+    result, _ = run(
+        session, state, "Was kostet die 47 jetzt?", searches("47"), LLMTurn(say=recap)
+    )
+
+    assert result.say == [recap]
+
+
+def test_a_cart_note_that_denies_an_option_allergen_is_never_read_back(
+    session, known_tenant
+):
+    """Deep review of #1022: the 47's option "Erdnuss" licensed the note
+    "Enthält keine Erdnüsse" on its line, read back as the guest's note."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    ente = str(item(session, known_tenant, "47"))
+    claimed = {
+        "menu_item_id": ente,
+        "quantity": 1,
+        "options": ENTE_LINE,
+        "note": "Enthält keine Erdnüsse",
+    }
+    plain = {"menu_item_id": ente, "quantity": 1, "options": ENTE_LINE}
+
+    result, llm = run(
+        session,
+        state,
+        "Die 47 mit Ente bitte.",
+        searches("47"),
+        LLMTurn(say="Die 47 ist notiert.", cart=[claimed]),
+        LLMTurn(say="Die 47 ist notiert.", cart=[plain]),
+    )
+
+    assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_NOTE_CLAIM
+    assert result.say == ["Die 47 ist notiert."]
+
+
+def test_frei_von_is_a_claim_anywhere(session, known_tenant):
+    """Deep review of #1022: "frei von Erdnüssen" says what "erdnussfrei"
+    says, so even the guest's own wish licenses it nowhere."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    assert guards.allergen_claim(state, "Die 47 ist frei von Erdnüssen.") is (
+        guards.ALLERGEN_CLAIM
+    )
+    assert guards.allergen_claim(state, "Ab 18 Uhr sind wir frei von Stress.") is None
+    assert (
+        guards.allergen_claim(
+            state, "Ein Tisch ist frei von 19 bis 21 Uhr, die 47 mit Erdnuss."
+        )
+        is None
+    )
+
+
+def test_each_option_of_a_line_denies_for_itself():
+    """Sweep of the #1022 review: the options "ohne Ei" and "Erdnuss" of one
+    line deny the egg, never the peanut."""
+    line = {
+        "menu_item_id": "x",
+        "options": [{"name": "ohne Ei"}, {"name": "Erdnuss"}],
+        "note": "WICHTIG !!! Kunde ist allergisch auf Erdnüsse, ohne Erdnüsse",
+    }
+
+    assert guards._line_wishes(line) == {"C"}
+
+
+def test_a_note_denies_only_within_its_own_part():
+    """Sweep of the #1022 review: "ohne Zwiebeln, extra Erdnusssauce" as a
+    line's note denies the onions, never the peanut."""
+    line = {"menu_item_id": "x", "note": "ohne Zwiebeln, extra Erdnusssauce"}
+
+    assert guards._line_wishes(line) == set()
