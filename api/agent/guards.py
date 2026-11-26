@@ -1347,7 +1347,7 @@ _DENIES = re.compile(
     r"\b(?:ohne|kein(?:e[mnrs]?)?|nichts|weder|frei\s+von)\b", re.IGNORECASE
 )
 _DENIES_ALL = re.compile(
-    r"\w*-?frei(?:e[mnrs]?)?\b"
+    r"frei(?:e[mnrs]?)?\b"
     r"|\bnicht\b(?:\s+\w+){0,2}?\s+(?:drin|darin|drinnen|enthalten|dabei"
     r"|vorhanden|verwendet|verarbeitet)\b",
     re.IGNORECASE,
