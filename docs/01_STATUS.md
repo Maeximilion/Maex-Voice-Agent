@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 26.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.102
+> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.103
 
 ---
 
@@ -180,7 +180,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.102 · 26.11.2026:** #1022: an allergen the model's sentence denies is licensed only by the order's own wish, never by the dish's text (Maxi: the negation rule); "frei von" is a claim anywhere; notes too
+- **v2.69.103 · 27.11.2026:** #1022: an allergen the model's sentence denies is licensed only by the order's own wish, never by the dish's text (Maxi: the negation rule); "frei von" is a claim anywhere; notes too
+- **v2.69.102 · 27.11.2026:** Chain: weekly stop at 90 percent by default, 100 only for a round Maxi names (#1061)
 - **v2.69.101 · 26.11.2026:** STATUS upkeep 26.11.2026: changelog lines of 18.11. to 23.11. moved to HISTORY (Maxi), README assets redrawn, call log flags English in capabilities.toml
 - **v2.69.100 · 26.11.2026:** #888 round 3 item 17: a transfer the model asks for and that finds nobody leaves a callback, whatever reason it gives (a test pins all of them; the loop has done so since #655); a handover sent with an order the core refuses is still carried out; the end of the understanding ladder asks for a number to call back unless the number is what failed (rule 5); the scripted stand-in no longer answers a transfer that found nobody with a handover sentence, and asks which dish when a price question finds two; the docs/24 row (Codex PR #244, P1) moved to HISTORY
 - **v2.69.99 · 26.11.2026:** #888 round 3 item 22 (#990, Maxi): an operator account without a passkey pushes its TOTP code once a day, measured from the last push, instead of on every sign-in and step-up; an account with a passkey, a new browser and a recovery code still push each time

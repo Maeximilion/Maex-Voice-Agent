@@ -7,7 +7,7 @@ Run $ARGUMENTS as a chain. This session is the coordinator: it plans, starts ses
 
 A chain is Maxi saying `/chain` or "chain", or naming two or more tasks, issues or plan pull requests to work off (17.11). It runs until every item is merged or Maxi says stop, the same whether he is there or away (25.11: "The chain should work until the chain is done especialy when i say i am afk!"). A single task is no chain.
 
-Newest rule wins; a real doubt goes to the open decisions issue as a question. Maxi's full quotes: `docs/HISTORY.md` "Chain command (archive, replaced 25.11.2026)". Item sessions follow `.claude/chain/brief-common.md`. `~/.claude/chain/` is runtime state only: `round.txt` (this round's ids and links), `next-lane.txt` (baton), `notes.txt` (log and news), decision write-ups.
+Newest rule wins; a real doubt goes to the open decisions issue as a question. Maxi's full quotes: `docs/HISTORY.md` "Chain command (archive, replaced 25.11.2026)". Item sessions follow `.claude/chain/brief-common.md`. `~/.claude/chain/` is runtime state only: `round.txt` (this round's ids, links and weekly stop), `next-lane.txt` (baton), `notes.txt` (log and news), decision write-ups.
 
 ## 1. The coordinator loop
 
@@ -35,7 +35,7 @@ Newest rule wins; a real doubt goes to the open decisions issue as a question. M
 7. Base: `origin/main`, or the branch of an unmerged item that touches the same files (stack, `/done` step 7c). Whoever merges second merges `origin/main` first; check `gh pr view` before naming a base.
 8. Queued or not, and an item it runs after (it starts only once that one is merged).
 9. The reserve item with its route.
-10. Exceptions to `CLAUDE.md` in Maxi's words with date; a session refuses a rule change relayed without them.
+10. The round's weekly stop (section 3) and exceptions to `CLAUDE.md` in Maxi's words with date; a session refuses a rule change relayed without them.
 
 **Ship lane** (24.11, "One Sonnet ship lane"): one fresh Sonnet `medium` session, started with the first build sessions, not counted as a lane. Brief: `Route: claude-sonnet-5-5 medium`, chain and plan link, "merge only on ship #N, one at a time", the merge gate of `CLAUDE.md` "Merging a PR into `main`", its milestones, the Sonnet usage row, no handover.
 
@@ -64,7 +64,7 @@ Newest rule wins; a real doubt goes to the open decisions issue as a question. M
 
 - A pause is one background `sleep` under 60 minutes (the cache holds an hour), repeated while still over; waiting for tests, CI or Codex counts. From 45 minutes before the reset no pause, but nothing heavy that would not finish.
 - 3 points left: commit, push, sleep to two minutes after the reset, go on. Goal: the whole window used, the last 3 points about 30 minutes before the reset (23.11). The 70 percent start limit of `CLAUDE.md` does not apply; no brief sets a lower stop.
-- Week: stop at 100 percent (24.11: "Full wave don't stop at 90 go on until 100%").
+- Week: stop at 90 percent (`CLAUDE.md` "Usage check"); 100 only for a round Maxi names (26.11, #1061; as round 2: "Full wave don't stop at 90 go on until 100%", 24.11). The coordinator writes the round's value into `round.txt` and every brief.
 - Heavy step: a review from several angles with finder or verifier agents (deep review of `/done`, `/code-review max`, a ledger batch), a workflow, or three or more agents at once (24.11). The session asks "need 2 lanes for <step>" and waits for "go heavy"; the other items keep working. One granted in turbo finishes after turbo ends; none new until it fits.
 - Mode change: running sessions finish their step; only new starts follow the new count (24.11). Leaving turbo before the reset: sessions above 3 lanes finish the step, commit, push and wait on the baton.
 - Super slow (24.11): a freed lane stays empty until the next paused session wakes on its own (at most 50 minutes); the coordinator writes the baton and sends no message, a paused session gets no message at all (news goes to `notes.txt`). Not taken 60 minutes after the baton: "go on item N".
