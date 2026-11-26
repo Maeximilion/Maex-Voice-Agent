@@ -1306,7 +1306,12 @@ def unlicensed(turn: AllergenTurn, state: ConversationState, say: str) -> set[st
     #860, P1).
     shortcut: a sentence that names no dish while none before it did ("Sie
     hat keine Erdnüsse.") is licensed by the whole turn; the residual R1 of
-    the design."""
+    the design.
+    An allergen word the clause denies ("ohne", "keine", "frei von",
+    "-frei", "nicht drin", `_denied`) is licensed by the guest's own wish of
+    this turn alone: the menu text and the order lines name what a dish may
+    hold, never what it is free of, so the 47's option "Erdnuss" licenses no
+    "Gern, die 47 ist ohne Erdnüsse" (#1022, P1)."""
     rest = _without_core(turn, state, say)
     changed = _changed_lines(turn, state)
     words: set[str] = set()
@@ -1323,9 +1328,38 @@ def unlicensed(turn: AllergenTurn, state: ConversationState, say: str) -> set[st
                 # keine Milch" (Codex review of #860, P1).
                 clause = _without_dish_names(state, clause)
             words |= allergens_named(clause) - _licence(turn, state, changed, named)
+            words |= allergens_named(_denied(clause)) - _licence(
+                turn, state, changed, named, wish_only=True
+            )
             if _ALLERGEN_TALK.search(clause):
                 words.add("allergen")
     return words
+
+
+# What a clause denies (#1022): from "ohne", "kein", "nichts", "weder" or
+# "frei von" to its end, so "die 47 mit Erdnuss ohne Koriander" denies no
+# peanut; the whole clause where the denial stands after its allergen
+# ("Erdnüsse sind da nicht drin", "Erdnuss-frei", "erdnussfrei").
+# shortcut: closed lists, read clause by clause; a denial in a clause of its
+# own ("Erdnüsse? Keine.") or a word they miss is licensed as before. More
+# forms when the call log shows them.
+_DENIES = re.compile(
+    r"\b(?:ohne|kein(?:e[mnrs]?)?|nichts|weder|frei\s+von)\b", re.IGNORECASE
+)
+_DENIES_ALL = re.compile(
+    r"\w*-?frei(?:e[mnrs]?)?\b"
+    r"|\bnicht\b(?:\s+\w+){0,2}?\s+(?:drin|darin|drinnen|enthalten|dabei"
+    r"|vorhanden|verwendet|verarbeitet)\b",
+    re.IGNORECASE,
+)
+
+
+def _denied(clause: str) -> str:
+    """The part of `clause` that denies what it names (`_DENIES`)."""
+    if _DENIES_ALL.search(clause):
+        return clause
+    found = _DENIES.search(clause)
+    return clause[found.start() :] if found else ""
 
 
 def _dishes_named(state: ConversationState, clause: str) -> set[str]:
@@ -1339,15 +1373,21 @@ def _licence(
     state: ConversationState,
     changed: list[dict[str, Any]],
     named: set[str],
+    *,
+    wish_only: bool = False,
 ) -> set[str]:
     """The letters a clause about the `named` dishes may say. Each named dish
     licenses by its own text and lines, and a word needs all of them: the
     47's option "Erdnuss" licenses no "Die 47 und die 13 enthalten keine
-    Erdnüsse" (Codex review of #860, P1). No dish: the whole turn."""
+    Erdnüsse" (Codex review of #860, P1). No dish: the whole turn.
+    `wish_only`: only the guest's wish of this turn, for a denied word."""
     if named:
         return set.intersection(
-            *(_dish_licence(turn, state, changed, i) for i in named)
+            *(_dish_licence(turn, state, changed, i, wish_only) for i in named)
         )
+    if wish_only:
+        notes = [*turn.draft_notes, *(line.get("note") for line in changed)]
+        return _wish_codes(*notes) & turn.guest_codes
     return (
         turn.menu_codes
         | _order_codes(turn, state)
@@ -1360,17 +1400,21 @@ def _dish_licence(
     state: ConversationState,
     changed: list[dict[str, Any]],
     item_id: str,
+    wish_only: bool = False,
 ) -> set[str]:
     """The letters one dish licenses: its menu text of this turn, the dish
     and option names of its lines in the order, the wish notes of its lines
     that changed in this turn as far as the guest named them in this turn
-    (`_order_codes`)."""
-    lines = [line for line in state.cart if line["menu_item_id"] == item_id]
+    (`_order_codes`). `wish_only`: those wish notes alone."""
     new = [line for line in changed if line["menu_item_id"] == item_id]
+    wish = _wish_codes(*(line.get("note") for line in new)) & turn.guest_codes
+    if wish_only:
+        return wish
+    lines = [line for line in state.cart if line["menu_item_id"] == item_id]
     return (
         turn.dish_codes.get(item_id, set())
         | _codes(*(t for line in lines for t in _line_texts(state, line)))
-        | _wish_codes(*(line.get("note") for line in new)) & turn.guest_codes
+        | wish
     )
 
 

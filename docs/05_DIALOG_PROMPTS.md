@@ -243,7 +243,14 @@ up (`guards.is_open`)
        the guest named in this turn); whole dish names of the search are
        menu data. A clause that names a dish is licensed by that dish's own
        text, one that names none by the dishes its sentence or the sentence
-       before it named. An unlicensed word, or "Allergene" or "Allergiker"
+       before it named. An allergen word the clause denies ("ohne", "kein",
+       "nichts", "weder", "frei von" up to the clause's end; the whole
+       clause for "-frei" and "nicht drin", "nicht enthalten") is licensed
+       only by the guest's own wish of this turn on a line that changed:
+       menu text and order lines name what a dish may hold, never what it
+       is free of, so the 47's option "Erdnuss" licenses no "Gern, die 47
+       ist ohne Erdnüsse" (#1022). An unlicensed word, or "Allergene" or
+       "Allergiker"
        in the model's own words, goes back once, then as above; in a call
        where the guest named an allergy the retry may say only core
        sentences (`HINT_ALLERGY_CALL`). Where the guest named an allergy

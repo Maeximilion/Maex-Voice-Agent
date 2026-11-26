@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 26.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.101
+> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.102
 
 ---
 
@@ -147,6 +147,7 @@ Settled assumptions: `docs/HISTORY.md` sections "Made Assumptions (archive)" and
 
 | Date | What |
 |---|---|
+| 27.11.2026 | **#1022: a denied allergen the dish's own text names no longer reaches the guest** (chain round 4 item 2, hard rule 1). `unlicensed` licensed an allergen word by where its letter came from, so the 47's option "Erdnuss" licensed "Gern, die 47 ist ohne Erdnüsse" next to an order step in a call about a peanut allergy, and "Die 47 hat keine Erdnüsse" in any turn that was not open. An allergen word a clause denies ("ohne", "kein", "nichts", "weder", "frei von" to the clause's end; "-frei" and "nicht drin" for the whole clause) is now licensed only by the guest's own wish of the turn on a changed line, so "die 47 ohne Erdnuss" as the guest's order stays spoken and "die 47 mit Erdnuss, ohne Koriander" too. Residuals in `docs/24`. |
 | 26.11.2026 | **STATUS upkeep 26.11.2026 (#562).** No done or decided row was older than one month, so the rule moved nothing; the file stood at 63.8 KB, the changelog 27 KB of it. Maxi chose to move the 70 changelog lines of 18.11. to 23.11.2026, unchanged, to `docs/HISTORY.md` section "STATUS upkeep (archive, changelog entries 18.11. to 23.11.2026, 26.11.2026)" (63.8 to about 52 KB). Open rows stay. With it the README's stale assets are redrawn (95 of 116 tasks, as of 24.11.2026), and `docs/metrics/capabilities.toml` names the English call log flags, so a render no longer turns the README back to `--frist-tage N --loeschen`. |
 | 25.11.2026 | **Deep review of #972 (own Asterisk 22.12.0 image, outage path), round 3 item 6.** The CI check of the image now proves what it says: its frozen `voice` really holds the connection (the old stand-in closed it, so issue #1979 was never checked) and each frozen Dial must take between `connection_timeout` and three times that (real image: 4.0 s); Asterisk starts through the image's entrypoint with the service's command and rights; 33 modules the dialplan, features.conf and pjsip.conf need must run, matched by whole name and not `Not Running`; a crash after the last phase fails; every CLI call is bounded. The image build stops on a patch that does not apply; the gate on `main` reads the whole push; Dependabot keeps the Asterisk base apart. Filed in docs/24: a cold-cache rebuild at deploy recreates Asterisk and cuts live calls, and the wire contract is unseen on 22.12.0 |
 | 24.11.2026 | **#888 round 3: five gaps of the scripted stand-in closed (docs/24).** "Die drei und zwanzig" is card 23 once, not 3 x 20; "Warme Beilage" picks that group over "Beilage" (both said: asked again); "Nein, doch die 23" and "Nein, lieber zwei Nummer 13" keep the dish and their own quantity; when `get_service_status` reports neither pickup nor delivery open, the stand-in says so at once and asks for no dish (with delivery open the core still offers it at the draft, `abholung_0090`). `sim/` only, tests in `api/tests/test_sim_pickup.py`, rows moved to `docs/HISTORY.md`. The surcharge reason stays open: it needs a German word pattern, Maxi's word (#798). |
@@ -179,6 +180,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.102 · 27.11.2026:** #1022: an allergen word a clause denies is licensed only by the guest's own wish of the turn, never by the dish's menu text or order lines (chain round 4 item 2)
 - **v2.69.101 · 26.11.2026:** STATUS upkeep 26.11.2026: changelog lines of 18.11. to 23.11. moved to HISTORY (Maxi), README assets redrawn, call log flags English in capabilities.toml
 - **v2.69.100 · 26.11.2026:** #888 round 3 item 17: a transfer the model asks for and that finds nobody leaves a callback, whatever reason it gives (a test pins all of them; the loop has done so since #655); a handover sent with an order the core refuses is still carried out; the end of the understanding ladder asks for a number to call back unless the number is what failed (rule 5); the scripted stand-in no longer answers a transfer that found nobody with a handover sentence, and asks which dish when a price question finds two; the docs/24 row (Codex PR #244, P1) moved to HISTORY
 - **v2.69.99 · 26.11.2026:** #888 round 3 item 22 (#990, Maxi): an operator account without a passkey pushes its TOTP code once a day, measured from the last push, instead of on every sign-in and step-up; an account with a passkey, a new browser and a recovery code still push each time
