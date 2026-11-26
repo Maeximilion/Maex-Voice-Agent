@@ -1394,6 +1394,8 @@ _NO_MORE = re.compile(r"\bkein\w*(?:\s+\w+){1,3}?\s+mehr\b", re.IGNORECASE)
 # In a note for the kitchen "ohne Erdnuss" is an instruction (leave the extra
 # off, "ohne das Extra"), "enthält keine Erdnüsse" a claim (`_claims_in`).
 _CLAIMED_ABSENCE = re.compile(r"\b(?:kein\w*|weder|frei\s+von)\b", re.IGNORECASE)
+# A noun of the model's written German: a capitalised word.
+_NOUN = re.compile(r"\b[A-ZÄÖÜ]\w*")
 
 
 def _denied(
@@ -1417,7 +1419,15 @@ def _denied(
             if hit is None:
                 continue
             start = hit.start()
-            if index == 0:
+            # Back to the clause start only when no noun follows the negation
+            # in its clause ("Erdnüsse hat die 47 keine", "... keine drin"):
+            # "Erdnusssauce und keinen Koriander" denies the coriander alone
+            # (Codex review of #1065, P1).
+            end = min(
+                (i for i in (part.find(m, hit.end()) for m in ",;:") if i >= 0),
+                default=len(part),
+            )
+            if index == 0 and not _NOUN.search(part, hit.end(), end):
                 start = max(part.rfind(mark, 0, start) for mark in ",;:") + 1
             letters |= allergens_named(part[start:])
     return letters
@@ -1451,9 +1461,14 @@ def _wish_licence(
     hold, not what it lacks: the 47's option "Erdnuss" licensed "die 47 ist
     ohne Erdnüsse" (#1022, Maxi: the negation rule). A line of this turn, the
     draft's notes and the order's note count only for what the guest's own
-    words of this turn deny (`guest_denied`): a question is no wish. No dish:
-    every line."""
+    words of this turn deny (`guest_denied`): a question is no wish. A wish
+    the dish's lines already carried at the turn's start stays accepted when
+    a line only changes its quantity ("Davon bitte zwei", Codex review of
+    #1065, P1). No dish: every line."""
     new = [id(line) for line in changed]
+    kept: dict[str, set[str]] = {}
+    for line in turn.cart_at_start:
+        kept.setdefault(str(line["menu_item_id"]), set()).update(_line_wishes(line))
     whole = set().union(
         *(
             _denied(n)
@@ -1466,7 +1481,10 @@ def _wish_licence(
         codes = whole & turn.guest_denied
         for line in lines:
             wishes = _line_wishes(line)
-            codes |= wishes & turn.guest_denied if id(line) in new else wishes
+            if id(line) in new:
+                ok = turn.guest_denied | kept.get(str(line["menu_item_id"]), set())
+                wishes &= ok
+            codes |= wishes
         return codes
 
     if named:

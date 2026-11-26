@@ -3800,6 +3800,9 @@ def test_a_dish_read_back_with_its_allergen_option_is_still_heard(
         ("Die 47 ohne Koriander und extra Erdnüssen", True, set()),
         ("Die 47 gibt es auch mit Tofu oder ohne Erdnüsse", False, {"E"}),
         ("Die 47 hat keine Erdnüsse mehr", True, {"E"}),
+        # Codex review of #1065: a noun after the negation keeps the
+        # denial off what the clause named before it.
+        ("Die 47 bekommt Erdnusssauce und keinen Koriander", True, set()),
     ],
 )
 def test_the_denial_reader(text, strict, denied):
@@ -3969,3 +3972,57 @@ def test_a_note_denies_only_within_its_own_part():
     line = {"menu_item_id": "x", "note": "ohne Zwiebeln, extra Erdnusssauce"}
 
     assert guards._line_wishes(line) == set()
+
+
+def test_a_wish_survives_a_quantity_change(session, known_tenant):
+    """Codex review of #1065 (P1): "Davon bitte zwei" changes the line's
+    quantity only; its "ohne Erdnuss", accepted a turn before, still licenses
+    the recap."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    line = {
+        "menu_item_id": str(item(session, known_tenant, "47")),
+        "quantity": 1,
+        "options": ENTE_LINE,
+        "note": "ohne Erdnuss",
+    }
+    run(
+        session,
+        state,
+        "Die 47 mit Ente, aber ohne Erdnuss bitte.",
+        searches("47"),
+        LLMTurn(say="Gern, die 47 mit Ente ohne Erdnuss ist notiert.", cart=[line]),
+    )
+    recap = "Die 47 mit Ente ohne Erdnuss ist zweimal notiert."
+
+    result, _ = run(
+        session,
+        state,
+        "Davon bitte zwei.",
+        searches("47"),
+        LLMTurn(say=recap, cart=[{**line, "quantity": 2}]),
+    )
+
+    assert result.say == [recap]
+
+
+def test_an_affirmative_option_next_to_a_denied_extra_is_heard(session, known_tenant):
+    """Codex review of #1065 (P1): "Erdnusssauce und keinen Koriander" denies
+    the coriander, not the peanut sauce the guest chose."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    line = {
+        "menu_item_id": str(item(session, known_tenant, "47")),
+        "quantity": 1,
+        "options": [*ENTE_LINE, {"group": "Sauce", "name": "Erdnuss"}],
+        "note": "ohne Koriander",
+    }
+    recap = "Die 47 bekommt Erdnusssauce und keinen Koriander."
+
+    result, _ = run(
+        session,
+        state,
+        "Die 47 mit Ente und Erdnuss, ohne Koriander bitte.",
+        searches("47"),
+        LLMTurn(say=recap, cart=[line]),
+    )
+
+    assert result.say == [recap]
