@@ -1987,6 +1987,84 @@ def test_a_cart_line_of_another_dish_licenses_no_word_about_the_13():
     assert unlicensed(turn, state, "Die 13 ist mild, da sind keine Erdnüsse drin.")
 
 
+# --- #1022: a denial the dish's own text names is licensed by nothing of it
+
+
+@pytest.mark.parametrize(
+    "say",
+    [
+        "Gern, die 47 ist ohne Erdnüsse, ich trage sie ein.",
+        "Die 47 hat keine Erdnüsse.",
+        "Die 47 kommt ganz ohne Erdnuss.",
+        "In der 47 ist kein Erdnussöl.",
+        "Die 47 ist frei von Erdnüssen.",
+        "Die 47 ist Erdnuss-frei.",
+        "Erdnüsse sind in der 47 nicht drin.",
+        "Die 47, da sind keine Erdnüsse drin.",
+        "Die 47 enthält weder Erdnüsse noch Nüsse.",
+    ],
+)
+def test_a_denial_the_dish_s_own_text_names_is_unlicensed(say):
+    """#1022 (P1, hard rule 1): the 47's option "Erdnuss" licensed every
+    peanut word in a clause about the 47, a denial too, while no allergen of
+    the 47 is maintained. The dish's text names what it may contain, never
+    what it is free of."""
+    turn, state = allergen_turn("Was kostet die 47?", search(ENTE))
+
+    assert not is_open(turn, state)
+    assert "E" in unlicensed(turn, state, say)
+
+
+def test_a_denial_next_to_the_order_step_of_an_allergic_call_is_unlicensed():
+    """#1022, the probe of the issue: with an order step the sentence about
+    the 47 is no `about_a_dish` (it holds no allergy word), so `unlicensed`
+    decides it, and the 47's option licensed "ohne Erdnüsse"."""
+    state = new_state(allergy_said=["Ich habe eine Erdnussallergie."])
+    turn, state = allergen_turn(
+        "Dann nehme ich die 47.",
+        search(ENTE),
+        state=state,
+        cart=[{"menu_item_id": ENTE, "quantity": 1}],
+    )
+    say = "Gern, die 47 ist ohne Erdnüsse, ich trage sie ein."
+
+    assert sticky(state)
+    assert not is_open(turn, state)
+    assert not about_a_dish(turn, state, say, changed=order_changed(turn, state))
+    assert unlicensed(turn, state, say) == {"E"}
+
+
+@pytest.mark.parametrize(
+    "say",
+    [
+        "Die 47 mit Erdnuss, ohne Koriander.",
+        "Die 47 mit Erdnusssauce ohne Koriander.",
+        "Kein Problem, die 47 mit Erdnuss ist notiert.",
+        "Die 47 mit Erdnuss ist kein Problem.",
+        "Die 47 gibt es mit Erdnuss als Sauce.",
+    ],
+)
+def test_the_dish_read_back_next_to_another_denial_stays_licensed(say):
+    """A denial licenses nothing of the dish only for the words it denies:
+    the option said as an option, with "ohne" or "kein" for something else
+    in the same clause, is the database's word as before."""
+    turn, state = allergen_turn("Die 47 mit Erdnuss, ohne Koriander.", search(ENTE))
+
+    assert unlicensed(turn, state, say) == set()
+
+
+def test_the_guests_own_denying_wish_still_licenses_its_read_back():
+    """The wish the guest named in this turn, on the line that changed, is
+    the one licence a denial keeps: "die 47 ohne Erdnuss" is their order."""
+    turn, state = allergen_turn(
+        "Die 47 ohne Erdnuss bitte.",
+        search(ENTE),
+        cart=[{"menu_item_id": ENTE, "quantity": 1, "note": "ohne Erdnuss"}],
+    )
+
+    assert unlicensed(turn, state, "Gern, die 47 ohne Erdnuss.") == set()
+
+
 def test_a_line_sent_again_with_its_options_reordered_is_no_change():
     """`same_order` sorts the options; the licence reads lines the same way,
     so an old wish note stays an old note."""

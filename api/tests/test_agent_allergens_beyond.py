@@ -3659,3 +3659,60 @@ def test_a_sold_out_dish_gets_its_sold_out_sentence(session, known_tenant):
     )
 
     assert result.say == ["Die 13, Pho Bo, ist heute leider aus."]
+
+
+# --- #1022: a denial the dish's own text names reaches no guest
+
+
+def test_a_denial_next_to_the_order_step_of_an_allergic_call_is_not_heard(
+    session, known_tenant
+):
+    """#1022 (P1, hard rule 1), the probe of the issue end to end: the guest
+    named a peanut allergy, then orders the 47; the model writes the line and
+    says the 47 is without peanuts. The 47's option "Erdnuss" licensed the
+    word, and no allergen of the 47 is maintained. The sentence goes back
+    once and the plain retry is heard."""
+    state = allergic_call(session, known_tenant)
+    ente = {
+        "menu_item_id": str(item(session, known_tenant, "47")),
+        "quantity": 1,
+        "options": [{"group": "Fleisch", "name": "Ente"}],
+    }
+    claim = "Gern, die 47 ist ohne Erdnüsse, ich trage sie ein."
+    plain = guards.SAY_ALLERGY_NOTED
+
+    result, llm = run(
+        session,
+        state,
+        "Dann nehme ich die 47.",
+        searches("47"),
+        LLMTurn(say=claim, cart=[ente]),
+        LLMTurn(say=plain),
+    )
+
+    assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_ALLERGY_CALL
+    assert said_nowhere(result, claim)
+    assert result.say == [plain]
+    assert state.cart == [ente]
+
+
+def test_a_denial_about_a_dish_outside_an_allergic_call_is_not_heard(
+    session, known_tenant
+):
+    """#1022, the second case of the issue: in a turn that is not open, a
+    clause about the 47 denied peanuts on the licence of its own option."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    claim = "Die 47 hat keine Erdnüsse."
+
+    result, llm = run(
+        session,
+        state,
+        "Was kostet die 47?",
+        searches("47"),
+        LLMTurn(say=claim),
+        LLMTurn(say=claim),
+    )
+
+    assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_UNLICENSED_ALLERGEN
+    assert said_nowhere(result, claim)
+    assert not result.ended
