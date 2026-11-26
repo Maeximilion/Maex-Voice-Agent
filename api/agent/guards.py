@@ -1419,15 +1419,12 @@ def _denied(
             if hit is None:
                 continue
             start = hit.start()
-            # Back to the clause start only when no noun follows the negation
-            # in its clause ("Erdnüsse hat die 47 keine", "... keine drin"):
-            # "Erdnusssauce und keinen Koriander" denies the coriander alone
-            # (Codex review of #1065, P1).
-            end = min(
-                (i for i in (part.find(m, hit.end()) for m in ",;:") if i >= 0),
-                default=len(part),
-            )
-            if index == 0 and not _NOUN.search(part, hit.end(), end):
+            # Back to the clause start unless one of the two words right after
+            # the negation is a noun, its object ("Erdnüsse hat die 47 keine",
+            # "... keine drin laut Karte"): "Erdnusssauce und keinen Koriander"
+            # denies the coriander alone (Codex review of #1065, P1, twice).
+            after = re.match(r"(?:\W+(\w+)){0,2}", part[hit.end() :])
+            if index == 0 and not _NOUN.search(after.group(0) if after else ""):
                 start = max(part.rfind(mark, 0, start) for mark in ",;:") + 1
             letters |= allergens_named(part[start:])
     return letters
@@ -1437,15 +1434,15 @@ def _line_wishes(line: dict[str, Any]) -> set[str]:
     """The allergen letters a line's note and options deny ("ohne Erdnuss",
     an extra "ohne Ei"); a note about the guest's health denies nothing."""
     texts = [line.get("note"), *(o.get("name") for o in line.get("options", []))]
-    # Each text and each part of a note alone: options "ohne Ei" and
-    # "Erdnuss", or the note "ohne Zwiebeln, extra Erdnusssauce", deny no
-    # peanut.
+    # Each text alone: options "ohne Ei" and "Erdnuss" deny no peanut. A note
+    # reads like a sentence: "ohne Koriander, Zwiebeln und Erdnüsse" denies
+    # all three, "ohne Zwiebeln, extra Erdnusssauce" the onions (Codex review
+    # of #1065, P1).
     return set().union(
         *(
-            _denied(part)
+            _denied(t)
             for t in texts
             if isinstance(t, str) and not HEALTH_NOTE_RE.search(t)
-            for part in re.split(r"[,;]+", t)
         )
     )
 

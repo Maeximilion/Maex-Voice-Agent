@@ -3803,6 +3803,8 @@ def test_a_dish_read_back_with_its_allergen_option_is_still_heard(
         # Codex review of #1065: a noun after the negation keeps the
         # denial off what the clause named before it.
         ("Die 47 bekommt Erdnusssauce und keinen Koriander", True, set()),
+        ("Die 47 hat Erdnusssauce und keine scharfen Chilis", True, set()),
+        ("Erdnüsse sind in der 47 keine drin laut Karte", True, {"E"}),
     ],
 )
 def test_the_denial_reader(text, strict, denied):
@@ -4026,3 +4028,26 @@ def test_an_affirmative_option_next_to_a_denied_extra_is_heard(session, known_te
     )
 
     assert result.say == [recap]
+
+
+def test_a_note_with_a_list_of_exclusions_is_read_back(session, known_tenant):
+    """Codex review of #1065 (P1): the note "ohne Koriander, Zwiebeln und
+    Erdnüsse" denies the peanuts too, so its read-back is heard."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    line = {
+        "menu_item_id": str(item(session, known_tenant, "47")),
+        "quantity": 1,
+        "options": ENTE_LINE,
+        "note": "ohne Koriander, Zwiebeln und Erdnüsse",
+    }
+    noted = "Die 47 mit Ente ohne Koriander, Zwiebeln und Erdnüsse ist notiert."
+
+    result, _ = run(
+        session,
+        state,
+        "Die 47 mit Ente ohne Koriander, Zwiebeln und Erdnüsse bitte.",
+        searches("47"),
+        LLMTurn(say=noted, cart=[line]),
+    )
+
+    assert result.say == [noted]
