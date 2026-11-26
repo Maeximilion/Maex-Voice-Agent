@@ -2009,6 +2009,12 @@ Moved unchanged from `.claude/commands/chain.md` by the rewrite of chain item 25
 - Chain side sessions are titled like their item (for example "13 last_say after barge-in"), and children ignore the title hook.
 - Lessons of round 3 turned into rules: no leftover review agent or background shell before "PR ready" (a finder agent kept a session from being archived); the ship lane checks `gh pr list` before it says "queue empty" (queued messages arrived late); AFK decisions go into a `.md` file with a link in the decisions issue.
 
+### Which turns can start a session (26.11.2026)
+
+Maxi: "Target is that the chain starts and after an Item gets merged you pick another one and start a sub session which get's into the new free lane."
+
+The rewrite of 25.11.2026 said only a turn Maxi's message began can start a session. Corrected by chain item 28. Evidence, from the coordinator's memory notes: on 17.11.2026 and 23.11.2026 the coordinator started sessions from `<side-sessions-event>` turns. Starts were refused on 17.11.2026 while Maxi worked over Remote Control (note turns), after a popup answer inside a turn a subagent's report began, and after a background `sleep` or a `CronCreate` timer woke the coordinator (the note turns after such a wake were refused too, until Maxi's next message); on 25.11.2026 in a child-message turn, and in note turns by auto mode's classifier ("Undermining Oversight"). Since 25.11.2026 the coordinator runs with Remote Control off and in bypass mode (Maxi). Not yet observed: a note-turn start in that setup after a child's message or after the coordinator's own `sleep` wake.
+
 ### The replaced text
 
 Run $ARGUMENTS as a chain. This session is the coordinator: it plans, starts

@@ -2214,6 +2214,49 @@ def test_a_step_up_with_a_code_is_pushed_and_one_with_a_passkey_is_not(
     assert len(sent) == pushed
 
 
+def test_an_account_without_a_passkey_pushes_its_code_once_a_day(
+    client, factors, clock, monkeypatch
+):
+    """#990 (Maxi, 24.11.2026): an account without a passkey signs in and
+    steps up with its code every day, so the push of the code goes once a day
+    and no longer on each of them. Measured from the last push of the code."""
+    _signed_in(client, factors, clock)  # a new browser: its push is its own
+    sent: list[str] = []
+    monkeypatch.setattr(push, "queue", lambda db, text, at: sent.append(text))
+    clock.at += timedelta(seconds=30)
+    _signed_in(client, factors, clock)
+    assert sent == [f"maxi: signed in {web.BY_CODE}"]
+    clock.at += timedelta(hours=2)
+    _signed_in(client, factors, clock)
+    clock.at += timedelta(seconds=30)
+    assert _step_up_with_code(client, factors, clock).status_code == 303
+    clock.at += timedelta(hours=21, minutes=49)
+    _signed_in(client, factors, clock)
+    assert len(sent) == 1
+    # A day after the push, not after the last use of the code.
+    clock.at += timedelta(minutes=15)
+    assert _step_up_with_code(client, factors, clock).status_code == 303
+    assert sent[1:] == [f"maxi: stepped up {web.BY_CODE}"]
+    clock.at += timedelta(seconds=30)
+    _signed_in(client, factors, clock)
+    assert len(sent) == 2
+
+
+def test_an_account_with_a_passkey_pushes_each_code_sign_in(
+    client, factors, clock, monkeypatch
+):
+    # A code there is only the way back in, so each use of it stays seen.
+    _with_passkey(client, factors, clock)
+    clock.at += timedelta(seconds=30)
+    _signed_in(client, factors, clock)  # a new browser after the sign-out
+    sent: list[str] = []
+    monkeypatch.setattr(push, "queue", lambda db, text, at: sent.append(text))
+    for _ in range(2):
+        clock.at += timedelta(seconds=30)
+        _signed_in(client, factors, clock)
+    assert sent == [f"maxi: signed in {web.BY_CODE}"] * 2
+
+
 def test_a_refused_step_up_with_a_code_is_not_pushed_as_one(
     client, factors, clock, monkeypatch
 ):

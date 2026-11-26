@@ -121,9 +121,12 @@ is the backup. Ten single-use recovery codes, stored hashed, are the last way in
   recovery code only the way back in when no passkey is at hand. Every sign-in with a TOTP code
   from a known browser and every step-up with one is pushed to `ops` ("with a TOTP code, not
   a passkey"), as a used recovery code is; from a new browser the push of the new browser names
-  the code ("signed in from a new browser (totp)"). An account without a passkey pushes on each of
-  its sign-ins and step-ups so (Claude's choice of the review of #946, awaiting Maxi: seen rather
-  than quiet, at the cost of routine pushes until a passkey is registered). A passkey sign-in from a known
+  the code ("signed in from a new browser (totp)"). An account without a passkey uses its code
+  every day, so its code push goes once a day (Maxi, 24.11.2026, #990): the first sign-in or
+  step-up with the code from a known browser is pushed, the next ones stay quiet until a day after
+  that push (measured from the push, not the last use, and read under the account's row; the
+  `operator.signed_in` or `operator.stepped_up` audit row of a pushed one carries `pushed`). A new
+  browser and a recovery code still push each time. A passkey sign-in from a known
   browser and a passkey step-up stay quiet. **Once the account has a passkey, a code is no fresh
   factor** (Maxi, 23.11.2026, the stricter way): a TOTP code or a recovery code still signs in,
   but that session opens no dangerous action (a customer's PINs or call list, a manage step, a

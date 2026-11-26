@@ -208,7 +208,7 @@ COPY = "a passkey answered with an old counter, a copy?"
 NEW_BROWSER = "signed in from a new browser"
 # #888 A1 (Maxi, 23.11.2026): the passkey is the way in; a TOTP code is the
 # way back in, so each sign-in and step-up with one is pushed, as a recovery
-# code is.
+# code is; on an account without a passkey once a day (#990).
 BY_CODE = "with a TOTP code, not a passkey"
 PASSKEY_ONLY = "This account confirms with its passkey."
 # #888 A2: the password is known, or a session guesses codes.
@@ -614,7 +614,7 @@ def login_post(
     if signed.new_browser:
         # A phished password and code would otherwise sign in unseen (#888 A1).
         _alert(db, operator, f"{NEW_BROWSER} ({signed.factor})")
-    elif signed.factor == "totp":
+    elif signed.push_code:
         _alert(db, operator, f"signed in {BY_CODE}")
     response = RedirectResponse(HOME, status_code=303)
     response.delete_cookie(cookie("attempt"), path="/", secure=secure(), httponly=True)
@@ -710,7 +710,7 @@ def step_up_post(
     _checked(request, form)
     back = _local(form.get("next", ""))
     try:
-        factor = access.step_up(
+        push_code = access.step_up(
             db,
             operator,
             form.get("code", ""),
@@ -729,7 +729,7 @@ def step_up_post(
     except access.PasskeyNeeded:
         context = {"next": back, "message": PASSKEY_ONLY, **_ways(db, operator)}
         return _page(request, "step_up.html", context, 401)
-    if factor != "passkey":
+    if push_code:
         _alert(db, operator.name, f"stepped up {BY_CODE}")
     return RedirectResponse(back, status_code=303)
 

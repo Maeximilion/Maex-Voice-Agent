@@ -11,14 +11,14 @@ Newest rule wins; a real doubt goes to the open decisions issue as a question. M
 
 ## 1. The coordinator loop
 
-1. **Every turn Maxi's message begins: start a session for EVERY planned item that has none yet** (25.11: "Don't ever wait for my message to start new sessions ever again"). Items that fit a free lane (section 3) start building, the rest start queued on the baton. Only such a turn can start one: the app and auto mode refuse starts in every other turn (notes, timers, agent reports, popup answers). Order in that turn: scouts (section 2), the starts, a ship lane if none runs, then the open decisions as popups (section 4); nothing waits for an answer.
+1. **Every turn Maxi's message begins: start a session for EVERY planned item that has none yet** (25.11: "Don't ever wait for my message to start new sessions ever again"). Items that fit a free lane (section 3) start building, the rest start queued on the baton. A start works only in such a turn and in a `<side-sessions-event>` turn that follows it (the app's note when all child sessions are idle), never in a turn begun by a child's own message (`SendMessage`, e.g. "merged #N"), a timer or an agent report. Remote Control on the coordinator and auto mode's classifier refuse too: the coordinator runs with Remote Control off, in bypass mode (Maxi, 25.11). Order in that turn: scouts (section 2), the starts, a ship lane if none runs, then the open decisions as popups (section 4); nothing waits for an answer.
 2. **On every child message or note:** read `get_usage`, check the PR with `gh pr view`, update the dashboard, add a line to `notes.txt`, then answer in one or two lines. A note is a report, not proof.
 3. **On a "waiting" note, or a child turn that ended on a wait:** run `py -3.14 scripts/codex_review.py <N>` and `gh pr checks <N>`. Both done on the same head: nudge "CI and Codex are done on <sha>, go on". Codex not started 10 minutes after a push: tell the session to post one scoped `@codex review` (25.11).
 4. **On "PR #N ready, first review clean":** verify it the same way, then send the ship lane "ship #N, build session <id>". Chain-changing PRs ship first, then plan order.
 5. **When a lane frees,** it goes, in this order (25.11): (a) a planned item that changes the chain itself (this command, the brief file, the dashboard, chain memories); (b) a heavy step a running item waits for: send "go heavy"; (c) the next planned item. For (a) and (c): write `item N` into `next-lane.txt` and message that queued session "go on item N" (a message wakes it at once from any turn); on "lane taken item N" write `none` back. Super slow: section 3.
-6. **On "merged #N":** mark it done on the dashboard at once, archive the build session if the ship lane could not, rewrite the state memory, re-read the mode.
+6. **On "merged #N":** mark it done on the dashboard at once, archive the build session if the ship lane could not, rewrite the state memory, re-read the mode. Note the free lane: at the next `<side-sessions-event>` turn start the next planned item (26.11: "after an Item gets merged you pick another one and start a sub session which get's into the new free lane"). Refused there too: one push, and in Maxi's next turn start the next items as baton-queued sessions.
 7. **While children run:** one background `sleep 3000`, re-armed on every wake (keeps the cache warm; no `CronCreate`).
-8. **Plan runs empty:** plan about 20 new items on the plan issue and go on; they get sessions in Maxi's next turn. **Last item merged:** section 5.
+8. **Plan runs empty:** plan about 20 new items on the plan issue and go on; they get sessions in the next turn that can start one (step 1). **Last item merged:** section 5.
 
 ## 2. Sessions and briefs
 
@@ -43,7 +43,7 @@ Newest rule wins; a real doubt goes to the open decisions issue as a question. M
 - Owns the branch of every PR it ships; never ends a turn on a pending wait (`.claude/commands/ship.md` step 2). A P1 in an `xhigh` path: the coordinator switches it to Opus and back.
 - Before "queue empty": `gh pr list` for ready chain PRs (25.11: queued messages arrive late).
 - Merged PRs stay on its bar until Maxi clears them with the x (25.11); no `unbind_pr` (refused), no allow rule for it.
-- Idle: open Dependabot PRs go to its queue. Context over 300k: a fresh ship lane in Maxi's next turn; the old one finishes its PR.
+- Idle: open Dependabot PRs go to its queue. Context over 300k: a fresh ship lane in the next turn that can start one (step 1); the old one finishes its PR.
 
 ## 3. Lanes, modes and pacing
 
