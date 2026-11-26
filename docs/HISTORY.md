@@ -2554,3 +2554,78 @@ Checked and closed in one PR of #888 round 3 (item 17): the loop part was fixed 
 | Point | Why still open | When due |
 |---|---|---|
 | A transfer the model asks for and that finds nobody is not followed by a callback (`api/agent/loop.py` `run_turn`, `sim/scripted_llm.py` `_after_tool`) | Codex PR #244 (P1, 12.10.2026), older than that PR: the loop falls back to a callback only when it hands over itself (`_handoff`). | Maxi decides; with T-10.8 at the latest |
+
+## STATUS upkeep (archive, changelog entries 18.11. to 23.11.2026, 26.11.2026)
+
+Moved unchanged from `docs/01_STATUS.md` section "Changelog" by the weekly STATUS upkeep (#562): no row was older than one month, the file stood at 63.8 KB, and Maxi chose on 26.11.2026 to move the changelog lines older than three days.
+
+- **v2.69.27 · 23.11.2026:** Operator sign-in: once the account has a passkey, a TOTP or recovery code signs in but opens nothing dangerous before a passkey step-up
+- **v2.69.26 · 23.11.2026:** #940: the older gaps of the allergy safety net closed, the kitchen marker leads every card of an allergic guest
+- **v2.69.25 · 23.11.2026:** Ledger #947, review of #946: the operator audit and double tap keep the client address as sent, only the counters group an IPv6 client by its /64
+- **v2.69.24 · 23.11.2026:** Chain briefs ask each side session to message the coordinator at milestones (PR ready, merged, stopped or blocked), because turn-end notes wait while another side session works.
+- **v2.69.23 · 23.11.2026:** #892: tests hold the site's text contrast (WCAG AA) and keyboard entry (skip link, one h1, focus ring)
+- **v2.69.22 · 23.11.2026:** #927 and #931: operator sign-in residuals in docs/23 and the runbook, the per-account known-password push tested
+- **v2.69.21 · 23.11.2026:** #926: no outage hand-over reads the team number again after a database failure, callback cards of an earlier day name their date
+- **v2.69.20 · 23.11.2026:** GUI: the Mehr row records its open state on a tap on the summary, not on toggle (#938)
+- **v2.69.19 · 23.11.2026:** Chain rules: the window is used to 97 percent, starts without asking, slow/normal/turbo modes by ahead, slow mode waits 15 minutes between parts; scripts/wake_cost.py measures what a wake after a wait costs (#951).
+- **v2.69.17 · 23.11.2026:** #888 S10: Caddy and the push server run as their own user, volumes handed over by a one-shot chown
+- **v2.69.16 · 23.11.2026:** #888 S9: the global +979 premium-rate and +808 shared-cost codes count as costly, no one-tap call link
+- **v2.69.15 · 23.11.2026:** #888 S13: `VOICE_EAR_MEASURE` refused outside dev and test, no caller transcripts in the production journal
+- **v2.69.14 · 23.11.2026:** #888 A1 and S11: TOTP sign-ins and step-ups pushed, IPv6 counted by its /64, failure pruning indexed
+- **v2.69.13 · 23.11.2026:** #888 B3: the callback history asks the PIN on a locked tablet (T8)
+- **v2.69.12 · 23.11.2026:** Ledger #764 batch review, outage fix: every callback card names the call's standing bookings from the database
+- **v2.69.11 · 23.11.2026:** T-5.3: prompt fix for Haiku 5.5 (read-back word for word, fixed allergy note), cases 72 -> 85/107
+- **v2.69.10 · 23.11.2026:** #888 S3 and S4: a data subject request offers only calls of the person's own number, a booking without a yes verifies nobody, the copy goes only through a channel the verified rows prove
+- **v2.69.9 · 23.11.2026:** Ledger #764 batch review, allergen fix: a bare no keeps an allergy the guest named, a cut note keeps every allergy sentence, the card marks an allergy said in the call
+- **v2.69.8 · 23.11.2026:** #863 option C: every table the agent books prints a short slip on the print bridge (day, time, party, name, note); only a bridge that names the layout gets one, orders go first, no card, no alarm, taken back when the table is gone or past; tablet tables print nothing (Claude's choice, awaiting Maxi)
+- **v2.69.7 · 23.11.2026:** #888 C3 and D2: the superuser check runs once the database answers, the backup cron covers every customer stack
+- **v2.69.6 · 23.11.2026:** #888 S2 and B2: the tablet's CSRF cookie is __Host-csrf, read by its exact name, the old csrf_token accepted until every tablet reloaded
+- **v2.69.5 · 23.11.2026:** #888 S6: the load test removes what it made and its marker at the end, clears only what it can tell is its own, new_stack.py refuses customers while a marker is there
+- **v2.69.4 · 23.11.2026:** #877: the weekly hours are checked against the dates beside them, no save deepens a night overlap, an undone staff change asks for no check, a night refusal marks its time field
+- **v2.69.3 · 23.11.2026:** #888 A2, A3, A4, B1 (S12): operator sign-in alarms pushed, one wait ladder at the step-up, only own requests keep a session alive, a factor change forgets other browsers' device cookies
+- **v2.69.2 · 23.11.2026:** #888 S5: workflows run only main's code with PROJECT_TOKEN and README_BLOCKLIST
+- **v2.69.1 · 23.11.2026:** T-5.3 race run: Haiku 5.5 with effort low wins (72/107 cases, no hard violation); Haiku 4.5 40/107
+- **v2.69.0 · 23.11.2026:** T-5.3: Claude client behind LLMClient and model turn time in the eval report; Haiku 4.5 vs 5.5 race waits for an API key
+- **v2.68.12 · 23.11.2026:** #888 C1, S7, D3: ops token runbook reach, webhosting account in the threat table, D3 already pinned
+- **v2.68.11 · 23.11.2026:** #517: below 1180 px the wait steppers and Gericht aus fold into a Mehr row of the header
+- **v2.68.10 · 23.11.2026:** #880: an operator push is queued before old ones are pruned, the dispatcher needs MONITOR_PUSH_URL in production; three P3s stay by design
+- **v2.68.9 · 23.11.2026:** chain.md: the coordinator sends Haiku scout maps (Graphify) to the chain sessions
+- **v2.68.8 · 23.11.2026:** #576 built: export and removal of a leaving customer's stack (scripts/remove_stack.py), five faults of the cloud commit fixed
+- **v2.68.7 · 23.11.2026:** #892: neon wave swings inside the SVG (no dashes), example calls play once, demo screenshot under the neon button
+- **v2.68.6 · 23.11.2026:** Review #207: a spoken correction between two numbers asks, the caller's own allergy in front of another person's is asked about (#911)
+- **v2.68.5 · 23.11.2026:** #754 and #743 follow-ups: the outage sentence plays before the team number is read again, a missed-call card names the call's standing bookings
+- **v2.68.4 · 23.11.2026:** Review #207: a refused sign-in code is a repeat only from the address of the TOTP sign-in that used it; a step-up code, another or no address stays a factor alarm
+- **v2.68.3 · 23.11.2026:** #637: scripts/watermark_line.py from the cloud branch, with edge cases and the Piper run on the workbench (real SIP leg still open)
+- **v2.68.2 · 22.11.2026:** #908: only a call's newest row holds seats as a draft, migration 044 indexes reservations by call and creation time
+- **v2.68.1 · 22.11.2026:** Scoped security audit at 3fb8cbc1: 1 P1 (#908, holds back T-10.1 step 2), 5 P2, 7 P3 on #888; the baseline moves from 141d412
+- **v2.68.0 · 22.11.2026:** T-10.2 taken for G0 with conditions (Maxi's reading)
+- **v2.67.18 · 22.11.2026:** #841: load test of one VPS of D3 built and run (scripts/voice_load.py): 4 stacks with 3 calls each inside every check, at 5 one lost 20 ms frame; memory is the limit (about 1.05 GB per stack, n8n the largest share), not the processor
+- **v2.67.17 · 22.11.2026:** #888 D1, C4, D3: IPv6 on the shared Caddy's network with a check before a site loads, the ops API answers over the ops network only, Postgres pinned to an exact minor
+- **v2.67.16 · 22.11.2026:** #888 A1: the operator's sign-in from a new browser pushes to ops, and a PIN shown by the operator pushes to the owner and ops
+- **v2.67.15 · 21.11.2026:** #892: tablet demo publishable through the static export (form actions the demo answers pass the link check), hero action and demo section switched on
+- **v2.67.14 · 21.11.2026:** #892 B4: floor plan in the tablet demo (plan, saves, new rooms with the server's checks)
+- **v2.67.13 · 21.11.2026:** #892 B3: tablet demo sheets (Gericht aus, Korrigieren, Reservierung, settings), Anrufe and Menü filters, owner's pages locked, example label
+- **v2.67.12 · 21.11.2026:** #892: landing hero fixes (glow follows the pointer, one caret after fast tab switches, sound waves swing in place)
+- **v2.67.11 · 20.11.2026:** Remove the optional RTK development pipeline and its setup instructions.
+- **v2.67.10 · 20.11.2026:** Keep Git patches and merge commands intact in the RTK development pipeline.
+- **v2.67.9 · 20.11.2026:** #892 B2: tablet demo fake backend in the browser (header, orders, callbacks, example call)
+- **v2.67.8 · 20.11.2026:** #892: private preview of the public site (sign-in greyed, form not sendable, noindex nofollow) and a static export with legal texts from outside the repo
+- **v2.67.7 · 20.11.2026:** #892 B1: tablet demo built from the real view with invented data, route manifest and drift test
+- **v2.67.6 · 20.11.2026:** #892: public landing page and inquiry page built as api/site (form and sign-in not offered as working until configured, demo place marked)
+- **v2.67.5 · 19.11.2026:** #888 B1: signing out every device of a restaurant (a new password by setup link, the operator's or the CLI's all devices) also forgets its device cookies
+- **v2.67.4 · 19.11.2026:** Security audit of docs/23 §5 to §8 (component, `c6e5437a`): no P0, no P1, three P2 and ten P3 in #888; the operator site and the restaurant login may open, the P2s are fixed before the first paying customer (D36).
+- **v2.67.3 · 19.11.2026:** Windows switch scripts/stack.cmd starts, pauses, resumes and stops the workbench stack in Ubuntu WSL (#887).
+- **v2.67.2 · 18.11.2026:** #798: the allergen guard decides by provenance instead of German word lists: an allergy turn hears only core sentences (table sentence, read-back, a tool's sentence, three fixed sentences), every other allergen word of the model needs its code in the turn's menu text or the order; a read-back names a note as the guest's, a note that names a dish goes back; the #764 allergen branch (#747, #748) and Maxi's twelve decisions on the cloud session of 15.11.2026 come with it; Claude's choices awaiting Maxi on the PR
+- **v2.67.1 · 19.11.2026:** #884 done: a factor change needs a passkey step-up once the account has a passkey (D37)
+- **v2.67.0 · 19.11.2026:** D36 and D37 decided by Maxi: external pen test before the first paying customer, passkey step-up for factor changes (#884)
+- **v2.66.25 · 19.11.2026:** STATUS holds status only: review findings to docs/24, Changelog, Done and process rows trimmed to HISTORY (#562)
+- **v2.66.24 · 19.11.2026:** Maxi accepted 44 assumption rows on 19.11.2026, moved to HISTORY (#562)
+- **v2.66.23 · 19.11.2026:** STATUS upkeep 19.11.2026: nothing to archive, no row older than one month (#562)
+- **v2.66.22 · 19.11.2026:** Ledger #764 deep review, operator push and monitor (#861): the dispatcher does not start in production without MONITOR_PUSH_TOKEN, the push server takes the dashboard's token from OPERATOR_PUSH_TOKEN, sent operator pushes are pruned after 30 days, the twice-sent push is documented and pinned; model trial #843
+- **v2.66.21 · 19.11.2026:** #861 and #862: staff cards list only tables to come, a date's night is checked against the dates beside it, the holiday job takes the lock, TEAM_PHONE in E.164
+- **v2.66.20 · 19.11.2026:** Ledger #764 deep review, owner forms and phone numbers (#862): a bracket inside an Italian mobile no longer keeps the zero, the French length guard sits in normalize_phone for every entry point, a new data request names all its faults at once and a too-long note comes back whole; model trial #843
+- **v2.66.19 · 19.11.2026:** #861, outage and escalation P3s of ledger #764: the dialplan asks the team number again before its own legs (`teamnow`), complaint words in every form, a named number leaves memory at the next call's end, stale comments of #835 and #857
+- **v2.66.18 · 19.11.2026:** Ledger #764 deep review, confirm and read-back (#862): a yes stays a yes behind "das Fräulein", a table the domain refused is named as refused on the card, a replayed reservation draft is checked again and an order draft gone back to is drafted anew
+- **v2.66.17 · 19.11.2026:** Settle #562: no-handover-limit chain option with auto compaction at 550k, plugin sets note, Maxi's decisions on #845, #850, #855 recorded
+- **v2.66.16 · 18.11.2026:** Dependabot #872: types-pyyaml 6.0.12.20261113 in api.
+- **v2.66.15 · 18.11.2026:** Dependabot #871: webauthn 2.8.0 to 3.0.1 (cbor2 5.9.0 to 6.3.0 as its dependency) in api.
