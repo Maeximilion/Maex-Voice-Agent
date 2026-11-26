@@ -114,11 +114,14 @@ def ending(call_id: str, request: Request) -> str:
 
 
 @router.post("/calls/{call_id}/missed", response_class=PlainTextResponse)
-def missed(call_id: str, request: Request, left: bool = False) -> str:
+def missed(
+    call_id: str, request: Request, left: bool = False, waited: str | None = None
+) -> str:
+    # `waited` as text: one the dialplan garbled keeps the card, never a 422.
     voice = _voice(request.app)
     if not voice.authorized(request.headers.get("authorization")):
         raise HTTPException(status_code=401)
-    return "noted" if voice.missed(call_id, left=left) else "none"
+    return "noted" if voice.missed(call_id, left=left, waited=waited) else "none"
 
 
 @router.post("/calls/{call_id}/recording/stop", response_class=PlainTextResponse)

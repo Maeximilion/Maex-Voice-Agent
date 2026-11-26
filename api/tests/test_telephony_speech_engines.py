@@ -232,6 +232,7 @@ def test_a_call_on_the_engines_of_the_service(mouth, monkeypatch):
         mouth=speech_engines._piper(watchdog),
         silence_seconds=60.0,
         team_phone=lambda: "",
+        left_min_ring_seconds=5.0,
     )
 
     def played_sentence(ws) -> int:

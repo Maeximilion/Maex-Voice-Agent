@@ -118,6 +118,10 @@ class Settings(BaseSettings):
     # Seconds of silence after a sentence before the code asks "Sind Sie noch
     # da?" (docs/20 §4). An assumption until real calls say otherwise.
     voice_silence_seconds: float = Field(default=8.0, gt=0)
+    # A caller who hangs up after the handover and before a team leg answers
+    # leaves a callback card only once the team rang this long (Maxi,
+    # 26.11.2026, #1046, #1062); measured by the dialplan's `h`.
+    voice_left_min_ring_seconds: float = Field(default=5.0, ge=0)
     # Ear and mouth by the names of their engines in
     # `telephony/adapters/speech_engines.py` (`EARS`, `MOUTHS`), the local
     # engines of the test phase (docs/20 §6).
