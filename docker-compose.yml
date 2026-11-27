@@ -368,9 +368,12 @@ services:
   n8n:
     # Pinned on purpose: a floating tag can change n8n behaviour (and migrate its database)
     # without anyone noticing. Dependabot proposes updates as pull requests.
+    # Only a stable release (n8n marks 2.49.1 to 2.49.4 as pre-releases with plain tags,
+    # #1027), and only once the export was imported and published against it:
+    # api/tests/test_image_pins.py wants the pin in a "Checked" line of n8n/README.md.
     # 2.41.4 or newer is required: GHSA-3qcw-p65v-c7vq (unauthenticated, unbounded growth of
     # the database through the authorize endpoint) affects every older release.
-    image: n8nio/n8n:2.48.7
+    image: n8nio/n8n:2.49.7
     restart: unless-stopped
     # Third-party code behind the proxy: never on `backend` with the database.
     networks: [edge]
@@ -392,7 +395,7 @@ services:
       N8N_LISTEN_ADDRESS: 0.0.0.0
       # An execution holds the event it carried, which can name a guest:
       # kept 168 hours, n8n's own default would be 336 (T-11.7,
-      # docs/03 "Löschkonzept"; names checked in n8n 2.45.6).
+      # docs/03 "Löschkonzept"; names checked in n8n 2.45.6 and 2.49.7).
       EXECUTIONS_DATA_PRUNE: "true"
       EXECUTIONS_DATA_MAX_AGE: "168"
     volumes:
