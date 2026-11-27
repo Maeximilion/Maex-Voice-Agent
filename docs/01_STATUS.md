@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.115
+> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.116
 
 ---
 
@@ -181,6 +181,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.116 · 27.11.2026:** Chain round 4 item 15: T-9.3 (#73) done: backup and restore rehearsed again in the production layout, all 39 tables identical, failure cases change nothing; off-site copy stays #321, ledger replay is #1085
 - **v2.69.115 · 27.11.2026:** Chain round 4 item 20: super slow gives its working lane the 45-minute break of slow mode; a freed lane is cleared once its PR is merged; the coordinator counts units before every refill and re-reads usage and mode on every wake (Maxi, 27.11)
 - **v2.69.113 · 27.11.2026:** #1022 (redesign): the model never speaks a denial; a sentence with a negation and an allergen is held, and with the order changed the core says the changed lines and their notes; "Erdnuss-frei" is a claim, "frei von" a soft hold; notes too
 - **v2.69.112 · 27.11.2026:** #1075 ledger, deep review of #1074: the dBase register reader bounds a dBase IV memo by the next memo too, reads a memo pointer one way in both places, refuses a control byte in a memo and names a cut .DBT as cut

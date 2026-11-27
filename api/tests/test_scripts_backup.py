@@ -583,6 +583,27 @@ def test_restore_replace_wants_the_name_of_the_target_database(
     assert _note(db) == "after"
 
 
+def test_restore_of_a_dump_that_is_not_there_changes_nothing(
+    db, backup_dir, passphrase_file
+):
+    _backup(db, backup_dir, passphrase_file)
+    _sql(db, "update backup_probe set note = 'after'")
+
+    missing = _run(
+        "restore.sh",
+        (backup_dir / "maex_gone.dump.gpg").as_posix(),
+        "--replace",
+        make_url(db).database,
+        db_url=db,
+        backup_dir=backup_dir,
+        passphrase_file=passphrase_file,
+    )
+
+    assert missing.returncode == 2
+    assert "no such file" in missing.stderr
+    assert _note(db) == "after"
+
+
 def test_restore_replace_refuses_while_a_session_is_connected(
     db, backup_dir, passphrase_file
 ):
