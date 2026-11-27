@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.105
+> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.106
 
 ---
 
@@ -179,7 +179,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.105 · 27.11.2026:** docs/24 row closed (Codex PR #149): a dBase III memo that lost its 0x1A ends at the next memo's block; the register import stops with table, row and field instead of reading another extra's WRGSHOW
+- **v2.69.106 · 27.11.2026:** docs/24 row closed (Codex PR #149): a dBase III memo that lost its 0x1A ends at the next memo's block; the register import stops with table, row and field instead of reading another extra's WRGSHOW
+- **v2.69.105 · 27.11.2026:** #1060: n8n 2.49.7, the newest stable release; the export imports and publishes against it, and a test holds the pin to a release named in a Checked line of n8n/README.md
 - **v2.69.104 · 27.11.2026:** #1063 (Maxi, 26.11.2026, on #1054): the once-a-day push of an operator's TOTP code counts the calendar day in `Europe/Berlin`, not 24 hours from the last push; a push at 23:50 no longer keeps the next morning quiet, and a clock change day keeps its one push
 - **v2.69.103 · 27.11.2026:** Chain: no queued sessions: only as many item sessions as build lanes plus the ship lane, a freed lane starts the next planned item, merged PRs are hidden on the ship lane, a round left running shuts the PC down when no lane can be filled (#1066 item 11)
 - **v2.69.102 · 27.11.2026:** Chain: weekly stop at 90 percent by default, 100 only for a round Maxi names (#1061)
