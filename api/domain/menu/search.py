@@ -543,7 +543,9 @@ def _takes_a_number_back(
         if head is None and (card_numbers[k] or not after[k]):
             continue
         text = piece if head is None else head
-        if not normalize_query(text) or has_number(text):
+        # A quantity in front goes with the number ("doch zweimal die 24"), so
+        # only a head of filler alone takes nothing back ("zweimal", "bitte").
+        if not normalize_query(text) or (head is None and has_number(text)):
             continue
         try:
             search(text)
@@ -573,10 +575,9 @@ _CARD_NUMBER_LEADS = frozenset({"die", "nummer", "nr"})
 
 
 def _words_before_card_number(piece: str, card: CardFormat) -> str | None:
-    """ "doch die 24", "ich meine die 13 mit Allergie": the words in front of a
-    card number said with its article or marker, alone or with a wish of its
-    own behind it; None when the piece holds no such number behind words of
-    its own."""
+    """ "doch die 24", "ich meine die 13 mit Allergie", "ich meine 24": the words
+    in front of a card number, alone or with a wish of its own behind it; None
+    when the piece holds no such number behind words of its own."""
     words = piece.split()
     # Without a number behind it a lead is never a card number
     # (`could_hold_item_number`), so the rest of the piece is read only behind
@@ -593,6 +594,17 @@ def _words_before_card_number(piece: str, card: CardFormat) -> str | None:
             and _leads_with_card_number(" ".join(words[i:]), card)
         ):
             return " ".join(words[:i])
+    # Without its article only when the number reading takes the whole piece
+    # for this very number ("ich meine 24"): in "ist zwölf" the word in front is
+    # a heard letter of it (S12), in "Schärfe 2" a wish.
+    said = sole_item_number(piece, card)[0] if any(number_after[1:]) else None
+    if said is None:
+        return None
+    for j in range(1, len(words)):
+        if could_hold_item_number(words[j]):
+            ref = sole_item_number(" ".join(words[j:]), card)[0]
+            if ref is not None and ref.text == said.text:
+                return " ".join(words[:j])
     return None
 
 
@@ -900,10 +912,11 @@ def search_menu(
     # A card number kept whole beside more ("Pho Bo, äh, die 23", "die 23 und
     # Pho Bo statt Wan-Tan-Suppe"): the name search below strips it and would
     # take the name alone, so the number is asked for (#676).
+    # The same for a card number with a wish of its own ("die 23 mit Garnelen,
+    # ich meine die 13 mit Garnelen"): the name search over the wishes found a
+    # third dish (deep review of chain round 4 item 25).
     pieces = cut_at_separators(query)
-    if len(pieces) > 1 and any(
-        sole_item_number(p, card)[0] is not None for p in pieces
-    ):
+    if len(pieces) > 1 and any(_leads_with_card_number(p, card) for p in pieces):
         raise Ambiguous("Nummer neben mehr im Satz", say=SAY_WHICH_NUMBER)
 
     # 2. Exact alias. Aliases are stored as on the menu, often with an article

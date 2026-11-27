@@ -12,6 +12,7 @@ from api.config import settings
 from api.core.errors import Ambiguous, NotFound
 from api.db import get_db
 from api.domain.menu import has_item_number_marker
+from api.domain.menu import search as search_module
 from api.domain.menu.importer import (
     ALIASES_FILE,
     ALLERGENS_FILE,
@@ -20,6 +21,7 @@ from api.domain.menu.importer import (
     apply,
     parse,
 )
+from api.domain.menu.items import card_format
 from api.domain.menu.normalize import normalize_query
 from api.domain.menu.search import (
     CLEAR_MATCHES,
@@ -28,10 +30,15 @@ from api.domain.menu.search import (
     position_parts,
     search_menu,
 )
-from api.domain.menu.split import split_positions
+from api.domain.menu.split import raw_pieces, split_positions
 from api.main import app
 from api.models import MenuItem
 from api.tests.conftest import p95_ms
+from api.tests.test_domain_menu_search_linear import (
+    _eval_sentences,
+    _old_takes_a_number_back,
+    _test_sentences,
+)
 from scripts.seed import seed
 
 NOW = datetime(2026, 9, 18, 16, 0, tzinfo=UTC)
@@ -1558,7 +1565,13 @@ def _clear_parts(session, tid, said: str) -> list[str]:
         # after it, so nothing took the number before it back.
         ("die 23, ich meine die 24", "23"),
         ("die 23, ich meine die 13 mit Allergie", "23"),
-        ("die 23, nein die 24", "23"),
+        # Deep review of item 25: a quantity in front of the number goes with
+        # it, and a number without its article counts as well.
+        ("die 23, doch zweimal die 24", "23"),
+        ("die 23, quatsch zweimal die 24", "23"),
+        ("die 23, ich meine zweimal die 24", "23"),
+        ("die 23, ich meine 24", "23"),
+        ("S12, ich meine S1", "S12"),
     ],
 )
 def test_a_spoken_correction_never_books_both(session, sushi, said, taken_back):
@@ -1570,17 +1583,34 @@ def test_a_spoken_correction_never_books_both(session, sushi, said, taken_back):
     assert not any(taken_back in part for part in clear), clear
 
 
-def test_a_correction_in_a_list_takes_the_number_before_it_back(session, sushi):
+@pytest.mark.parametrize(
+    "said",
+    [
+        "die 23 und die 13, ich meine die 47",
+        "die 23 und die 13, ich meine 47",
+        "die 23 und die 13, doch zweimal die 47",
+    ],
+)
+def test_a_correction_in_a_list_takes_the_number_before_it_back(session, sushi, said):
     """docs/24: in "die 23 und die 13, ich meine die 47" the marker takes the
     13 back (or the whole list); the sentence asks instead of booking all
     three."""
-    clear = _clear_parts(session, sushi, "die 23 und die 13, ich meine die 47")
+    clear = _clear_parts(session, sushi, said)
     assert not any("13" in part for part in clear), clear
 
 
 @pytest.mark.parametrize(
     "said",
-    ["die 23, ich meine die 13 mit Allergie", "die 23 und die 13, ich meine die 47"],
+    [
+        "die 23, ich meine die 13 mit Allergie",
+        "die 23 und die 13, ich meine die 47",
+        # Deep review of item 25: kept whole, the name search over the wishes
+        # found the 24 (Sommerrollen mit Garnelen), a dish nobody named, or
+        # answered that nothing was found.
+        "Die 23 mit Garnelen, ich meine die 13 mit Garnelen.",
+        "die 23 ohne Zwiebeln, ich meine die 24 ohne Zwiebeln",
+        "die 23 ohne Zwiebeln, sorry, die 24 ohne Zwiebeln",
+    ],
 )
 def test_a_correction_without_a_comma_makes_the_search_ask(session, sushi, said):
     """docs/24: the whole search asks for the number instead of finding both."""
@@ -1595,6 +1625,7 @@ def test_a_correction_without_a_comma_makes_the_search_ask(session, sushi, said)
         ("die 13, ich nehme die 24", ["die 13", "ich nehme die 24"]),
         ("die 13, zweimal die 24", ["die 13", "zweimal die 24"]),
         ("die 13, bitte die 24", ["die 13", "bitte die 24"]),
+        ("die 13, noch 24", ["die 13", "noch 24"]),
     ],
 )
 def test_an_order_word_in_front_of_a_number_takes_nothing_back(
@@ -1603,6 +1634,27 @@ def test_an_order_word_in_front_of_a_number_takes_nothing_back(
     """docs/24: only words that hit no dish and are no filler or quantity take
     the number before them back; "ich nehme", "zweimal", "bitte" leave both."""
     assert _clear_parts(session, sushi, said) == clear
+
+
+def test_takes_back_wherever_the_old_version_did_on_a_real_menu(session, sushi) -> None:
+    """The stub search of test_domain_menu_search_linear.py cannot hold the
+    new version to the old one where only the words in front of a number are
+    searched (`_words_before_a_number` there). On the test menu with the real
+    search, every sentence the old version kept whole (and asked about) stays
+    whole: the change only adds questions (deep review of chain round 4 item
+    25, "die 23, doch zweimal die 24")."""
+    card = card_format(session, sushi)
+    find = search_module._piece_search(session, sushi, NOW, None, None, card)
+    lost = []
+    for sentence in sorted(_test_sentences() | _eval_sentences()):
+        pieces = raw_pieces(sentence)
+        if len(pieces) < 2:
+            continue
+        if _old_takes_a_number_back(
+            find, pieces, card
+        ) and not search_module._takes_a_number_back(find, pieces, card):
+            lost.append(sentence)
+    assert lost == []
 
 
 def test_a_number_said_again_is_not_split_off_in_a_part(session, tenant_id):
