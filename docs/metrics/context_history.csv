@@ -103,3 +103,4 @@ date,task,session,model,calls,first,at_first_edit,last,peak
 2026-11-26,chain-item-28,5b5168fa-513c-4ca8-abc3-afd1f1889789,claude-sonnet-5-5,11,104848,136331,145753,145753
 2026-11-27,chain-r4-item-1,a586a3fc-3759-456b-b93e-abe167f47b4e,claude-sonnet-5-5,8,105192,146184,153283,153283
 2026-11-27,#1063,9825f847-dec2-4142-84dd-9d8b37e9f6de,claude-opus-5-5,37,106008,140199,186867,186867
+2026-11-27,chain-r4-item-8,a22ecf6e-f40e-4b7d-affe-5e9bb78eb57b,claude-opus-5-5,26,106006,139839,157335,157335
