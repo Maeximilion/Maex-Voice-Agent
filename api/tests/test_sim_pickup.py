@@ -926,6 +926,29 @@ def test_two_numbers_with_their_own_wishes_reach_the_order(session, tenant):
     assert _notes(session, order) == ["ohne Karotten", "WICHTIG !!! Allergie: Erdnüsse"]
 
 
+@pytest.mark.parametrize(
+    ("line", "note"),
+    [
+        (
+            "Zweimal die 13, die eine mit Erdnussallergie.",
+            "WICHTIG !!! Allergie: Erdnuss",
+        ),
+        ("Zweimal die 13, die eine ohne Koriander.", "ohne Koriander"),
+    ],
+)
+def test_a_wish_for_one_of_two_portions_stays_with_the_dish(
+    session, tenant, line, note
+):
+    """Deep review of item 14: "die eine" points back at a portion just named.
+    Read as a card number it left the 13 without its allergy or removal; the
+    wish stays with the 13, as before."""
+    _, turns = _bestellung(session, tenant, line)
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert positions(session, order) == [("13", 2, [])]
+    assert _notes(session, order) == [note]
+
+
 def test_option_als_wunsch_erspart_die_rueckfrage(session, tenant):
     """ "mit Huhn" ist die Option der Pflichtgruppe Fleisch: keine Frage mehr
     nach Ente oder Huhn, die Wahl steht in der Bestellung."""

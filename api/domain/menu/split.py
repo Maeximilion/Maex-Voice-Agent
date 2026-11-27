@@ -20,15 +20,15 @@ ist. Im Zweifel bleibt der Satz ganz, und `search_menu` antwortet laut mit
   "Ente süß und sauer", "Nummer 23, ohne Zwiebeln" - und der Satz bleibt ganz
   (Codex PR #124). Beginnt ein Teil nach der Menge mit "ohne", "mit" oder
   "extra", ist er ein Hinweis zur Position davor, keine neue. A card number
-  with its own word ("die 13", "Nummer 13") is the exception: "die 13 mit
-  Allergie" opens a position of its own, its wish stays with it (docs/24).
+  with its own word ("die 13", "Nummer 13", `_names_card_number`) is the
+  exception: "die 13 mit Allergie" opens a position of its own, its wish
+  stays with it (docs/24).
 
 Optionen ("Nummer 23 mit Erdnusssauce") trennt das nicht: "mit" hängt an der
 Position, die Sauce ist Option und kein zweites Gericht.
 """
 
 import re
-from itertools import pairwise
 
 from api.domain.menu.numberwords import (
     ALTERNATIVE_WORDS,
@@ -56,8 +56,6 @@ _NUMBER_MARKERS = frozenset({"nummer", "nr", "no"})
 # Nach fold(). Deckungsgleich mit numberwords._QUANTITY_NOUNS.
 _QUANTITY_NOUNS = frozenset({"mal", "x", "portion", "portionen", "stueck", "stk", "st"})
 _MODIFIERS = frozenset({"ohne", "mit", "extra", "aber"})
-# What names a card number with its own word in front of it: "die 13", "Nummer 13".
-_CARD_LEADS = _DETERMINERS | _NUMBER_MARKERS
 # The first half of "drei und zwanzig".
 _UNITS = range(1, 10)
 # Next to every hesitation (`_full_words`, numberwords.hesitation).
@@ -234,14 +232,23 @@ def _modifies(part: str) -> bool:
 
 
 def _names_card_number(prefix: list[str]) -> bool:
-    """Does the prefix name a card number with its own word ("die 13", "Nummer
-    13", "zweimal die 13")? Then the wish behind it is that dish's own: "die 23
-    ohne Karotten und die 13 mit Allergie" is two positions, each with its own
-    wish, while "2 x ohne Koriander" still belongs to the position before
-    (docs/24, own test PR #139)."""
-    return any(
-        word in _CARD_LEADS and _is_number(after) for word, after in pairwise(prefix)
-    )
+    """Does the prefix end in a card number with its own word ("die 13",
+    "Nummer 13", "zweimal die 13")? Then the wish behind it is that dish's own:
+    "die 23 ohne Karotten und die 13 mit Allergie" is two positions, each with
+    its own wish (docs/24, own test PR #139).
+
+    The same words also point back at portions just named: "zweimal die 13,
+    die eine mit Erdnussallergie", "zwei Pho Bo, die zwei ohne Koriander". Such
+    a word is an article, a number word or a small number, so behind die/der/
+    das/den only digits of two or more count; a single digit or a number word
+    counts behind "Nummer" alone. Everything else keeps the old rule and stays
+    with the position before, as does a quantity ("die 2 x ohne Koriander")."""
+    if len(prefix) < 2:
+        return False
+    lead, number = prefix[-2], prefix[-1]
+    if lead in _NUMBER_MARKERS:
+        return number not in _ARTICLES and _is_number(number)
+    return lead in _DETERMINERS and number.isdigit() and len(number) > 1
 
 
 def _is_prefix_word(word: str) -> bool:
