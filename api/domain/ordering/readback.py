@@ -39,7 +39,7 @@ def readback(
     contract). `address` is the one the guest said in this call. None on a
     delivery means a stored one, and `name_heard` False a stored name: neither
     is said aloud, the guest only hears the question (L12)."""
-    satz = " ".join(_spoken_line(line) for line in lines)
+    satz = " ".join(spoken_line(line) for line in lines)
     if order.note:
         # The note of the whole order after its dishes (D24), repeated like
         # the note of a line, and named as the guest's: "keine Erdnüsse" is
@@ -78,7 +78,7 @@ def _spoken_address(address: Address) -> str:
     return f"{text}, {address.floor_note}" if address.floor_note else text
 
 
-def _spoken_line(line: SpokenLine) -> str:
+def spoken_line(line: SpokenLine) -> str:
     text = (
         f"{spoken_times(line.quantity).capitalize()} Nummer {spoken_card(line.number)} "
         f"{line.name}"

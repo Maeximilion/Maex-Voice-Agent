@@ -213,7 +213,8 @@ arms the claim check above, since it names no allergen (#763, Maxi
 14.11.2026)
 
 Every other allergen word decides by where it comes from, never by German
-grammar (#798, Maxi 18.11.2026). For each guest turn the core records the
+grammar (#798, Maxi 18.11.2026), with one exception: the model never
+speaks a denial (#1022, Maxi 27.11.2026, `guards.denials`). For each guest turn the core records the
 guest's sentence, the menu text the turn's tools delivered (dish, option and
 description names; never the search's `wish` nor a lookup's `allergens`)
 and the order text the core accepted in this turn (changed cart lines, the
@@ -243,7 +244,40 @@ up (`guards.is_open`)
        the guest named in this turn); whole dish names of the search are
        menu data. A clause that names a dish is licensed by that dish's own
        text, one that names none by the dishes its sentence or the sentence
-       before it named. An unlicensed word, or "Allergene" or "Allergiker"
+       before it named. The model's own words of the turn that hold a
+       negation word ("ohne", "kein...", "weder", "frei von", "nicht",
+       "nichts") and an allergen are held, whatever the negation speaks of
+       and in whichever of their sentences: the dish's text names what it
+       may hold, never what it lacks ("Die 47 ist ohne Erdnüsse" next to
+       the 47's option "Erdnuss", #1022, Maxi 27.11.2026: the redesign after
+       three review rounds of a span reader). The test is monotone, no
+       added word lets such words through, so "Die 47 mit Erdnuss, ohne
+       Koriander" is held too, and so are "Erdnüsse? Keine." and "in der
+       Nr. 47 nicht drin". A stock phrase that is a clause of its own
+       ("Kein Problem, ...") denies nothing, "Erdnüsse sind da kein
+       Problem" does. Outside a call where the guest named an allergy
+       neither does an offered variant ("mit oder ohne Erdnusssauce",
+       "mit Erdnusssauce oder ohne?") nor, in words that name no dish by
+       card number (also as a number word) or whole name, what is sold out
+       ("keine Garnelen mehr", "Garnelen haben wir nicht mehr"). With the
+       order changed in the turn, and the turn not open, the guest hears
+       the core instead, with no retry: the read-back of a draft of the
+       turn, else each changed line as the read-back says it ("Einmal
+       Nummer 47 Ente knusprig mit Ente, Ihr Hinweis: ohne Erdnuss.",
+       `guards.wish_says`), then the tools' own answers of the turn (a dish
+       sold out); the model's follow-up question is lost that turn. Only
+       when each denied allergen stands on a note or option of the order:
+       a wish the model left out of the `cart` would be lost unheard, so
+       that sentence goes back once, its hint asking for the note. A
+       changed line whose note names an additive goes to the team, as a
+       draft does (#649). Otherwise it goes back once, then as below.
+       "Erdnuss-frei", "erdnußfrei", "garnelenfrei" and "Erdnuss frei" at
+       the end of its clause are claims like "erdnussfrei"; "Fisch frei
+       wählen" is none; "frei von" is only this soft hold, so "frei von 18
+       bis 20 Uhr" next to a peanut option hands nothing over. A cart note
+       may claim an absence ("enthält keine Erdnüsse", "Erdnüsse sind
+       nicht enthalten") only of what the guest named. An
+       unlicensed word, or "Allergene" or "Allergiker"
        in the model's own words, goes back once, then as above; in a call
        where the guest named an allergy the retry may say only core
        sentences (`HINT_ALLERGY_CALL`). Where the guest named an allergy
@@ -275,8 +309,8 @@ up (`guards.is_open`)
        ("Gern, die 47 mit Erdnuss ist notiert." next to that line), checked
        by `unlicensed`. A retry after a sentence refused with an allergen
        word of the model's own stays strict (#860), also where the dish's
-       own text licenses the word ("Die 47 hat keine Erdnüsse.", the 47's
-       option "Erdnuss"). A
+       own text licenses the word ("Die 47 hat Erdnusssauce dabei.", the
+       47's option "Erdnuss"). A
        refused sentence that states a price (an amount in euro or cent) of
        a dish this turn's search found, and no search of the turn with a
        wish, gets the core's sentence at once, with no retry: its price

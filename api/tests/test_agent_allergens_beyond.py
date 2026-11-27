@@ -2346,14 +2346,8 @@ def test_a_note_that_names_a_dish_goes_back(session, known_tenant):
             None,
             None,
         ),
-        # The wish stands in the note of the line that changed in this turn.
-        (
-            "Die 13 ohne Erdnüsse bitte.",
-            ["search 13"],
-            "Die 13 ohne Erdnüsse ist kein Problem.",
-            {"note": "ohne Erdnüsse"},
-            None,
-        ),
+        # A wish read back with its denial is the core's line since #1022
+        # (test_the_guests_own_wish_is_read_back_by_the_core).
         # The database text of the dish itself names soy.
         (
             "Was ist in der 25?",
@@ -2403,7 +2397,8 @@ def test_a_wish_the_model_did_not_write_into_the_cart_gets_one_hint(
     session, card_tenant
 ):
     """Row 3: the guest's "Erdnüsse" is explained by nothing until the wish
-    stands in the `cart`."""
+    stands in the `cart`; then the core says the line, since the model
+    never speaks a denial (#1022)."""
     state = state_for(session, card_tenant, phone=CALLER)
     pho = str(item(session, card_tenant, "13"))
     answer = "Die 13 ohne Erdnüsse ist kein Problem."
@@ -2419,7 +2414,7 @@ def test_a_wish_the_model_did_not_write_into_the_cart_gets_one_hint(
     )
 
     assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_ALLERGY_TURN
-    assert result.say == [answer]
+    assert result.say == ["Einmal Nummer 13 Pho Bo, Ihr Hinweis: ohne Erdnüsse."]
     assert not state.allergen_question_open
 
 
@@ -2551,7 +2546,8 @@ def test_a_pending_question_is_cleared_by_an_order_change(session, known_tenant)
     )
 
     assert not result.ended
-    assert result.say == [answer]
+    # The model never speaks a denial: the core says the line (#1022).
+    assert result.say == ["Einmal Nummer 13 Pho Bo, Ihr Hinweis: ohne Sesam."]
     assert not state.allergen_question_open
 
 
@@ -2709,7 +2705,8 @@ def test_the_guests_allergy_note_licenses_no_claim_in_a_later_turn(
     """Review of #798 (P1): the guest's own allergy, written on the line of
     the dish ordered a turn later, is health data, not menu or order text.
     It must not license a peanut claim the database does not hold. In a call
-    about an allergy the retry is a core sentence (deep review of #860)."""
+    about an allergy the retry is a core sentence (deep review of #860);
+    since #1022 the core says the changed line at once, with no retry."""
     state = state_for(session, known_tenant, phone=CALLER)
     run(
         session,
@@ -2723,7 +2720,6 @@ def test_the_guests_allergy_note_licenses_no_claim_in_a_later_turn(
         "quantity": 1,
         "note": "WICHTIG !!! Kunde ist allergisch auf Erdnüsse",
     }
-    plain = guards.SAY_ALLERGY_NOTED
 
     result, llm = run(
         session,
@@ -2731,11 +2727,11 @@ def test_the_guests_allergy_note_licenses_no_claim_in_a_later_turn(
         "Dann nehme ich die 13.",
         searches("13"),
         LLMTurn(say=claim, cart=[line]),
-        LLMTurn(say=plain),
     )
 
-    assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_ALLERGY_CALL
-    assert result.say == [plain]
+    assert said_nowhere(result, claim)
+    assert result.say == [f"Einmal Nummer 13 Pho Bo, Ihr Hinweis: {line['note']}."]
+    assert len(llm.calls) == 2
     assert state.cart == [line]
 
 
@@ -3659,3 +3655,574 @@ def test_a_sold_out_dish_gets_its_sold_out_sentence(session, known_tenant):
     )
 
     assert result.say == ["Die 13, Pho Bo, ist heute leider aus."]
+
+
+ENTE_LINE = [{"group": "Fleisch", "name": "Ente"}]
+# What the core says for a line of the 47 in place of a model sentence that
+# denies an allergen (#1022, redesign: the model never speaks a denial).
+ENTE_SAYS = "Einmal Nummer 47 Ente knusprig mit Ente"
+
+
+def ente(session, tenant_id, **extra) -> dict:
+    return {
+        "menu_item_id": str(item(session, tenant_id, "47")),
+        "quantity": 1,
+        "options": ENTE_LINE,
+        **extra,
+    }
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "Gern, die 47 ist ohne Erdnüsse, ich trage sie ein.",
+        "Die 47 hat keine Erdnüsse, ist notiert.",
+        "Gern, die 47 ist frei von Erdnüssen.",
+        "Gern, Erdnüsse sind in der 47 nicht drin.",
+        # Deep review of #1065: a bare "nicht", a reassurance and a split.
+        "Gern, Erdnüsse enthält die 47 nicht.",
+        "Gern, die 47 ist notiert. Erdnüsse sind da kein Problem.",
+        "Gern, Erdnüsse sind in der Nr. 47 nicht drin.",
+    ],
+)
+def test_a_denied_allergen_next_to_an_order_step_never_reaches_the_guest(
+    session, known_tenant, claim
+):
+    """#1022 (redesign, Maxi 27.11.2026): the 47's option "Erdnuss" licensed
+    every word for peanuts in a clause about the 47, also one that denies
+    them. In a call about a peanut allergy, with an order step in the turn,
+    "die 47 ist ohne Erdnüsse" reached the guest; the database holds no
+    allergen for the 47 (hard rule 1). The guest wished nothing, so no line
+    names the peanut: the sentence goes back once, then the offer (deep
+    review of #1065: the core's line would drop the denial unheard)."""
+    state = allergic_call(session, known_tenant)
+
+    result, _ = run(
+        session,
+        state,
+        "Dann nehme ich die 47.",
+        searches("47"),
+        LLMTurn(say=claim, cart=[ente(session, known_tenant)]),
+        LLMTurn(say=claim, cart=[ente(session, known_tenant)]),
+    )
+
+    assert said_nowhere(result, claim)
+    assert result.say == [guards.SAY_ALLERGENS_OFFER]
+
+
+@pytest.mark.parametrize(
+    "claim", ["Die 47 ist Erdnuss-frei.", "Die 47 ist Erdnuss frei."]
+)
+def test_a_free_from_word_written_apart_is_a_claim(session, known_tenant, claim):
+    """The stopped parallel build of #1022: "Erdnuss-frei" and "Erdnuss frei"
+    passed both checks on 422b225b. They say what "erdnussfrei" says, so the
+    team answers (L17)."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    assert guards.allergen_claim(state, claim) is guards.ALLERGEN_CLAIM
+    result, _ = run(
+        session,
+        state,
+        "Dann nehme ich die 47.",
+        searches("47"),
+        LLMTurn(say=claim, cart=[ente(session, known_tenant)]),
+    )
+
+    assert said_nowhere(result, claim)
+    assert result.say[0] == SAY_ALLERGENS_BEYOND
+
+
+def test_a_denied_allergen_about_a_dish_is_refused_outside_an_allergy_call(
+    session, known_tenant
+):
+    """#1022: the same in a call that never spoke of an allergy. With the
+    order unchanged the sentence goes back once, then the guest hears the
+    offer."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    claim = "Die 47 hat keine Erdnüsse."
+
+    result, llm = run(
+        session,
+        state,
+        "Was ist die 47?",
+        searches("47"),
+        LLMTurn(say=claim),
+        LLMTurn(say=claim),
+    )
+
+    assert said_nowhere(result, claim)
+    assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_UNLICENSED_ALLERGEN
+    assert result.say == [guards.SAY_ALLERGENS_OFFER]
+
+
+def test_the_guests_own_wish_is_read_back_by_the_core(session, known_tenant):
+    """#1022 (redesign): the guest's own "ohne Erdnuss" on the line is said by
+    the core, named as the guest's note, never in the model's words."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    noted = "Gern, die 47 mit Ente ohne Erdnuss ist notiert."
+
+    result, _ = run(
+        session,
+        state,
+        "Die 47 mit Ente, aber ohne Erdnuss bitte.",
+        searches("47"),
+        LLMTurn(say=noted, cart=[ente(session, known_tenant, note="ohne Erdnuss")]),
+    )
+
+    assert result.say == [ENTE_SAYS + ", Ihr Hinweis: ohne Erdnuss."]
+
+
+def test_an_affirmative_read_back_with_an_allergen_option_is_heard(
+    session, known_tenant
+):
+    """#1022: a sentence with no denial is checked as before; the option
+    "Erdnuss" of the order licenses "mit Erdnuss"."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    line = ente(session, known_tenant)
+    line["options"] = [*ENTE_LINE, {"group": "Sauce", "name": "Erdnuss"}]
+    noted = "Gern, die 47 mit Ente und Erdnuss ist notiert."
+
+    result, _ = run(
+        session,
+        state,
+        "Die 47 mit Ente und Erdnuss.",
+        searches("47"),
+        LLMTurn(say=noted, cart=[line]),
+    )
+
+    assert result.say == [noted]
+
+
+@pytest.mark.parametrize(
+    ("say", "note"),
+    [
+        # Codex review of #1065 (P1): an allergen option next to a denied
+        # extra is no denial of the option; the core says the line.
+        ("Gern, die 47 mit Ente und Erdnuss, ohne Koriander, ist notiert.", None),
+        ("Die 47 bekommt Erdnusssauce und keinen Koriander.", "ohne Koriander"),
+    ],
+)
+def test_a_negation_next_to_an_allergen_option_is_said_by_the_core(
+    session, known_tenant, say, note
+):
+    """#1022 (redesign): a sentence with a negation and an allergen is held
+    whatever the negation speaks of (a test no added word can undo); with the
+    order changed the guest hears the core's line, option and note."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    line = ente(session, known_tenant, **({"note": note} if note else {}))
+    line["options"] = [*ENTE_LINE, {"group": "Sauce", "name": "Erdnuss"}]
+
+    result, _ = run(
+        session,
+        state,
+        "Die 47 mit Ente und Erdnuss, ohne Koriander bitte.",
+        searches("47"),
+        LLMTurn(say=say, cart=[line]),
+    )
+
+    heard = "Einmal Nummer 47 Ente knusprig mit Ente und Erdnuss"
+    assert result.say == [heard + (f", Ihr Hinweis: {note}." if note else ".")]
+
+
+def test_an_option_is_said_with_the_cards_spelling(session, known_tenant):
+    """Check of the redesign: a cart option carries `name` (any case),
+    the read-back line `option`; the core speaks the card's spelling."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    line = ente(session, known_tenant, note="ohne Erdnuss")
+    line["options"] = [{"group": "fleisch", "name": "ENTE"}]
+
+    result, _ = run(
+        session,
+        state,
+        "Die 47 mit Ente, ohne Erdnuss.",
+        searches("47"),
+        LLMTurn(say="Die 47 ohne Erdnuss ist notiert.", cart=[line]),
+    )
+
+    assert result.say == [ENTE_SAYS + ", Ihr Hinweis: ohne Erdnuss."]
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "Gern, die 47 ohne Koriander und ohne Erdnüsse ist notiert.",
+        "Gern, die 47 ohne Koriander, Zwiebeln und Erdnüsse, ist notiert.",
+        "Gern, die 47 enthält keinerlei Erdnüsse, ich trage sie ein.",
+        "Gern, ich trage die 47 ein. Erdnüsse hat die 47 keine.",
+        "Gern, die 47 ist ganz ohne jegliche Spuren von Erdnüssen.",
+    ],
+)
+def test_every_form_of_the_denial_stays_held(session, known_tenant, claim):
+    """Deep review of #1022: a second negation, a list across commas,
+    "keinerlei", the allergen in front and a long window let the 47's option
+    license the denial again. No line names the peanut: back once, then the
+    offer."""
+    state = allergic_call(session, known_tenant)
+    line = ente(session, known_tenant, note="ohne Koriander")
+
+    result, _ = run(
+        session,
+        state,
+        "Dann nehme ich die 47 ohne Koriander.",
+        searches("47"),
+        LLMTurn(say=claim, cart=[line]),
+        LLMTurn(say=claim, cart=[line]),
+    )
+
+    assert said_nowhere(result, claim)
+    assert result.say == [guards.SAY_ALLERGENS_OFFER]
+
+
+def test_a_guests_question_is_no_wish_the_model_may_deny(session, known_tenant):
+    """Deep review of #1022: the guest only asks whether the 47 has peanuts;
+    the model's answer "ohne Erdnuss" never reaches them."""
+    state = allergic_call(session, known_tenant)
+    claim = "Gern, die 47 ohne Erdnuss ist notiert."
+
+    result, _ = run(
+        session,
+        state,
+        "Ist in der 47 Erdnuss? Sonst nehme ich die.",
+        searches("47"),
+        LLMTurn(say=claim, cart=[ente(session, known_tenant)]),
+        LLMTurn(say=claim, cart=[ente(session, known_tenant)]),
+    )
+
+    assert said_nowhere(result, claim)
+    # Deep review of #1065: the bare order line would read as the answer.
+    assert result.say == [guards.SAY_ALLERGENS_OFFER]
+
+
+def test_an_offered_variant_is_heard_outside_an_allergy_call(session, known_tenant):
+    """Deep review of #1022: "mit oder ohne Erdnusssauce" asks the guest to
+    choose an option (docs/14); outside a call about an allergy it is heard."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    asked = "Gern. Möchten Sie die 47 mit oder ohne Erdnusssauce?"
+
+    result, _ = run(
+        session, state, "Ich nehme die 47 mit Ente.", searches("47"), LLMTurn(say=asked)
+    )
+
+    assert result.say == [asked]
+
+
+def test_a_wish_of_an_earlier_turn_goes_back_once_in_a_recap(session, known_tenant):
+    """Codex review of #1065 (P1, round 3): a recap of an accepted wish in a
+    turn that changes no order is held like any denial (redesign): it goes
+    back once, and the retry without the denial is heard."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    run(
+        session,
+        state,
+        "Die 47 mit Ente, aber ohne Erdnuss bitte.",
+        searches("47"),
+        LLMTurn(
+            say="Gern, die 47 ist notiert.",
+            cart=[ente(session, known_tenant, note="ohne Erdnuss")],
+        ),
+    )
+    recap = "Die 47 mit Ente ohne Erdnuss kostet 15 Euro 50."
+    retry = "Die 47 mit Ente kostet 15 Euro 50."
+
+    result, _ = run(
+        session,
+        state,
+        "Was kostet die 47 jetzt?",
+        searches("47"),
+        LLMTurn(say=recap),
+        LLMTurn(say=retry),
+    )
+
+    assert result.say == [retry]
+
+
+def test_a_two_dish_recap_with_one_wish_is_said_by_the_core(session, known_tenant):
+    """Codex review of #1065 (P1, round 3): "Die 47 mit Ente ohne Erdnuss,
+    die 13 ist auch notiert." reached the offer when the 13's line denied
+    nothing. Now the core says each changed line with its own note."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    pho = {"menu_item_id": str(item(session, known_tenant, "13")), "quantity": 1}
+    recap = "Die 47 mit Ente ohne Erdnuss, die 13 ist auch notiert."
+
+    result, _ = run(
+        session,
+        state,
+        "Die 47 mit Ente ohne Erdnuss und die 13.",
+        searches("47"),
+        searches("13"),
+        LLMTurn(
+            say=recap, cart=[ente(session, known_tenant, note="ohne Erdnuss"), pho]
+        ),
+    )
+
+    assert result.say == [
+        ENTE_SAYS + ", Ihr Hinweis: ohne Erdnuss. Einmal Nummer 13 Pho Bo."
+    ]
+
+
+def test_a_time_range_next_to_an_allergen_option_hands_nothing_over(
+    session, known_tenant
+):
+    """Codex review of #1065 (P1, round 3): "frei von 18 bis 20 Uhr" before
+    an affirmative peanut option sent the call to the team as a claim. "frei
+    von" is a soft hold now: the core says the changed line."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    line = ente(session, known_tenant)
+    line["options"] = [*ENTE_LINE, {"group": "Sauce", "name": "Erdnuss"}]
+    say = (
+        "Der Tisch ist frei von 18 bis 20 Uhr und die 47 mit Erdnusssauce ist notiert."
+    )
+
+    assert guards.allergen_claim(state, say) is None
+    result, _ = run(
+        session,
+        state,
+        "Die 47 mit Ente und Erdnuss.",
+        searches("47"),
+        LLMTurn(say=say, cart=[line]),
+    )
+
+    assert result.say == ["Einmal Nummer 47 Ente knusprig mit Ente und Erdnuss."]
+    assert not state.transferred
+
+
+def test_a_denial_next_to_a_draft_gives_the_read_back(session, known_tenant):
+    """#1022 (redesign): a denial next to a draft of this turn is replaced by
+    the core's read-back, which says every line and note."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    line = ente(session, known_tenant, note="ohne Erdnuss")
+    draft = ToolCall(
+        "draft_order",
+        {
+            "type": "pickup",
+            "customer": {"name": "Müller", "phone": CALLER},
+            "items": [line],
+        },
+    )
+
+    result, _ = run(
+        session,
+        state,
+        "Die 47 mit Ente ohne Erdnuss auf Müller zum Abholen.",
+        searches("47"),
+        LLMTurn(tool_call=draft),
+        LLMTurn(say="Die 47 ist ohne Erdnüsse, passt das so?"),
+    )
+
+    assert state.stage == "readback_pending"
+    assert state.readback is not None
+    assert result.say == [state.readback]
+    assert "Ihr Hinweis: ohne Erdnuss" in state.readback
+
+
+def test_a_denial_in_an_open_turn_still_goes_back(session, known_tenant):
+    """#1022 (redesign): in a turn where the guest speaks of an allergy the
+    retry stays, whose hint asks for the kitchen's note; the core's line
+    would leave it unnoted."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    claim = "Gern, die 47 ohne Erdnuss ist notiert."
+    line = ente(session, known_tenant, note="ohne Erdnuss")
+
+    result, llm = run(
+        session,
+        state,
+        "Ich habe eine Erdnussallergie, die 47 mit Ente bitte ohne Erdnuss.",
+        searches("47"),
+        LLMTurn(say=claim, cart=[line]),
+        LLMTurn(say=guards.SAY_ALLERGY_NOTED, cart=[line]),
+    )
+
+    assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_ALLERGY_TURN
+    assert said_nowhere(result, claim)
+    assert result.say == [guards.SAY_ALLERGY_NOTED]
+
+
+@pytest.mark.parametrize(
+    "note", ["Enthält keine Erdnüsse", "Erdnüsse sind nicht enthalten"]
+)
+def test_a_cart_note_that_denies_an_option_allergen_is_never_read_back(
+    session, known_tenant, note
+):
+    """Deep review of #1022: the 47's option "Erdnuss" licensed the note
+    "Enthält keine Erdnüsse" on its line, read back as the guest's note; the
+    deep review of #1065 found the "nicht" form."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    claimed = ente(session, known_tenant, note=note)
+    plain = ente(session, known_tenant)
+
+    result, llm = run(
+        session,
+        state,
+        "Die 47 mit Ente bitte.",
+        searches("47"),
+        LLMTurn(say="Die 47 ist notiert.", cart=[claimed]),
+        LLMTurn(say="Die 47 ist notiert.", cart=[plain]),
+    )
+
+    assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_NOTE_CLAIM
+    assert result.say == ["Die 47 ist notiert."]
+
+
+def test_frei_von_is_no_claim_but_a_word_with_frei_is(session, known_tenant):
+    """#1022 (redesign): "frei von" reads a span, so it is a soft hold
+    (`denials`), never a handover; "erdnussfrei" and "Erdnuss-frei" are."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    assert guards.allergen_claim(state, "Die 47 ist frei von Erdnüssen.") is None
+    assert guards.allergen_claim(state, "Die 47 ist erdnussfrei.") is (
+        guards.ALLERGEN_CLAIM
+    )
+    assert guards.allergen_claim(state, "Die 47 ist Ei-frei.") is guards.ALLERGEN_CLAIM
+    assert guards.allergen_claim(state, "Ist der Tisch frei?") is None
+    # Deep review of #1065: written apart only at the end of its clause
+    # ("frei wählen", "frei dazu" claim nothing); "ß" read as "ss".
+    for claim in (
+        "Die 47 ist Erdnuss frei, ich trage sie ein.",
+        "Die 47 ist erdnußfrei.",
+        "Die 23 ist garnelenfrei.",
+    ):
+        assert guards.allergen_claim(state, claim) is guards.ALLERGEN_CLAIM
+    for plain in (
+        "Bei der 47 können Sie zwischen Ente, Huhn und Fisch frei wählen.",
+        "Ketchup und Senf frei dazu.",
+        "Ein Ei frei dazu.",
+        "Den Salat gibt es mit Senf frei wählbar.",
+    ):
+        assert guards.allergen_claim(state, plain) is None
+
+
+def test_a_wish_survives_a_quantity_change(session, known_tenant):
+    """Codex review of #1065 (P1): "Davon bitte zwei" changes the line's
+    quantity; the core says the line with its accepted note."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    line = ente(session, known_tenant, note="ohne Erdnuss")
+    run(
+        session,
+        state,
+        "Die 47 mit Ente, aber ohne Erdnuss bitte.",
+        searches("47"),
+        LLMTurn(say="Gern, die 47 ist notiert.", cart=[line]),
+    )
+
+    result, _ = run(
+        session,
+        state,
+        "Davon bitte zwei.",
+        LLMTurn(
+            say="Die 47 mit Ente ohne Erdnuss ist zweimal notiert.",
+            cart=[{**line, "quantity": 2}],
+        ),
+    )
+
+    assert result.say == [
+        "Zweimal Nummer 47 Ente knusprig mit Ente, Ihr Hinweis: ohne Erdnuss."
+    ]
+
+
+def test_a_note_with_a_list_of_exclusions_is_said_by_the_core(session, known_tenant):
+    """Codex review of #1065 (P1): the note "ohne Koriander, Zwiebeln und
+    Erdnüsse" is said as the guest's note."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    note = "ohne Koriander, Zwiebeln und Erdnüsse"
+
+    result, _ = run(
+        session,
+        state,
+        "Die 47 mit Ente ohne Koriander, Zwiebeln und Erdnüsse bitte.",
+        searches("47"),
+        LLMTurn(
+            say="Die 47 mit Ente ohne Koriander, Zwiebeln und Erdnüsse ist notiert.",
+            cart=[ente(session, known_tenant, note=note)],
+        ),
+    )
+
+    assert result.say == [ENTE_SAYS + f", Ihr Hinweis: {note}."]
+
+
+def test_a_wish_missing_from_the_cart_goes_back_once(session, known_tenant):
+    """Deep review of #1065: the guest's "ohne Erdnuss" on no line would be
+    lost unheard behind the core's line; the retry's hint asks for the
+    note, and with it the core says the line."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    claim = "Die 47 ohne Erdnuss ist notiert."
+
+    result, llm = run(
+        session,
+        state,
+        "Die 47 mit Ente, ohne Erdnuss.",
+        searches("47"),
+        LLMTurn(say=claim, cart=[ente(session, known_tenant)]),
+        LLMTurn(say=claim, cart=[ente(session, known_tenant, note="ohne Erdnuss")]),
+    )
+
+    assert guards._DENIAL_HINT in json.loads(llm.calls[2][2])["hint"]
+    assert result.say == [ENTE_SAYS + ", Ihr Hinweis: ohne Erdnuss."]
+
+
+def test_the_tools_answers_stay_next_to_the_core_line(session, known_tenant):
+    """Deep review of #1065: the 13 is sold out; the guest hears that next to
+    the core's line of the 47, not the line alone."""
+    session.execute(
+        update(MenuItem)
+        .where(MenuItem.tenant_id == known_tenant, MenuItem.number == "13")
+        .values(sold_out_until=NOW + timedelta(hours=6))
+    )
+    session.flush()
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, _ = run(
+        session,
+        state,
+        "Die 47 mit Ente ohne Erdnuss und die 13.",
+        searches("47"),
+        searches("13"),
+        LLMTurn(
+            say="Die 13 ist heute leider aus. Die 47 ohne Erdnuss ist notiert.",
+            cart=[ente(session, known_tenant, note="ohne Erdnuss")],
+        ),
+    )
+
+    [heard] = result.say
+    assert heard.startswith(ENTE_SAYS + ", Ihr Hinweis: ohne Erdnuss. ")
+    assert "leider aus" in heard
+
+
+def test_an_additive_note_behind_a_denial_goes_to_the_team(session, known_tenant):
+    """Codex review of #1065 (P1): a cart note that names an additive is never
+    read aloud by the core's line; it goes to the team as a draft does
+    (#649)."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, _ = run(
+        session,
+        state,
+        "Die 47 mit Ente ohne Erdnuss bitte.",
+        searches("47"),
+        LLMTurn(
+            say="Die 47 ohne Erdnuss ist notiert.",
+            cart=[ente(session, known_tenant, note="ohne Erdnuss, ohne Glutamat")],
+        ),
+    )
+
+    assert result.say[0] == SAY_ALLERGENS_BEYOND
+    assert all("Glutamat" not in say for say in result.say)
+
+
+def test_a_booking_word_in_a_note_does_not_refuse_the_core_line(session, known_tenant):
+    """Deep review of #1065: `false_booking` read the core's own line, so a
+    note with "gebucht" sent it back on every hop."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    note = "ohne Erdnuss, für die bereits gebuchte Feier"
+
+    result, _ = run(
+        session,
+        state,
+        "Die 47 mit Ente ohne Erdnuss, für die bereits gebuchte Feier.",
+        searches("47"),
+        LLMTurn(
+            say="Die 47 ohne Erdnuss ist notiert.",
+            cart=[ente(session, known_tenant, note=note)],
+        ),
+    )
+
+    assert result.say == [ENTE_SAYS + f", Ihr Hinweis: {note}."]
