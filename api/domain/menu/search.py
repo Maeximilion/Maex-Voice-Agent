@@ -541,7 +541,14 @@ def _takes_a_number_back(
     after = [False] * len(pieces)
     for k in range(len(pieces) - 2, -1, -1):
         after[k] = after[k + 1] or leads[k + 1] or heads[k + 1] is not None
+    number_before = False
     for k, piece in enumerate(pieces[1:], start=1):
+        number_before = number_before or leads[k - 1] or has_number(pieces[k - 1])
+        # "Pho Bo, ich habe eine Erdnussallergie und die 23": behind a dish
+        # alone an allergy goes with it (`_keep_allergy_clauses`) and takes
+        # nothing back; behind a number it asks, as before item 31.
+        if not number_before and opens_with_allergy(piece):
+            continue
         # "die 24 meine ich": the number reading lets "meine", "genau" and a
         # pause through behind the number as well; besides order filler
         # ("bitte", "danke") each may take the number before back.
