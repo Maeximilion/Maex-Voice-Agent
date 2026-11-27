@@ -120,9 +120,7 @@ def _read(data: bytes, memo: bytes | None) -> Table:
         if memo_format is None:
             raise DbfError(f"Unbekanntes Memo-Format (Version 0x{data[0]:02x})")
     starts = (
-        _memo_starts(data, header_len, record_len, count, fields)
-        if memo_format == _MEMO_III
-        else []
+        _memo_starts(data, header_len, record_len, count, fields) if memo_format else []
     )
 
     rows: list[dict[str, str]] = []
@@ -181,16 +179,22 @@ def _memo_starts(
     for index in range(count):
         record = header_len + index * record_len
         for a, b in spans:
-            pointer = data[record + a : record + b].strip()
+            pointer = _pointer(data[record + a : record + b])
             if pointer.isdigit() and int(pointer):
                 starts.add(int(pointer))
     return sorted(starts)
 
 
+def _pointer(raw: bytes) -> str:
+    # One reading for _memo and _memo_starts: if they disagreed on padding, a
+    # pointer _memo follows would not bound the memo before it (#1074 review).
+    return raw.decode("ascii", "replace").strip()
+
+
 def _memo(
     memo: bytes, pointer: bytes, encoding: str, memo_format: str, starts: list[int]
 ) -> str:
-    text = pointer.decode("ascii", "replace").strip()
+    text = _pointer(pointer)
     if not text or text.strip("0") == "":
         return ""  # leer oder 0: kein Memo
     if not text.isdigit():
@@ -211,32 +215,51 @@ def _memo(
     start = int(text) * block_size
     if start >= len(memo):
         raise DbfError(f"Memo-Block {text} fehlt in der .DBT")
+    # A memo ends where the next memo starts, never in another record's text
+    # (Codex PR #149), in both formats. A next start beyond the file is a cut
+    # copy and is reported as one below.
+    # shortcut: blocks no record points at (an edited memo's old blocks, rows a
+    # PACK removed) and old text in a memo's own last block are not known, so a
+    # damaged memo before them still reads that text; upgrade with a real
+    # dBase III source (the register writes dBase IV, where the length decides).
+    after = bisect.bisect_right(starts, int(text))
+    nxt = starts[after] if after < len(starts) else None
+    bound = nxt * block_size if nxt is not None else len(memo)
+    if bound > len(memo):
+        nxt, bound = None, len(memo)
     if memo_format == _MEMO_IV_FORMAT:
         if memo[start : start + 4] != _MEMO_IV:
             raise DbfError(f"Memo-Block {text} ohne dBase-IV-Kennung, .DBT beschädigt")
+        if start + 8 > len(memo):
+            raise DbfError(f"Memo-Block {text} abgeschnitten")
         length = struct.unpack("<I", memo[start + 4 : start + 8])[0]
         # Halbes Memo ist kein kürzeres Memo: sonst fehlten z. B. Warengruppen
         # eines Extras still (Codex PR #149).
         if length < 8 or start + length > len(memo):
             raise DbfError(f"Memo-Block {text} abgeschnitten")
+        if start + length > bound:
+            raise DbfError(
+                f"memo block {text} runs into the next memo (block {nxt}), .DBT damaged"
+            )
         body = memo[start + 8 : start + length]
     else:
-        # A memo that lost its 0x1A ends where the next memo starts, never in
-        # another record's text (Codex PR #149).
-        # shortcut: blocks orphaned by an edited memo are not known, a damaged
-        # memo before one still reads that old text; upgrade with a real dBase III source.
-        after = bisect.bisect_right(starts, int(text))
-        if after < len(starts):
-            end = memo.find(_MEMO_III_END, start, starts[after] * block_size)
-            if end == -1:
-                raise DbfError(
-                    f"memo block {text} has no end marker before the next memo "
-                    f"(block {starts[after]}), .DBT damaged"
-                )
-        else:
-            end = memo.find(_MEMO_III_END, start)
+        end = memo.find(_MEMO_III_END, start, bound)
+        if end == -1 and nxt is not None:
+            raise DbfError(
+                f"memo block {text} has no end marker before the next memo "
+                f"(block {nxt}), .DBT damaged"
+            )
         if end == -1:
             raise DbfError(f"Memo-Block {text} ohne Ende, .DBT abgeschnitten")
         body = memo[start:end]
     # 0x8D 0x0A ist ein weicher Umbruch des Memo-Editors, kein "ì" (Review T-4.11).
-    return body.replace(b"\x8d\x0a", b"\r\n").decode(encoding).strip()
+    value = body.replace(b"\x8d\x0a", b"\r\n").decode(encoding)
+    # "002\x00" matches no product group and no allergen word, so the extra or
+    # the carrier check would drop out silently (#1074 review); like the NUL
+    # check of PR #169 the file is refused instead.
+    bad = next(
+        (c for c in value if (c < " " and c not in "\t\r\n") or c == "\x7f"), None
+    )
+    if bad is not None:
+        raise DbfError(f"memo block {text} holds control byte 0x{ord(bad):02x}")
+    return value.strip()
