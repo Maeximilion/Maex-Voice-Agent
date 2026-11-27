@@ -2,6 +2,8 @@
 
 import hashlib
 import json
+import os
+import subprocess
 import sys
 from datetime import date
 from pathlib import Path
@@ -1324,3 +1326,78 @@ def test_english_option_names_work_like_the_german_ones(tmp_path, monkeypatch, c
     csv_file = _alt_und_neu(tmp_path)
     assert main([str(csv_file), "--retention-days", "90", "--delete"]) == 0
     assert "Deleted: 1 entries" in capsys.readouterr().out
+
+
+# The script on its own (#983 points 1 and 5): a fresh interpreter, since this
+# one has long imported the settings and SQLAlchemy.
+_REPO = Path(__file__).resolve().parents[2]
+
+
+def _fresh(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    env = {k: v for k, v in os.environ.items() if k != "CALL_LOG_RETENTION_DAYS"}
+    env["PYTHONPATH"] = str(_REPO)
+    return subprocess.run(
+        [sys.executable, *args],
+        cwd=cwd,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("line", "named"),
+    [
+        ("CALL_LOG_RETENTION_DAYS=", "CALL_LOG_RETENTION_DAYS"),
+        ("TEAM_PHONE=07221 555", "TEAM_PHONE"),
+    ],
+)
+def test_an_invalid_env_file_is_exit_2_with_the_setting_named(tmp_path, line, named):
+    (tmp_path / ".env").write_text(line + "\n", encoding="utf-8")
+    log = tmp_path / "log.csv"
+    log.write_text(HEADER + _row(), encoding="utf-8")
+    result = _fresh(tmp_path, "-m", "scripts.call_log", str(log))
+    assert result.returncode == 2, result.stderr
+    assert "Traceback" not in result.stderr
+    assert named in result.stderr
+    assert "environment or .env" in result.stderr
+
+
+def test_a_period_on_the_command_line_needs_no_valid_env_file(tmp_path):
+    (tmp_path / ".env").write_text("CALL_LOG_RETENTION_DAYS=\n", encoding="utf-8")
+    log = tmp_path / "log.csv"
+    log.write_text(HEADER + _row(), encoding="utf-8")
+    result = _fresh(
+        tmp_path, "-m", "scripts.call_log", str(log), "--retention-days", "90"
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Retention: 0 entries older than 90 days" in result.stdout
+
+
+def test_the_script_imports_without_sqlalchemy(tmp_path):
+    code = (
+        "import sys\n"
+        "sys.modules['sqlalchemy'] = None\n"
+        "import scripts.call_log\n"
+        "assert 'api.domain.menu.search' not in sys.modules\n"
+    )
+    result = _fresh(tmp_path, "-c", code)
+    assert result.returncode == 0, result.stderr
+
+
+def test_the_menu_package_names_stay_importable():
+    """The lazy package still hands out its functions and submodules."""
+    from api.domain.menu import (
+        ItemNumber,
+        is_sold_out,
+        price_check,
+        search_menu,
+    )
+    from api.domain.menu.items import is_sold_out as direct
+    from api.domain.menu.numberwords import ItemNumber as number
+    from api.domain.menu.search import search_menu as search
+
+    assert (is_sold_out, ItemNumber, search_menu) == (direct, number, search)
+    assert price_check.__name__ == "api.domain.menu.price_check"
