@@ -465,7 +465,7 @@ def test_option_mit_unbekanntem_rest_wird_nicht_still_verkuerzt():
     """Codex PR #139, P2: "mit Nudeln und Pommes" - Pommes kennt die Karte nicht.
     Nur Nudeln zu nehmen verschwiege die Pommes; der Wunsch gilt als unbekannt."""
     assert wish_of("mit Nudeln und Pommes", BEILAGE).kind == "unknown"
-    # Was nach "statt" steht, ist das Ersetzte, kein weiterer Wunsch.
+    # The one word after "statt" is what is swapped out, no further wish.
     assert wish_of("mit Nudeln statt Reis bitte", BEILAGE).kind == "option"
 
 
@@ -2533,38 +2533,113 @@ def test_a_second_option_next_to_a_statt_option_is_kept():
 
 
 @pytest.mark.parametrize(
-    "said", ["Nudeln statt Reis und Huhn", "Nudeln statt Reis, mit Huhn"]
+    "said",
+    [
+        "Nudeln statt Reis, Huhn",
+        "Nudeln statt Reis, mit Huhn",
+        "Nudeln statt Reis, und Huhn",
+        "Huhn statt Ente, Nudeln statt Reis",
+        "Nudeln statt dem Reis, Huhn",
+    ],
 )
-def test_words_after_the_swapped_part_still_count(said):
-    """ "Nudeln statt Reis und Huhn" dropped Huhn without a word."""
+def test_words_behind_a_comma_after_the_swap_still_count(said):
+    """ "Nudeln statt Reis, Huhn" dropped Huhn without a word."""
     wish = wish_of(said, BEILAGE)
     assert wish.kind == "option"
-    assert [(o.group, o.option) for o in wish.options or []] == [
+    assert sorted((o.group, o.option) for o in wish.options or []) == [
         ("Beilage", "Nudeln"),
         ("Fleisch", "Huhn"),
     ]
 
 
 @pytest.mark.parametrize(
+    ("said", "option"),
+    [
+        # What follows "statt mit" is turned down, never wished.
+        ("mit Huhn statt mit Nudeln", "Huhn"),
+        ("mit Nudeln statt mit Reis", "Nudeln"),
+        ("Huhn statt der Ente", "Huhn"),
+    ],
+)
+def test_the_word_after_statt_mit_is_swapped_out(said, option):
+    wish = wish_of(said, BEILAGE)
+    assert (wish.kind, wish.option, wish.options) == ("option", option, None)
+
+
+@pytest.mark.parametrize(
+    "said", ["Tofu statt Huhn, Nudeln statt Reis", "Tofu statt Huhn Nudeln statt Reis"]
+)
+def test_a_statt_option_behind_another_swap_is_kept(said):
+    """The swap in front ended only at a joining word and ran over the card's
+    "Nudeln statt Reis" (deep review of chain round 4 item 26)."""
+    wish = wish_of(said, SWAP_OPTION)
+    assert [(o.group, o.option) for o in wish.options or []] == [
+        ("Fleisch", "Tofu"),
+        ("Extras", "Nudeln statt Reis"),
+    ]
+
+
+@pytest.mark.parametrize(
     "said",
     [
-        # Pommes is on no card here: never cut away, so the wish is asked.
+        # "und" or "oder" behind the swapped word may join a second one.
+        "Nudeln statt Reis und Huhn",
         "Nudeln statt Reis und Pommes",
         "Nudeln statt Reis oder Pommes",
-        # A swap the card does not name as a whole is not guessed at.
+        "statt Reis und Nudeln",
+        # A second word behind the swapped one may be the wished one.
         "Nudeln statt gebratenem Reis",
+        "statt Reis Nudeln und Huhn",
+        "Nudeln statt Reis mit Huhn",
+        "Nudeln statt Reis dazu Huhn",
+        # Nothing named as swapped out.
+        "Nudeln statt",
     ],
 )
 def test_what_the_swap_leaves_unclear_is_asked(said):
-    assert wish_of(said, SWAP_OPTION if "gebratenem" in said else BEILAGE).kind == (
-        "unknown"
+    assert wish_of(said, BEILAGE).kind == "unknown"
+
+
+@pytest.mark.parametrize(
+    ("said", "groups"),
+    [
+        # The swap is turned down, never booked.
+        ("keine Nudeln statt Reis", SWAP_OPTION),
+        ("ohne Nudeln statt Reis", SWAP_OPTION),
+        ("keine Nudeln statt Reis", BEILAGE),
+        ("ohne Reis statt Nudeln", BEILAGE),
+        # Tofu would stand in the removal ("ohne Zwiebeln, Tofu").
+        ("ohne Zwiebeln, Tofu und Nudeln statt Reis", SWAP_OPTION),
+        ("ohne Zwiebeln, Tofu, Nudeln statt Reis", SWAP_OPTION),
+    ],
+)
+def test_a_removal_in_front_of_a_swap_that_is_not_clear_is_asked(said, groups):
+    wish = wish_of(said, groups)
+    assert wish.kind == "unknown"
+    assert wish.price_delta_cents is None and wish.options is None
+
+
+def test_a_plain_removal_in_front_of_a_statt_option_stays_a_note():
+    wish = wish_of("ohne Zwiebeln, Nudeln statt Reis", SWAP_OPTION)
+    assert (wish.kind, wish.option, wish.price_delta_cents) == (
+        "option",
+        "Nudeln statt Reis",
+        350,
     )
+    assert wish.note == "ohne Zwiebeln"
+
+
+def test_stattdessen_takes_the_addition_with_its_price():
+    """ "ohne Reis, stattdessen Nudeln" went out as a free note."""
+    wish = wish_of("ohne Reis, stattdessen Nudeln", BEILAGE)
+    assert (wish.kind, wish.option, wish.price_delta_cents) == ("option", "Nudeln", 300)
+    assert wish.note == "ohne Reis"
 
 
 def test_search_keeps_the_option_after_the_swap(session, tenant_id):
-    result = suche(session, tenant_id, "die 47 Nudeln statt Reis und Huhn")
+    result = suche(session, tenant_id, "die 47 Nudeln statt Reis, Huhn")
     assert [h.number for h in result.results] == ["47"]
-    assert [(o.group, o.option) for o in result.wish.options or []] == [
+    assert sorted((o.group, o.option) for o in result.wish.options or []) == [
         ("Beilage", "Nudeln"),
         ("Fleisch", "Huhn"),
     ]
