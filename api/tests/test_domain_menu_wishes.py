@@ -2611,12 +2611,40 @@ def test_what_the_swap_leaves_unclear_is_asked(said):
         # Tofu would stand in the removal ("ohne Zwiebeln, Tofu").
         ("ohne Zwiebeln, Tofu und Nudeln statt Reis", SWAP_OPTION),
         ("ohne Zwiebeln, Tofu, Nudeln statt Reis", SWAP_OPTION),
+        # The removal runs into the swap with a word between (Codex PR #1095).
+        ("keine zusätzlichen Nudeln statt Reis", SWAP_OPTION),
+        ("kein extra Nudeln statt Reis", SWAP_OPTION),
+        ("keine zusätzlichen Nudeln statt Reis", BEILAGE),
     ],
 )
 def test_a_removal_in_front_of_a_swap_that_is_not_clear_is_asked(said, groups):
     wish = wish_of(said, groups)
     assert wish.kind == "unknown"
     assert wish.price_delta_cents is None and wish.options is None
+
+
+@pytest.mark.parametrize(
+    "said", ["keine zusätzlichen Nudeln statt Reis", "kein extra Nudeln statt Reis"]
+)
+def test_a_negation_running_into_a_swap_is_never_a_note_of_its_own(said):
+    """ "keine zusätzlichen" reached the kitchen while the swap it turns down
+    was booked (Codex PR #1095)."""
+    assert wish_of(said, SWAP_OPTION).note is None
+
+
+def test_a_removal_running_into_a_swap_keeps_the_one_before_the_comma():
+    wish = wish_of("ohne Zwiebeln, keine zusätzlichen Nudeln statt Reis", SWAP_OPTION)
+    assert (wish.kind, wish.options, wish.price_delta_cents) == ("unknown", None, None)
+    assert wish.note == "ohne Zwiebeln"
+
+
+@pytest.mark.parametrize(
+    "said", ["Nudeln statt Reis, extra Reis", "Nudeln statt Reis, Reis dazu"]
+)
+def test_a_word_of_a_statt_option_said_again_is_not_explained_by_it(said):
+    """The Reis inside "Nudeln statt Reis" covered a second Reis asked for
+    on its own, which was dropped (Codex PR #1095)."""
+    assert wish_of(said, SWAP_OPTION).kind == "unknown"
 
 
 def test_a_plain_removal_in_front_of_a_statt_option_stays_a_note():

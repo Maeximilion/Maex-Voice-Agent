@@ -2012,7 +2012,12 @@ def _classify(text: str, groups: list[OptionGroup]) -> Wish:
     # where it names a group ("mit Huhn und extra Fleisch" stays unknown), and
     # the check comes before an option in two groups is asked about ("mit
     # Reis und Pommes", deep review of #1076).
-    if outside - set().union(*(used for _, _, used in matches)) - _FILL:
+    # Counted by place, not by word: the Reis of "Nudeln statt Reis" explains
+    # no second "extra Reis" (Codex PR #1095).
+    covered = in_phrase.union(
+        *(_spots(option.name, group.group, head) for group, option, _ in matches)
+    )
+    if any(i not in covered and w not in _FILL for i, w in enumerate(head)):
         return Wish(text=text, kind="unknown")
     named = _named_groups(head, phrases, in_phrase, matches)
     by_name: dict[str, list[tuple[OptionGroup, OptionOut, set[str]]]] = {}
@@ -2220,15 +2225,20 @@ def _split_addition(text: str) -> tuple[str, str | None] | str:
         # statt Reis".
         end = at - 1 if at and words[at - 1] in _REMOVE else at
         spans = _comma_parts(words[:end])
+        # Without a comma the removal runs into the swap, and its removal word
+        # may turn the swap down: "keine zusätzlichen Nudeln statt Reis"
+        # (Codex PR #1095). That part is asked about whole, never a note.
+        runs_in = 0 < at == end and words[at - 1] not in {",", *_LISTING}
         if (
             end < at
             or not spans
+            or runs_in
             or words[at - 1] in _LISTING
             or not _removes(words[spans[-1][0] : spans[-1][1] + 1])
         ):
             return ", ".join(
                 _without_glue(text[tokens[i].start() : tokens[j].end()])
-                for i, j in spans
+                for i, j in (spans[:-1] if runs_in else spans)
                 if _removes(words[i : j + 1])
             )
     removal = _without_glue(text[: tokens[at].start()])
@@ -2313,6 +2323,20 @@ def _names(option: str, group: str, said: list[str]) -> set[str]:
         return set(words)
     compound = words[0] + "".join(_words(group)) if len(words) == 1 else None
     return {compound} if compound in said else set()
+
+
+def _spots(option: str, group: str, said: list[str]) -> set[int]:
+    """Where in `said` the option is named, as `_names` finds it: every run of
+    its words, else every compound with the group name."""
+    words = _words(option)
+    n = len(words)
+    runs = {
+        j for i in range(len(said)) if said[i : i + n] == words for j in range(i, i + n)
+    }
+    if runs or n != 1:
+        return runs
+    compound = words[0] + "".join(_words(group))
+    return {i for i, word in enumerate(said) if word == compound}
 
 
 def open_wish(text: str) -> Wish | None:
