@@ -1612,9 +1612,10 @@ class ConversationLoop:
             pending_order=state.order_id,
             seconds_left=seconds_left,
             # An allergy with one dish while the order holds another (#1084).
-            # The answer to that question names its dish: not asked again.
+            # The answer to that question, also one said into it, names its
+            # dish: the order does not make it ask again.
             in_cart=()
-            if SAY_ALLERGY_SCOPE in (state.last_say or "")
+            if SAY_ALLERGY_SCOPE in f"{state.last_say} {state.unheard_say}"
             else [str(line["menu_item_id"]) for line in state.cart],
         )
 

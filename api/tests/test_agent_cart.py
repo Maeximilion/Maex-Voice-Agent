@@ -1160,7 +1160,10 @@ def test_a_refused_scope_question_is_asked_on_the_retry(session, tenant_id, stat
     assert [entry.get("note") for entry in state.cart] == [None, None]
 
 
-def test_the_answer_to_the_scope_question_is_not_asked_again(session, tenant_id, state):
+@pytest.mark.parametrize("talked_over", [False, True])
+def test_the_answer_to_the_scope_question_is_not_asked_again(
+    session, tenant_id, state, talked_over
+):
     """Review of #1084: the guest answers the scope question with the dish
     and the allergy again ("Die 13, wegen der Erdnussallergie."). Searched
     with the order, that sentence asked the same question again; it is the
@@ -1169,6 +1172,9 @@ def test_the_answer_to_the_scope_question_is_not_asked_again(session, tenant_id,
     loop = ConversationLoop(session, model, "system", now=NOW)
     loop.run_turn(state, "Die 23.")
     loop.run_turn(state, "Die 13, ich habe eine Erdnussallergie.")
+    if talked_over:
+        # The guest spoke into the question (`guards.note_unheard`).
+        state.unheard_say, state.last_say = state.last_say, "Alles klar."
     seen = len(model.inputs)
     answer = loop.run_turn(state, "Die 13, wegen der Erdnussallergie.")
     assert SAY_ALLERGY_SCOPE not in " ".join(answer.say)
