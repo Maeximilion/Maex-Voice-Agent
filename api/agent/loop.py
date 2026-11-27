@@ -443,6 +443,7 @@ class ConversationLoop:
         # handover in this very turn still names it (Codex PR #369).
         open_table = self._open_table(state)
         kept = _note_allergy_said(state, user_text)
+        guards.note_dish_answered(state, user_text)
         if kept:
             # The draft read out before may not carry what the guest just
             # said: a yes must not confirm it (Codex PR #368, P1). The model
@@ -963,6 +964,7 @@ class ConversationLoop:
                     called.append(SAY)
                     pending_input = _tool_result_as_input(SAY, refused, zone)
                     continue
+                say = guards.ask_for_the_dish(state, say)
                 # What the guest hears decides which offered dishes count as
                 # put to them (guards.py, rule 2).
                 guards.note_said(state, say)

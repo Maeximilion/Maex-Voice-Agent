@@ -26,6 +26,7 @@ from api.agent.intent import heard, names_the_way
 from api.core.errors import InvalidInput
 from api.domain.customers.phone import normalize_phone
 from api.domain.menu.items import option_key
+from api.domain.menu.numberwords import spoken_card
 from api.domain.menu.search import CLEAR_MATCHES
 from api.schemas.orders import MAX_ITEMS, OrderItemIn
 
@@ -186,6 +187,10 @@ class ConversationState(BaseModel):
     # denial clears it. At most `ALLERGY_SAID_MAX` sentences that name
     # nothing; one that names what someone reacts to always stays (#940).
     allergy_said: list[str] = Field(default_factory=list)
+    # The dishes of one sentence that each came with an allergy and no
+    # ingredient, as the core says them ("23 Frühlingsrollen"), in the order
+    # the guest is asked about them (`guards.ask_for_the_dish`). Never sent.
+    allergy_dishes: list[str] = Field(default_factory=list)
     # The guest's allergy or allergen of the last turn was not taken up and
     # that turn ended in the offer to look a dish up (`guards.leaves_a_question`,
     # #798): a dish the guest names next is the answer to it. Lasts one turn;
@@ -686,6 +691,17 @@ def _note_search(state: ConversationState, data: dict[str, Any]) -> None:
     """Remembers which dishes a search delivered and how sure it was. A sentence
     with several positions carries one result per part (`agent/dispatch.py`)."""
     parts = data.get("positions") if data.get("match_type") == "positions" else [data]
+    waiting = [
+        f"{spoken_card(str(hit['number']))} {hit['name']}"
+        for part in parts or []
+        if part.get("match_type") in CLEAR_MATCHES
+        and (hit := (part.get("results") or [None])[0])
+        and (wish := part.get("wish"))
+        and wish.get("kind") == "allergy"
+        and not wish.get("ingredient")
+    ]
+    if len(waiting) > 1:
+        state.allergy_dishes = waiting
     for part in parts or []:
         hits = part.get("results") or []
         clear = part.get("match_type") in CLEAR_MATCHES

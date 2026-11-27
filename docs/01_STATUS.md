@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.125
+> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.126
 
 ---
 
@@ -183,6 +183,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.126 · 27.11.2026:** Chain round 4 item 30 (docs/24): with several dishes of one sentence each with an allergy and no ingredient, the fixed question names its dish ("Zur Nummer 23 Frühlingsrollen: Worauf genau soll die Küche achten?"), one dish per question in order; one dish keeps the plain question
 - **v2.69.125 · 27.11.2026:** Chain round 4 item 25 (docs/24): a correction without a comma ("die 23, ich meine die 13 mit Allergie", "die 23 und die 13, ich meine die 47", "ich meine 24", "doch zweimal die 24") takes the number before it back, the sentence asks instead of booking both; a card number with a wish kept whole asks for the number (hard rule 2)
 - **v2.69.124 · 27.11.2026:** Chain round 4 item 29 (docs/24): `sole_item_number` reads a sentence in linear time with the same results (old-against-new test over the menu tests, the eval cases, generated sentences and their rests, also for the readers that share its helpers); `_ends_in_card_number` on the docs/24 shapes 60 to 19 ms and 23 to 14 ms, 773 to 207 ms at 300 leads without the cap; its per-lead calls stay open in docs/24
 - **v2.69.123 · 27.11.2026:** docs/24 swept against main (chain round 4 item 28, #1066): no row fully fixed, four shortened (#788, #860, #368, #124, #127, #820, #822, #825)
