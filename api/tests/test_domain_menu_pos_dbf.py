@@ -155,6 +155,47 @@ def test_dbase_iii_memo_ignoriert_bytes_20_21():
     assert read_table(dbf, muell).rows[0]["ZUTATEN"] == "Gebratene_Nudeln, Ei, Sojasoße"
 
 
+MEMO_ROWS = [
+    {"ZBEZEICH": "Mango", "WRGSHOW": "001 002"},
+    {"ZBEZEICH": "Erdnuss", "WRGSHOW": "007"},
+]
+MEMO_FIELDS = [("ZBEZEICH", "C", 16, 0), ("WRGSHOW", "M", 10, 0)]
+
+
+def test_dbase_iii_memo_without_end_does_not_read_the_next_memo():
+    """Codex PR #149 (docs/24): a dBase III memo that lost its 0x1A ends at the
+    next memo's block, never in another record's text."""
+    dbf, dbt = write_dbf(MEMO_FIELDS, MEMO_ROWS, memo_iv=False)
+    assert dbt is not None and dbt[512 + 7 : 512 + 9] == b"\x1a\x1a"
+    damaged = dbt[: 512 + 7] + b"  " + dbt[512 + 9 :]
+
+    with pytest.raises(DbfError, match=r"Zeile 1: WRGSHOW: .*block 1.*next memo"):
+        read_table(dbf, damaged)
+
+
+def test_dbase_iii_memo_bound_counts_deleted_rows():
+    """A deleted row still owns its block: the memo before it ends there too."""
+    dbf, dbt = write_dbf(MEMO_FIELDS, MEMO_ROWS, deleted=(1,), memo_iv=False)
+    assert dbt is not None
+    damaged = dbt[: 512 + 7] + b"  " + dbt[512 + 9 :]
+
+    with pytest.raises(DbfError, match="next memo"):
+        read_table(dbf, damaged)
+
+
+def test_dbase_iii_memo_longer_than_one_block_is_read_whole():
+    """The bound is the next memo, not the block size: long memos stay whole."""
+    long = " ".join(f"{n:03d}" for n in range(200))  # 799 bytes, two blocks
+    dbf, dbt = write_dbf(
+        MEMO_FIELDS,
+        [{"ZBEZEICH": "Mango", "WRGSHOW": long}, MEMO_ROWS[1]],
+        memo_iv=False,
+    )
+
+    rows = read_table(dbf, dbt).rows
+    assert rows[0]["WRGSHOW"] == long and rows[1]["WRGSHOW"] == "007"
+
+
 def test_kaputte_loeschmarke_ist_dbf_fehler():
     """Codex PR #149: nur Leerzeichen und * sind gültig; sonst könnte ein
     gesperrter Artikel still zurückkommen."""
