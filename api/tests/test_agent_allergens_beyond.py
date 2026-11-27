@@ -2347,13 +2347,6 @@ def test_a_note_that_names_a_dish_goes_back(session, known_tenant):
             None,
         ),
         # The wish stands in the note of the line that changed in this turn.
-        (
-            "Die 13 ohne Erdnüsse bitte.",
-            ["search 13"],
-            "Die 13 ohne Erdnüsse ist kein Problem.",
-            {"note": "ohne Erdnüsse"},
-            None,
-        ),
         # The database text of the dish itself names soy.
         (
             "Was ist in der 25?",
@@ -2403,7 +2396,8 @@ def test_a_wish_the_model_did_not_write_into_the_cart_gets_one_hint(
     session, card_tenant
 ):
     """Row 3: the guest's "Erdnüsse" is explained by nothing until the wish
-    stands in the `cart`."""
+    stands in the `cart`; then the core says the line, since the model
+    never speaks a denial (#1022)."""
     state = state_for(session, card_tenant, phone=CALLER)
     pho = str(item(session, card_tenant, "13"))
     answer = "Die 13 ohne Erdnüsse ist kein Problem."
@@ -2419,7 +2413,7 @@ def test_a_wish_the_model_did_not_write_into_the_cart_gets_one_hint(
     )
 
     assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_ALLERGY_TURN
-    assert result.say == [answer]
+    assert result.say == ["Einmal Nummer 13 Pho Bo, Ihr Hinweis: ohne Erdnüsse."]
     assert not state.allergen_question_open
 
 
@@ -2551,7 +2545,8 @@ def test_a_pending_question_is_cleared_by_an_order_change(session, known_tenant)
     )
 
     assert not result.ended
-    assert result.say == [answer]
+    # The model never speaks a denial: the core says the line (#1022).
+    assert result.say == ["Einmal Nummer 13 Pho Bo, Ihr Hinweis: ohne Sesam."]
     assert not state.allergen_question_open
 
 
@@ -2709,7 +2704,8 @@ def test_the_guests_allergy_note_licenses_no_claim_in_a_later_turn(
     """Review of #798 (P1): the guest's own allergy, written on the line of
     the dish ordered a turn later, is health data, not menu or order text.
     It must not license a peanut claim the database does not hold. In a call
-    about an allergy the retry is a core sentence (deep review of #860)."""
+    about an allergy the retry is a core sentence (deep review of #860);
+    since #1022 the core says the changed line at once, with no retry."""
     state = state_for(session, known_tenant, phone=CALLER)
     run(
         session,
@@ -2723,7 +2719,6 @@ def test_the_guests_allergy_note_licenses_no_claim_in_a_later_turn(
         "quantity": 1,
         "note": "WICHTIG !!! Kunde ist allergisch auf Erdnüsse",
     }
-    plain = guards.SAY_ALLERGY_NOTED
 
     result, llm = run(
         session,
@@ -2731,11 +2726,11 @@ def test_the_guests_allergy_note_licenses_no_claim_in_a_later_turn(
         "Dann nehme ich die 13.",
         searches("13"),
         LLMTurn(say=claim, cart=[line]),
-        LLMTurn(say=plain),
     )
 
-    assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_ALLERGY_CALL
-    assert result.say == [plain]
+    assert said_nowhere(result, claim)
+    assert result.say == [f"Einmal Nummer 13 Pho Bo, Ihr Hinweis: {line['note']}."]
+    assert len(llm.calls) == 2
     assert state.cart == [line]
 
 
@@ -3709,7 +3704,9 @@ def test_a_denied_allergen_next_to_an_order_step_never_reaches_the_guest(
     assert len(llm.calls) == 2
 
 
-@pytest.mark.parametrize("claim", ["Die 47 ist Erdnuss-frei.", "Die 47 ist Erdnuss frei."])
+@pytest.mark.parametrize(
+    "claim", ["Die 47 ist Erdnuss-frei.", "Die 47 ist Erdnuss frei."]
+)
 def test_a_free_from_word_written_apart_is_a_claim(session, known_tenant, claim):
     """The stopped parallel build of #1022: "Erdnuss-frei" and "Erdnuss frei"
     passed both checks on 422b225b. They say what "erdnussfrei" says, so the
@@ -3961,7 +3958,9 @@ def test_a_time_range_next_to_an_allergen_option_hands_nothing_over(
     state = state_for(session, known_tenant, phone=CALLER)
     line = ente(session, known_tenant)
     line["options"] = [*ENTE_LINE, {"group": "Sauce", "name": "Erdnuss"}]
-    say = "Der Tisch ist frei von 18 bis 20 Uhr und die 47 mit Erdnusssauce ist notiert."
+    say = (
+        "Der Tisch ist frei von 18 bis 20 Uhr und die 47 mit Erdnusssauce ist notiert."
+    )
 
     assert guards.allergen_claim(state, say) is None
     result, _ = run(
@@ -4000,6 +3999,7 @@ def test_a_denial_next_to_a_draft_gives_the_read_back(session, known_tenant):
     )
 
     assert state.stage == "readback_pending"
+    assert state.readback is not None
     assert result.say == [state.readback]
     assert "Ihr Hinweis: ohne Erdnuss" in state.readback
 

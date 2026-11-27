@@ -818,12 +818,25 @@ class ConversationLoop:
                         if about_a_dish and guards.states_a_price(aturn, state, say)
                         else []
                     )
+                    # The model never speaks a denial (#1022, Maxi 27.11.2026):
+                    # with the order changed in this turn the core says the
+                    # changed lines with their notes, with no retry. Not in an
+                    # open turn, whose retry asks for the kitchen's note.
+                    wishes = (
+                        guards.wish_says(aturn, state)
+                        if changed
+                        and not open_turn
+                        and guards.denials(aturn, state, say)
+                        else []
+                    )
                     if prices:
                         # A price the model stated for a dish this turn's
                         # search found: the core says it, from the database
                         # (#928, Maxi: B2). A retry could say only a core
                         # sentence, none better than this one.
                         say = " ".join(prices)
+                    elif wishes:
+                        say = " ".join(wishes)
                     elif not allergen_back:
                         # Rows 3 and 6: back to the model once.
                         allergen_back = True

@@ -213,9 +213,8 @@ arms the claim check above, since it names no allergen (#763, Maxi
 14.11.2026)
 
 Every other allergen word decides by where it comes from, never by German
-grammar (#798, Maxi 18.11.2026), with one exception: a word the model's
-sentence denies ("ohne", "kein...", "weder", "frei von"; `guards._denied`)
-needs the guest's own wish (#1022, Maxi 26.11.2026). For each guest turn the core records the
+grammar (#798, Maxi 18.11.2026), with one exception: the model never
+speaks a denial (#1022, Maxi 27.11.2026, `guards.denials`). For each guest turn the core records the
 guest's sentence, the menu text the turn's tools delivered (dish, option and
 description names; never the search's `wish` nor a lookup's `allergens`)
 and the order text the core accepted in this turn (changed cart lines, the
@@ -245,19 +244,28 @@ up (`guards.is_open`)
        the guest named in this turn); whole dish names of the search are
        menu data. A clause that names a dish is licensed by that dish's own
        text, one that names none by the dishes its sentence or the sentence
-       before it named. An allergen the model's sentence denies is licensed
-       only by what the dish's lines in the order deny ("ohne Erdnuss" as
-       the line's note, an extra "ohne Ei"), a line of this turn, the
-       draft's and the order's note only as far as the guest's own words of
-       this turn deny it: the dish's text names what it may hold, never
+       before it named. A sentence of the model's own words that holds a
+       negation word ("ohne", "kein...", "weder", "frei von", "nicht
+       drin/enthalten/dabei") and an allergen is held, whatever the
+       negation speaks of: the dish's text names what it may hold, never
        what it lacks ("Die 47 ist ohne Erdnüsse" next to the 47's option
-       "Erdnuss", #1022, Maxi 26.11.2026). The denial reaches from the start
-       of its clause to the end of its sentence or the next "mit", "dafür",
-       "aber", "sondern"; outside a call about an allergy an offered
-       variant ("mit oder ohne Erdnusssauce") and a dish sold out ("keine
-       Garnelen mehr") deny nothing. "frei von" with an allergen is a claim
-       anywhere, like "erdnussfrei", and a cart note may claim an absence
-       ("enthält keine Erdnüsse") only of what the guest named. An
+       "Erdnuss", #1022, Maxi 27.11.2026: the redesign after three review
+       rounds of a span reader). The test is monotone, no added word lets
+       such a sentence through, so "Die 47 mit Erdnuss, ohne Koriander" is
+       held too. Stock phrases ("Kein Problem") deny nothing; outside a
+       call about an allergy neither does an offered variant ("mit oder
+       ohne Erdnusssauce") nor, in a sentence naming no dish, what is sold
+       out ("keine Garnelen mehr"). With the order changed in the turn, and
+       the turn not open, the guest hears the core instead, with no retry:
+       the read-back of a draft of the turn, else each changed line as the
+       read-back says it ("Einmal Nummer 47 Ente knusprig mit Ente, Ihr
+       Hinweis: ohne Erdnuss.", `guards.wish_says`); the model's follow-up
+       question is lost that turn. Otherwise it goes back once, then as
+       below. "Erdnuss-frei" and "Erdnuss frei" are claims like
+       "erdnussfrei"; "frei von" is only this soft hold, so "frei von 18
+       bis 20 Uhr" next to a peanut option hands nothing over. A cart note
+       may claim an absence ("enthält keine Erdnüsse") only of what the
+       guest named. An
        unlicensed word, or "Allergene" or "Allergiker"
        in the model's own words, goes back once, then as above; in a call
        where the guest named an allergy the retry may say only core

@@ -1515,12 +1515,6 @@ def test_the_old_absence_forms_are_no_list_claim_any_more():
             None,
         ),
         # The wish stands in the note of the line that changed in this turn.
-        (
-            "Die 13 ohne Erdnüsse bitte.",
-            [search(PHO)],
-            "Die 13 ohne Erdnüsse ist kein Problem.",
-            [{"menu_item_id": PHO, "note": "ohne Erdnüsse"}],
-        ),
     ],
 )
 def test_an_order_sentence_named_like_an_allergen_is_spoken(said, tools, say, cart):
@@ -1964,7 +1958,7 @@ def test_a_clause_without_a_dish_speaks_of_the_dish_named_before_it(say):
 @pytest.mark.parametrize(
     "say",
     [
-        "Die 47 mit Erdnuss, die 13 ohne Zwiebeln.",
+        "Die 47 mit Erdnuss, die 13 mit Zwiebeln.",
         "Gerne, die 47 mit Erdnuss kostet 12,40 Euro.",
         "Die 13 kostet 11,90 Euro. Die 47 gibt es mit Erdnuss.",
     ],
@@ -2465,9 +2459,15 @@ def test_a_suitability_promise_states_no_price():
         # allergen of it; no added word undoes it (Codex review of #1065).
         ("Die 47 mit Ente und Erdnuss, ohne Koriander", True, {"E"}),
         ("Die 47 bekommt Erdnusssauce und keinen Koriander", False, {"E"}),
-        ("Der Tisch ist frei von 18 bis 20 Uhr und die 47 mit Erdnusssauce", False, {"E"}),
+        (
+            "Der Tisch ist frei von 18 bis 20 Uhr und die 47 mit Erdnusssauce",
+            False,
+            {"E"},
+        ),
         # A negation and an allergen in two sentences: each alone holds none.
         ("Die 47 mit Erdnuss ist notiert. Ohne Koriander", True, set()),
+        # A pronoun after a core sentence (docs/24 row of #1022, now held).
+        ("Notiert: Nummer 47. Die ist auch ohne Erdnüsse", True, {"E"}),
         # No allergen, or a stock phrase: nothing held.
         ("Die 47 ohne Koriander ist notiert", True, set()),
         ("Kein Problem, Erdnusssauce ist dabei", True, set()),
