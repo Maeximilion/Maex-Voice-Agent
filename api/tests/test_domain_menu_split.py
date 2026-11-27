@@ -94,6 +94,103 @@ from api.tests.test_domain_menu_search import (  # noqa: F401
             ["die 23 und zwei Portionen ohne Koriander"],
         ),
         ("die 23 und eine mit Reis", ["die 23 und eine mit Reis"]),
+        # A card number with its own word opens a position, a wish behind it
+        # is its own (docs/24, own test PR #139).
+        (
+            "die 23 ohne Karotten und die 13 mit Allergie",
+            ["die 23 ohne Karotten", "die 13 mit Allergie"],
+        ),
+        ("die 23 und die 13 ohne Zwiebeln", ["die 23", "die 13 ohne Zwiebeln"]),
+        (
+            "die 23 und Nummer 13 mit Erdnussallergie",
+            ["die 23", "Nummer 13 mit Erdnussallergie"],
+        ),
+        # A dish named by its name before keeps the old rule: the number may
+        # point back at it (deep review of item 14).
+        (
+            "Pho Bo und zweimal die 23 ohne Koriander",
+            ["Pho Bo und zweimal die 23 ohne Koriander"],
+        ),
+        ("die 23 und Nummer 5 ohne Zwiebeln", ["die 23", "Nummer 5 ohne Zwiebeln"]),
+        ("die 23 und Nummer zwei mit Reis", ["die 23 und Nummer zwei mit Reis"]),
+        # The same words pointing back at portions just named, a single digit
+        # and a quantity keep the old rule: the wish stays with the position
+        # before (deep review of item 14).
+        (
+            "zweimal die 13 und die zwei mit Erdnussallergie",
+            ["zweimal die 13 und die zwei mit Erdnussallergie"],
+        ),
+        (
+            "zwei Pho Bo, die eine ohne Koriander",
+            ["zwei Pho Bo, die eine ohne Koriander"],
+        ),
+        (
+            "zweimal die 13, der eine mit Erdnussallergie",
+            ["zweimal die 13, der eine mit Erdnussallergie"],
+        ),
+        ("zweimal die 13, die 2 mit Reis", ["zweimal die 13, die 2 mit Reis"]),
+        ("die 23, das 1 mit Reis", ["die 23, das 1 mit Reis"]),
+        (
+            "die 23 und die dreizehn ohne Zwiebeln",
+            ["die 23 und die dreizehn ohne Zwiebeln"],
+        ),
+        (
+            "die 23 und die 2 x ohne Koriander",
+            ["die 23 und die 2 x ohne Koriander"],
+        ),
+        # A number that points back at what the sentence said before it: a
+        # dish named by its name, the same number, a count that reaches it.
+        (
+            "zwei Pho Bo, die 13 ohne Koriander",
+            ["zwei Pho Bo, die 13 ohne Koriander"],
+        ),
+        (
+            "zweimal die 13, die 13 mit Erdnussallergie",
+            ["zweimal die 13, die 13 mit Erdnussallergie"],
+        ),
+        # The same number said as a word first (Codex PR #1082).
+        (
+            "zweimal die dreizehn, die 13 mit Erdnussallergie",
+            ["zweimal die dreizehn, die 13 mit Erdnussallergie"],
+        ),
+        # A number of several words is one number (Codex PR #1082).
+        (
+            "die vierzig sieben zwei Portionen, die 47 mit Erdnussallergie",
+            ["die vierzig sieben zwei Portionen, die 47 mit Erdnussallergie"],
+        ),
+        (
+            "zweimal die vierzig sieben, die 47 mit Erdnussallergie",
+            ["zweimal die vierzig sieben, die 47 mit Erdnussallergie"],
+        ),
+        # A count joined across "und" is one number (Codex PR #1082).
+        (
+            "drei und zwanzig Portionen die 13, die 23 mit Erdnussallergie",
+            ["drei und zwanzig Portionen die 13, die 23 mit Erdnussallergie"],
+        ),
+        (
+            "zwanzig Pho Bo, die 12 ohne Koriander",
+            ["zwanzig Pho Bo, die 12 ohne Koriander"],
+        ),
+        (
+            "zwölfmal die 23, die 12 ohne Koriander",
+            ["zwölfmal die 23, die 12 ohne Koriander"],
+        ),
+        ("die 23, quatsch, die 24 mit Reis", ["die 23, quatsch, die 24 mit Reis"]),
+        # Any count before keeps the old rule, even one below the number
+        # (Codex PR #1082 found one spoken number form after the other).
+        (
+            "zweimal die 23 und die 13 ohne Zwiebeln",
+            ["zweimal die 23 und die 13 ohne Zwiebeln"],
+        ),
+        (
+            "die 23 und Nummer dreiundzwanzig mit Reis",
+            ["die 23 und Nummer dreiundzwanzig mit Reis"],
+        ),
+        # A name behind a card number is that dish's own.
+        (
+            "die 23 Frühlingsrollen ohne Karotten und die 13 mit Allergie",
+            ["die 23 Frühlingsrollen ohne Karotten", "die 13 mit Allergie"],
+        ),
         ("die 23 und zweimal die 13", ["die 23", "zweimal die 13"]),
         (
             "die 23 und zwei Portionen Pho Bo ohne Koriander",
@@ -142,6 +239,43 @@ def test_jede_position_findet_ihr_gericht(session, tenant_id, gesagt, nummern): 
         ("die 23, zweimal ohne Koriander", ["die 23, zweimal ohne Koriander"]),
         ("Pho Bo, dazu extra scharf", ["Pho Bo, dazu extra scharf"]),
         ("die 23 und Pho Bo", ["die 23", "Pho Bo"]),
+        (
+            "die 23 ohne Karotten und die 13 mit Allergie",
+            ["die 23 ohne Karotten", "die 13 mit Allergie"],
+        ),
+        ("die 23, 2 x ohne Koriander", ["die 23, 2 x ohne Koriander"]),
+        (
+            "zweimal die 13, die eine ohne Koriander",
+            ["zweimal die 13, die eine ohne Koriander"],
+        ),
+        (
+            "zwei Pho Bo, die 2 x ohne Koriander",
+            ["zwei Pho Bo, die 2 x ohne Koriander"],
+        ),
+        ("zwei Pho Bo, die 13 ohne Koriander", ["zwei Pho Bo, die 13 ohne Koriander"]),
+        (
+            "zweimal die 13, die 13 mit Erdnussallergie",
+            ["zweimal die 13, die 13 mit Erdnussallergie"],
+        ),
+        # The same number said as a word first (Codex PR #1082).
+        (
+            "zweimal die dreizehn, die 13 mit Erdnussallergie",
+            ["zweimal die dreizehn, die 13 mit Erdnussallergie"],
+        ),
+        # A number of several words is one number (Codex PR #1082).
+        (
+            "die vierzig sieben zwei Portionen, die 47 mit Erdnussallergie",
+            ["die vierzig sieben zwei Portionen, die 47 mit Erdnussallergie"],
+        ),
+        (
+            "zweimal die vierzig sieben, die 47 mit Erdnussallergie",
+            ["zweimal die vierzig sieben, die 47 mit Erdnussallergie"],
+        ),
+        # A count joined across "und" is one number (Codex PR #1082).
+        (
+            "drei und zwanzig Portionen die 13, die 23 mit Erdnussallergie",
+            ["drei und zwanzig Portionen die 13, die 23 mit Erdnussallergie"],
+        ),
         # The menu check sees the paused number whole as well (Codex PR #147).
         ("die drei und äh zwanzig", ["die drei und äh zwanzig"]),
         # A comma on either side of the "und" is the same pause (#328).

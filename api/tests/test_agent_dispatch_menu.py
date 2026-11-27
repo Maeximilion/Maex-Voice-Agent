@@ -14,9 +14,10 @@ import pytest
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
-from api.agent.dispatch import dispatch
+from api.agent.dispatch import SAY_ALLERGY_SCOPE, _split_allergy, dispatch
 from api.agent.state import ConversationState, apply_tool_result
 from api.models import Call, MenuItem, Order
+from api.schemas.menu import Wish
 from api.tests.test_domain_draft_order import NOW, _call, _tenant
 
 
@@ -502,6 +503,111 @@ def test_wunsch_in_einer_aufzaehlung(session, tenant_id, call_id):
     assert "Nummer 23, ohne Karotten und Nummer 13 Pho Bo" in result.data["say"]
 
 
+@pytest.mark.parametrize(
+    ("query", "wishes"),
+    [
+        (
+            "die 23 ohne Karotten und die 13 ohne Zwiebeln",
+            [("note", "ohne Karotten"), ("note", "ohne Zwiebeln")],
+        ),
+        ("die 23 und die 13 ohne Zwiebeln", [None, ("note", "ohne Zwiebeln")]),
+    ],
+)
+def test_each_number_in_a_list_keeps_its_own_wish(
+    session, tenant_id, call_id, query, wishes
+):
+    """docs/24, own test PR #139: a second number with a wish of its own was
+    glued to the first position, and the sentence ended in "nicht gefunden,
+    Nummer?". Each number is its own position now, its wish stays with it."""
+    result = run(session, tenant_id, call_id, "search_menu", {"query": query})
+    assert result.data["match_type"] == "positions"
+    first, second = result.data["positions"]
+    assert [p["results"][0]["number"] for p in (first, second)] == ["23", "13"]
+    assert [
+        (p["wish"]["kind"], p["wish"]["text"]) if p["wish"] else None
+        for p in (first, second)
+    ] == wishes
+    assert result.data["allergy"] is None
+
+
+@pytest.mark.parametrize(
+    ("query", "wishes", "allergy"),
+    [
+        (
+            "die 23 ohne Karotten und die 13 mit Allergie",
+            [("note", "ohne Karotten"), None],
+            "mit Allergie",
+        ),
+        (
+            "die 23 und die 13 mit Erdnussallergie",
+            [None, None],
+            "WICHTIG !!! Allergie: Erdnuss",
+        ),
+        (
+            "die 23 und Pho Bo mit Erdnussallergie",
+            [None, None],
+            "WICHTIG !!! Allergie: Erdnuss",
+        ),
+        (
+            "die 23 und die 13, ich habe eine Erdnussallergie",
+            [None, None],
+            "WICHTIG !!! Allergie: Erdnuss",
+        ),
+        # A removal said with the allergy stays on its dish (Codex PR #1082).
+        (
+            "die 23 ohne Erdnüsse, mit Allergie und die 13",
+            [("note", "ohne Erdnüsse"), None],
+            "mit Allergie",
+        ),
+    ],
+)
+def test_an_allergy_with_several_dishes_is_asked_about(
+    session, tenant_id, call_id, query, wishes, allergy
+):
+    """Maxi, 27.11.2026 (#1067): where an allergy stands in a sentence of
+    several dishes says nothing about whose dishes it is for. It goes on none
+    of them; the core asks whether it holds for all or for one."""
+    result = run(session, tenant_id, call_id, "search_menu", {"query": query})
+    assert result.data["match_type"] == "positions"
+    first, second = result.data["positions"]
+    assert [
+        (p["wish"]["kind"], p["wish"]["text"]) if p["wish"] else None
+        for p in (first, second)
+    ] == wishes
+    assert result.data["allergy"]["text"] == allergy
+    assert result.data["say"].endswith(SAY_ALLERGY_SCOPE)
+    assert "frei davon" not in result.data["say"]
+
+
+def test_a_removal_said_with_the_allergy_stays_on_its_dish():
+    """Codex PR #1082: with the ingredient known the removal is in the text."""
+    kept, allergy = _split_allergy(
+        Wish(
+            text="WICHTIG !!! Allergie: Erdnuss. Ohne Zwiebeln",
+            kind="allergy",
+            ingredient="Erdnuss",
+        )
+    )
+    assert kept is not None and (kept.kind, kept.text) == ("note", "Ohne Zwiebeln")
+    assert allergy.text == "WICHTIG !!! Allergie: Erdnuss"
+    alone, same = _split_allergy(
+        Wish(text="WICHTIG !!! Allergie: Erdnuss", kind="allergy", ingredient="Erdnuss")
+    )
+    assert alone is None and same.text == "WICHTIG !!! Allergie: Erdnuss"
+
+
+def test_an_allergy_with_one_dish_stays_with_it(session, tenant_id, call_id):
+    result = run(
+        session,
+        tenant_id,
+        call_id,
+        "search_menu",
+        {"query": "die 13 mit Erdnussallergie"},
+    )
+    assert result.data["wish"]["kind"] == "allergy"
+    assert SAY_ALLERGY_SCOPE not in result.say
+
+
 def test_wiederholung_mit_leeren_vorgaben_ist_derselbe_entwurf(
     session, tenant_id, call_id
 ):
@@ -539,7 +645,9 @@ def test_hinweise_der_teile_stehen_im_satz_der_antwort(session, tenant_id, call_
         {"query": "Pho Bo, ich habe eine Erdnussallergie und die 23"},
     )
     assert allergy.data["match_type"] == "positions"
-    assert "frei davon" in allergy.data["say"]
+    # With several dishes the allergy belongs to none by its place: the core
+    # asks for its dishes (Maxi, 27.11.2026), not "frei davon" about one.
+    assert allergy.data["say"].endswith(SAY_ALLERGY_SCOPE)
 
 
 def test_ausverkauft_mit_wunsch_nur_einmal(session, tenant_id, call_id):
@@ -565,6 +673,17 @@ def test_ausverkauft_mit_wunsch_nur_einmal(session, tenant_id, call_id):
     )
     assert "heute leider aus" not in (result.data["say"] or "")
     assert "heute leider aus" in result.data["positions"][0]["say"]
+    # An allergy of the sentence waits for its dishes; the dish's sold-out
+    # sentence stays (Codex PR #1082).
+    allergy = run(
+        session,
+        tenant_id,
+        call_id,
+        "search_menu",
+        {"query": "die 23 mit Erdnussallergie und Pho Bo"},
+    )
+    assert allergy.data["allergy"] is not None
+    assert "heute leider aus" in allergy.data["positions"][0]["say"]
 
 
 def test_eine_position_wird_nur_einmal_zerlegt(
