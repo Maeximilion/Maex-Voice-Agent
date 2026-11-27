@@ -13,6 +13,7 @@ import pytest
 from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session
 
+from api.agent.dispatch import SAY_ALLERGY_SCOPE
 from api.agent.guards import SAY_ALLERGENS_OFFER, SAY_ALLERGY_NOTED, SAY_ASK_ALLERGY
 from api.agent.loop import SAY_ESCALATION
 from api.domain.menu.importer import MENU_FILE, OPTIONS_FILE, apply, parse
@@ -908,6 +909,80 @@ def test_hinweis_landet_in_der_bestellung(session, tenant):
     [order] = orders(session)
     assert order.status == "confirmed"
     assert _notes(session, order) == ["ohne Karotten"]
+
+
+def test_an_allergy_with_two_numbers_is_asked_for_its_dish(session, tenant):
+    """docs/24, own test PR #139: "Die 23 ohne Karotten und die 13 mit
+    Allergie" ended in "nicht gefunden, Nummer?". Now both dishes are taken,
+    the removal stays at the 23, and the allergy goes on no dish by its place:
+    the core asks whether it holds for all or one (Maxi, 27.11.2026), then
+    for the ingredient, and notes it in the guest's words."""
+    _, turns = _bestellung(
+        session,
+        tenant,
+        "Die 23 ohne Karotten und die 13 mit Allergie.",
+        "Nur für die 13.",
+        "Erdnüsse.",
+    )
+    assert "nicht gefunden" not in said(turns)
+    assert SAY_ALLERGY_SCOPE in " ".join(turns[1].say)
+    assert "Worauf genau" in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert positions(session, order) == [("23", 1, []), ("13", 1, [])]
+    assert _notes(session, order) == ["ohne Karotten", "WICHTIG !!! Allergie: Erdnüsse"]
+
+
+def test_an_allergy_for_every_dish_goes_on_each(session, tenant):
+    _, turns = _bestellung(
+        session,
+        tenant,
+        "Die 23 und die 13, ich habe eine Erdnussallergie.",
+        "Für beide.",
+    )
+    assert SAY_ALLERGY_SCOPE in " ".join(turns[1].say)
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnuss"] * 2
+
+
+def test_a_scoped_allergy_joins_the_note_a_dish_has(session, tenant):
+    """Codex PR #1082: the answer "Für beide" wrote the allergy over the 23's
+    removal; it goes next to it."""
+    _bestellung(
+        session,
+        tenant,
+        "Die 23 ohne Zwiebeln und die 13 mit Sesamallergie.",
+        "Für beide.",
+    )
+    [order] = orders(session)
+    assert _notes(session, order) == [
+        "WICHTIG !!! Allergie: Sesam. Ohne Zwiebeln",
+        "WICHTIG !!! Allergie: Sesam",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("line", "note"),
+    [
+        (
+            "Zweimal die 13, die eine mit Erdnussallergie.",
+            "WICHTIG !!! Allergie: Erdnuss",
+        ),
+        ("Zweimal die 13, die eine ohne Koriander.", "ohne Koriander"),
+    ],
+)
+def test_a_wish_for_one_of_two_portions_stays_with_the_dish(
+    session, tenant, line, note
+):
+    """Deep review of item 14: "die eine" points back at a portion just named.
+    Read as a card number it left the 13 without its allergy or removal; the
+    wish stays with the 13, as before."""
+    _bestellung(session, tenant, line)
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert positions(session, order) == [("13", 2, [])]
+    assert _notes(session, order) == [note]
 
 
 def test_option_als_wunsch_erspart_die_rueckfrage(session, tenant):

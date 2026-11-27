@@ -270,9 +270,20 @@ def test_takes_a_number_back_matches_the_old_version(card: CardFormat) -> None:
         new_calls: list[str] = []
         old = _old_takes_a_number_back(_stub_search(old_calls), pieces, card)
         new = search._takes_a_number_back(_stub_search(new_calls), pieces, card)
-        if (old, old_calls) != (new, new_calls):
+        if (old, old_calls) != (new, new_calls) and not _numbered_wish(pieces, card):
             differ.append((sentence, old, new, old_calls, new_calls))
     assert differ == []
+
+
+def _numbered_wish(pieces: list[str], card: CardFormat) -> bool:
+    """A piece that is a card number with a wish of its own ("die 24 mit
+    Reis") counts as a card number since docs/24 (own test PR #139), on
+    purpose; the old version saw none there. Only such sentences may differ."""
+    return any(
+        search._leads_with_card_number(piece, card)
+        and sole_item_number(piece, card) == (None, False)
+        for piece in pieces
+    )
 
 
 def test_keep_allergy_clauses_matches_the_old_version() -> None:

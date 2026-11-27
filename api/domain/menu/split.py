@@ -19,13 +19,17 @@ ist. Im Zweifel bleibt der Satz ganz, und `search_menu` antwortet laut mit
   keine. Sonst ist er Teil eines Namens oder ein Hinweis -
   "Ente süß und sauer", "Nummer 23, ohne Zwiebeln" - und der Satz bleibt ganz
   (Codex PR #124). Beginnt ein Teil nach der Menge mit "ohne", "mit" oder
-  "extra", ist er ein Hinweis zur Position davor, keine neue.
+  "extra", ist er ein Hinweis zur Position davor, keine neue. A card number
+  with its own word ("die 13", "Nummer 13", `_names_card_number`) is the
+  exception: "die 13 mit Allergie" opens a position of its own, its wish
+  stays with it (docs/24).
 
 Optionen ("Nummer 23 mit Erdnusssauce") trennt das nicht: "mit" hängt an der
 Position, die Sauce ist Option und kein zweites Gericht.
 """
 
 import re
+from typing import NamedTuple
 
 from api.domain.menu.numberwords import (
     ALTERNATIVE_WORDS,
@@ -70,15 +74,18 @@ _EMPTY_WORDS = frozenset(
 )
 
 
-def split_positions(text: str) -> list[str]:
-    """Teile je Position, in der gesprochenen Reihenfolge. Nicht sicher trennbar → [text]."""
+def split_positions(text: str, *, inner: bool = False) -> list[str]:
+    """Teile je Position, in der gesprochenen Reihenfolge. Nicht sicher trennbar → [text].
+    `inner`: the text is a part the whole sentence was already split into; its
+    numbered wishes were decided there, with what was said before the part, so
+    they are not cut again (Codex PR #1082)."""
     stripped = text.strip()
     if not _separable(stripped):
         return [stripped] if stripped else []
-    return [_strip(p) for p in _split(stripped)]
+    return [_strip(p) for p in _split(stripped, inner=inner)]
 
 
-def raw_pieces(text: str) -> list[str]:
+def raw_pieces(text: str, *, inner: bool = False) -> list[str]:
     """Nur an den Trennern geschnitten, ohne die Pruefung, ob ein Teil eine
     Position eroeffnet. Fuer den Gegencheck mit der Karte (search.position_parts):
     ob "die 23 und Pho Bo" zwei Gerichte sind, entscheidet nicht der Satz,
@@ -89,7 +96,7 @@ def raw_pieces(text: str) -> list[str]:
     stripped = text.strip()
     if not _separable(stripped):
         return [stripped] if stripped else []
-    return [_strip(p) for p in _split(stripped, by_position=False)]
+    return [_strip(p) for p in _split(stripped, by_position=False, inner=inner)]
 
 
 def _strip(part: str) -> str:
@@ -116,7 +123,7 @@ def _separable(text: str) -> bool:
     return all(_content(p) for p in _SEPARATOR.split(text))
 
 
-def _split(text: str, *, by_position: bool = True) -> list[str]:
+def _split(text: str, *, by_position: bool = True, inner: bool = False) -> list[str]:
     """Am Trenner zerlegen. Ein Teil, der keine eigene Position eröffnet, hängt
     wieder an dem davor: "eine Ente süß und sauer" bleibt ein Name, die Grenze
     vor "die 23" bleibt trotzdem stehen (Codex PR #124).
@@ -136,6 +143,8 @@ def _split(text: str, *, by_position: bool = True) -> list[str]:
     # joined part are the words of its pieces and separators in a row.
     parts = [[pieces[0]]]
     left = _WORD.findall(fold(pieces[0]))
+    # Inside a part a numbered wish never opens a position: as if a name was said.
+    before = _read(_Said(set(), not inner), _full_words(pieces[0]))
     for sep, piece in zip(separators, pieces[1:], strict=True):
         right = _WORD.findall(fold(piece))
         # A pause at the "und" ("drei und äh zwanzig", "drei äh und zwanzig")
@@ -182,7 +191,12 @@ def _split(text: str, *, by_position: bool = True) -> list[str]:
                 )
             )
         )
-        attached = not _opens_position(piece) if by_position else _modifies(piece)
+        attached = (
+            not _opens_position(piece, before)
+            if by_position
+            else _modifies(piece, before)
+        )
+        before = _read(before, _full_words(piece))
         if number_joined or attached:
             parts[-1] += (sep, piece)
             left += _WORD.findall(fold(sep))
@@ -193,7 +207,51 @@ def _split(text: str, *, by_position: bool = True) -> list[str]:
     return ["".join(part) for part in parts]
 
 
-def _opens_position(part: str) -> bool:
+class _Said(NamedTuple):
+    """What the sentence said before a piece, for `_names_card_number`."""
+
+    numbers: set[int]  # the card numbers said, by value
+    plain: bool  # every piece so far named one card number in digits, nothing else
+
+
+def _nothing_said() -> _Said:
+    return _Said(set(), True)
+
+
+def _read(before: _Said, words: list[str]) -> _Said:
+    """`before` with the words of the next piece read. A plain piece is one card
+    number in digits behind its own word ("die 23", "die Nummer 23"), maybe with
+    its dish's name and a wish ("die 23 Frühlingsrollen ohne Karotten"). Any
+    other number, a quantity or a name without a number makes the sentence
+    unplain for good: there, a later number may point back at what was said.
+    Codex PR #1082 found one spoken form after the other (a number word, "drei
+    und zwanzig", "vierzig sieben", a quantity behind it); reading their
+    values here would copy `numberwords`. The set of numbers grows in place,
+    one per sentence, so a long sentence is still read once."""
+    if not before.plain:
+        return before
+    prefix = next(
+        (i for i, w in enumerate(words) if not _is_prefix_word(w)), len(words)
+    )
+    numbered = [
+        i for i, w in enumerate(words) if _is_number(w) or find_quantity(w) is not None
+    ]
+    plain = (
+        prefix > 1
+        and words[prefix - 1].isdigit()
+        and all(_is_lead(w) for w in words[: prefix - 1])
+        and numbered == [prefix - 1]
+    )
+    if plain:
+        before.numbers.add(int(words[prefix - 1]))
+    return _Said(before.numbers, plain)
+
+
+def _is_lead(word: str) -> bool:
+    return word in _DETERMINERS or word in _NUMBER_MARKERS
+
+
+def _opens_position(part: str, before: _Said | None = None) -> bool:
     """Eröffnet der Teil selbst eine Position? Nur, wenn er damit **beginnt**.
 
     Vorn steht ein Präfix aus Artikel ("eine"), Menge ("zweimal", "2 x", "zwei
@@ -213,16 +271,52 @@ def _opens_position(part: str) -> bool:
     if not any(_opens(w) for w in words[:prefix]):
         return False
     if rest:
-        return rest[0] not in _MODIFIERS
+        return rest[0] not in _MODIFIERS or _names_card_number(words[:prefix], before)
     return any(_is_number(w) for w in words)
 
 
-def _modifies(part: str) -> bool:
+def _modifies(part: str, before: _Said | None = None) -> bool:
     """Ein Hinweis zur Position davor: nach Artikel und Menge steht vorn "mit",
     "ohne", "extra" oder "aber" ("mit Reis", "2 x ohne Koriander")."""
     words = _full_words(part)
-    rest = words[next((i for i, w in enumerate(words) if not _is_prefix_word(w)), 0) :]
-    return bool(rest) and rest[0] in _MODIFIERS
+    start = next((i for i, w in enumerate(words) if not _is_prefix_word(w)), 0)
+    rest = words[start:]
+    return (
+        bool(rest)
+        and rest[0] in _MODIFIERS
+        and not _names_card_number(words[:start], before)
+    )
+
+
+def _names_card_number(prefix: list[str], before: _Said | None) -> bool:
+    """Does the prefix end in a card number with its own word ("die 13",
+    "Nummer 13", "zweimal die 13")? Then the wish behind it is that dish's own:
+    "die 23 ohne Karotten und die 13 mit Allergie" is two positions, each with
+    its own wish (docs/24, own test PR #139).
+
+    The same words also point back at portions just named: "zweimal die 13,
+    die eine mit Erdnussallergie", "zwei Pho Bo, die zwei ohne Koriander". Such
+    a word is an article, a number word or a small number, so only digits
+    count, behind die/der/das/den only two or more; a single digit counts
+    behind "Nummer" alone. Everything else keeps the old rule and stays
+    with the position before, as does a quantity ("die 2 x ohne Koriander").
+
+    The number may point back as well, at what the sentence said before it: a
+    dish named by its name ("zwei Pho Bo, die 13 ohne Koriander"), the same
+    number ("zweimal die 13, die 13 mit Erdnussallergie") or a count ("zwanzig
+    Pho Bo, die 12 ohne Koriander"). So only a sentence that said nothing but
+    plain card numbers before (`_read`) opens a position here, and only for a
+    number not said yet; anywhere else the part stays with the position
+    before, and the sentence asks as it did."""
+    if len(prefix) < 2:
+        return False
+    lead, number = prefix[-2], prefix[-1]
+    before = before or _nothing_said()
+    if not before.plain:
+        return False
+    if not number.isdigit() or int(number) in before.numbers:
+        return False
+    return lead in _NUMBER_MARKERS or (lead in _DETERMINERS and len(number) > 1)
 
 
 def _is_prefix_word(word: str) -> bool:

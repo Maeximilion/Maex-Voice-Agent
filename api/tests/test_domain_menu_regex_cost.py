@@ -379,6 +379,9 @@ def _old_split(text, *, by_position=True):
     pieces = split._SEPARATOR.split(text)
     separators = split._SEPARATOR.findall(text)
     parts = [pieces[0]]
+    # The decision whether a piece opens a position is the live one, with what
+    # the sentence said before it (PR #1082); only the cutting is the old code.
+    before = split._read(split._nothing_said(), split._full_words(pieces[0]))
     for sep, piece in zip(separators, pieces[1:], strict=True):
         left = _words(parts[-1])
         right = _words(piece)
@@ -419,9 +422,10 @@ def _old_split(text, *, by_position=True):
             )
         )
         if by_position:
-            attached = not split._opens_position(piece)
+            attached = not split._opens_position(piece, before)
         else:
-            attached = split._modifies(piece)
+            attached = split._modifies(piece, before)
+        before = split._read(before, split._full_words(piece))
         if number_joined or attached:
             parts[-1] += sep + piece
         else:
