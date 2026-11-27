@@ -19,7 +19,8 @@
 # database to <name>_before_restore_<time> and the new one into its place: nothing is
 # dropped, the way back is a rename. That copy is dropped by hand within
 # BACKUP_KEEP_DAYS days (docs/13 §4). Stop api and dispatcher before, a database with
-# open sessions cannot be renamed.
+# open sessions cannot be renamed. Afterwards, before anything takes a call: migrate.sh
+# where the code is newer, then the replay of the erasure ledger it prints (#1085).
 #
 # Exit codes: 0 done, 1 failed and nothing changed, 2 wrong call or configuration.
 set -euo pipefail
@@ -172,3 +173,8 @@ if [ "$exists" = 1 ]; then
     echo "previous state kept as $previous; once the restored state is checked: drop database \"$previous\""
 fi
 echo "if the code is newer than that revision: bash scripts/migrate.sh"
+# U7 (#1085): what was erased after the dump is in the dump again. The replay runs
+# in the application's image on the code's schema, so after migrate.sh, and before
+# anything takes a call. The time comes from the name backup.sh gave the dump.
+dumped="$(basename "$file" | grep -oE '_[0-9]{8}T[0-9]{6}Z' | tail -n 1 | tr -d _ || true)"
+echo "then, before api, dispatcher and voice start, replay the erasure ledger (docs/09 §2 step 5): docker compose run --rm --no-deps -T api python -m api.jobs.data_requests replay --since ${dumped:-<UTC time of the dump>} < ~/erasure_ledger.csv"

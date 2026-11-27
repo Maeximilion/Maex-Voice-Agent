@@ -7,16 +7,19 @@ are skipped locally and fail in CI.
 """
 
 import contextlib
+import io
 import os
 import shutil
 import subprocess
 import time
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
 from api.config import settings
@@ -296,6 +299,78 @@ def test_restore_replace_brings_the_state_back_and_keeps_the_old_database(
 
     assert later.returncode == 0, later.stderr
     assert "kept from earlier restores" in later.stdout and previous in later.stdout
+
+
+def test_a_replay_after_the_restore_erases_again_what_the_dump_brought_back(
+    db, backup_dir, passphrase_file, monkeypatch, capsys
+):
+    """U7 (#1085): erase and object after the backup, restore, replay the ledger;
+    nothing erased is back and the objection holds again."""
+    from api.domain.customers.requests import log_request
+    from api.jobs import data_requests
+    from api.models import Call, Customer, Order, RecognitionObjection
+    from api.tests.test_domain_customers_requests import OTHER_PHONE, PHONE, _order
+    from api.tests.test_domain_draft_order import _tenant
+
+    engine = create_engine(db, poolclass=NullPool)
+    monkeypatch.setattr(data_requests, "SessionLocal", sessionmaker(bind=engine))
+    with Session(engine) as session:
+        tenant_id = _tenant(session, "Testbetrieb")
+        customer = Customer(tenant_id=tenant_id, phone=PHONE, name="Müller")
+        session.add(customer)
+        session.flush()
+        erased = _order(session, tenant_id, customer=customer)
+        objector = _order(session, tenant_id, name="Schmidt", phone=OTHER_PHONE)
+        references = {
+            kind: log_request(
+                session,
+                tenant_id,
+                kind=kind,
+                channel="mail",
+                note=None,
+                received_at=datetime.now(UTC),
+                zone="Europe/Berlin",
+            ).reference
+            for kind in ("erasure", "objection")
+        }
+        session.commit()
+        ids = (customer.id, erased.id, erased.call_id, objector.call_id)
+    dump = _backup(db, backup_dir, passphrase_file)
+    on = ["--on", "2026-10-12", "--tenant-name", "Testbetrieb"]
+    erase = ["erase", references["erasure"], "--name", "Müller", *on]
+    assert data_requests.main(erase) == 0
+    objection = ["object", references["objection"], "--name", "Schmidt", *on]
+    assert data_requests.main(objection) == 0
+    ledger = capsys.readouterr().out
+
+    done = _run(
+        "restore.sh",
+        dump.as_posix(),
+        "--replace",
+        make_url(db).database,
+        db_url=db,
+        backup_dir=backup_dir,
+        passphrase_file=passphrase_file,
+    )
+    assert done.returncode == 0, done.stderr
+    stamp = dump.name.split("_")[-1].split(".")[0]
+    assert f"replay --since {stamp}" in done.stdout
+
+    def state():
+        with Session(engine) as session:
+            return (
+                session.get(Customer, ids[0]) is not None,
+                session.scalar(select(Order.customer_name).where(Order.id == ids[1])),
+                session.scalar(select(Call.caller_id).where(Call.id == ids[2])),
+                session.scalar(select(Call.caller_id).where(Call.id == ids[3])),
+                session.scalars(select(RecognitionObjection.phone)).all(),
+            )
+
+    assert state() == (True, "Müller", PHONE, OTHER_PHONE, [])
+    monkeypatch.setattr("sys.stdin", io.StringIO(ledger))
+    replay = ["replay", "--since", stamp, "--tenant-name", "Testbetrieb"]
+    assert data_requests.main(replay) == 0
+    assert state() == (False, "", None, None, [OTHER_PHONE])
 
 
 # Stands in for psql, pg_dump and pg_restore: runs the real client, but the answer to

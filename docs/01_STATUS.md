@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.117
+> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.118
 
 ---
 
@@ -181,6 +181,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.118 · 27.11.2026:** Chain round 4 item 21: #1085 the erasure ledger is replayed after a restore (dsr replay --since, printed by restore.sh --replace), objections come back from the rows that held the number; restore test against a real dump
 - **v2.69.117 · 27.11.2026:** Chain round 4 item 15: T-9.3 (#73) done: backup and restore rehearsed again in the production layout, all 39 tables identical, failure cases change nothing; off-site copy stays #321, ledger replay is #1085
 - **v2.69.116 · 27.11.2026:** Chain round 4 item 14 (docs/24, own test PR #139): a card number with a wish of its own is its own position ("die 23 ohne Karotten und die 13 mit Allergie" takes both dishes), unless the sentence before it said more than plain card numbers; an allergy said with several dishes goes on none of them by its place, the core asks "Gilt dies für alle Speisen oder für eine einzelne?" (Maxi, #1067)
 - **v2.69.115 · 27.11.2026:** Chain round 4 item 20: super slow gives its working lane the 45-minute break of slow mode; a freed lane is cleared once its PR is merged; the coordinator counts units before every refill and re-reads usage and mode on every wake (Maxi, 27.11)

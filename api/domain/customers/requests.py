@@ -20,10 +20,11 @@ is committed before a row is read. That tab logs, extends, answers and reads;
 `erase` and `record_objection` stay with the job, which has the ledger file.
 """
 
+import csv
 import re
 import uuid
 from collections import Counter, defaultdict
-from collections.abc import Collection, Sequence
+from collections.abc import Callable, Collection, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any, NamedTuple
@@ -1239,15 +1240,149 @@ def record_objection(
     """Recognition stays off for every number of the person (L12), and their
     calls lose the number. The customer stays: an objection is no erasure."""
     _require(request, "objection")
+    # The rows that hold each number name it in the ledger, never the number:
+    # a replay after a restore reads it from them again (#1085).
+    holders: list[Customer | Order | Reservation] = [
+        *person.customers,
+        *person.orders,
+        *person.reservations,
+    ]
+    ledger = [
+        LedgerEntry(row.__tablename__, row.id, "objected")
+        for row in holders
+        if row.phone in person.phones
+    ]
     for phone in sorted(person.phones):
         session.execute(
             insert(RecognitionObjection)
             .values(tenant_id=request.tenant_id, phone=phone)
             .on_conflict_do_nothing(constraint="uq_recognition_objections_phone")
         )
-    ledger: list[LedgerEntry] = []
     _clear_calls(session, request.tenant_id, person.calls, ledger)
     _audit(session, request, "data_subject.objection_recorded")
     session.flush()
     session.expire_all()
     return ledger
+
+
+def _phone_holder(model: Any) -> Callable[[list[uuid.UUID]], Any]:
+    """An objection again, from a row that held its number at the time."""
+    return lambda ids: (
+        insert(RecognitionObjection)
+        .from_select(
+            ["tenant_id", "phone"],
+            select(model.tenant_id, model.phone).where(
+                model.id.in_(ids), model.phone != ""
+            ),
+        )
+        .on_conflict_do_nothing(constraint="uq_recognition_objections_phone")
+    )
+
+
+# What a ledger line does again after a restore (U7, #1085), by (table, action),
+# in this order: the objections first, while their rows still hold the number,
+# then the steps of `erase`. A store that `erase` adds gets its line here too.
+REPLAY: dict[tuple[str, str], Callable[[list[uuid.UUID]], Any]] = {
+    (Customer.__tablename__, "objected"): _phone_holder(Customer),
+    (Order.__tablename__, "objected"): _phone_holder(Order),
+    (Reservation.__tablename__, "objected"): _phone_holder(Reservation),
+    (OutboxEvent.__tablename__, "deleted"): lambda ids: delete(OutboxEvent).where(
+        OutboxEvent.id.in_(ids)
+    ),
+    (OutboxEvent.__tablename__, "thinned"): lambda ids: (
+        update(OutboxEvent)
+        .where(OutboxEvent.id.in_(ids), OutboxEvent.payload != thin_payload())
+        .values(payload=thin_payload())
+    ),
+    (Reservation.__tablename__, "deleted"): lambda ids: delete(Reservation).where(
+        Reservation.id.in_(ids)
+    ),
+    (OrderItem.__tablename__, "cleared"): lambda ids: (
+        update(OrderItem)
+        .where(OrderItem.id.in_(ids), OrderItem.note.is_not(None))
+        .values(note=None)
+    ),
+    (Order.__tablename__, "cleared"): lambda ids: (
+        update(Order)
+        .where(Order.id.in_(ids))
+        .values(
+            **ORDER_GONE,
+            status=case((Order.status == "draft", "cancelled"), else_=Order.status),
+        )
+    ),
+    (Callback.__tablename__, "cleared"): lambda ids: (
+        update(Callback)
+        .where(Callback.id.in_(ids), or_(Callback.phone != "", Callback.summary != ""))
+        .values(**CALLBACK_GONE)
+    ),
+    (Call.__tablename__, "cleared"): lambda ids: (
+        update(Call)
+        .where(Call.id.in_(ids), Call.caller_id.is_not(None))
+        .values(caller_id=None)
+    ),
+    (Recording.__tablename__, "withdrawn"): lambda ids: (
+        update(Recording)
+        .where(Recording.id.in_(ids), Recording.withdrawn_at.is_(None))
+        .values(withdrawn_at=func.now())
+    ),
+    (Address.__tablename__, "deleted"): lambda ids: delete(Address).where(
+        Address.id.in_(ids)
+    ),
+    (Customer.__tablename__, "deleted"): lambda ids: delete(Customer).where(
+        Customer.id.in_(ids)
+    ),
+}
+
+
+def read_ledger(lines: Iterable[str], since: date) -> list[LedgerEntry]:
+    """The lines of the ledger file from the day of the dump on. One line this
+    cannot read stops the whole replay: a line skipped would bring a row back."""
+    entries = []
+    for number, fields in enumerate(csv.reader(lines), start=1):
+        if not fields:
+            continue
+        try:
+            day, table, row_id, action = fields
+            entry = LedgerEntry(table, uuid.UUID(row_id), action)
+            if (table, action) not in REPLAY:
+                raise ValueError(f"no replay for {table} {action}")
+            if date.fromisoformat(day) >= since:
+                entries.append(entry)
+        except ValueError as exc:
+            raise InvalidInput(
+                f"ledger line {number}: {exc}; nothing replayed"
+            ) from exc
+    return entries
+
+
+def replay_ledger(
+    session: Session, tenant_id: uuid.UUID, entries: Sequence[LedgerEntry], since: date
+) -> Counter[str]:
+    """Every line again after a restore, so nothing erased comes back. By row id
+    only: the ids are unique, and a line of another stack's ledger finds nothing.
+    Idempotent, a line already done changes nothing. Nothing here commits."""
+    ids: defaultdict[tuple[str, str], list[uuid.UUID]] = defaultdict(list)
+    for entry in entries:
+        ids[(entry.table, entry.action)].append(entry.row_id)
+    changed: Counter[str] = Counter()
+    for key, statement in REPLAY.items():
+        if ids[key]:
+            done = statement(ids[key])
+            rows = session.scalars(
+                done.returning(done.table.c.id).execution_options(
+                    synchronize_session=False
+                )
+            )
+            changed[" ".join(key)] += len(rows.all())
+    session.add(
+        AuditLog(
+            tenant_id=tenant_id,
+            actor=ACTOR_JOB,
+            action="data_subject.ledger_replayed",
+            entity="erasure_ledger",
+            payload={"since": since.isoformat(), "lines": len(entries), **changed},
+        )
+    )
+    session.flush()
+    session.expire_all()
+    return changed
