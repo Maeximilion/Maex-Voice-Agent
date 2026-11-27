@@ -463,7 +463,7 @@ def dispatch(
     none; it decides whether `draft_order` may replay a stored draft (#952).
     The default is a caller without a conversation. `seconds_left`: what is
     left of the guest's turn, which bounds the tool's waits on the phone
-    line (`db.bounded_by`); its log entry below keeps the line's own bound."""
+    line (`db.bounded_by`), its log entry below included."""
     started = time.perf_counter()
     adapter = TOOLS.get(name)
     # Call and tenant come from the code, never from the model. A real model
@@ -508,8 +508,11 @@ def dispatch(
             hint=hint,
         )
 
-    duration_ms = round((time.perf_counter() - started) * 1000, 1)
-    _log_call(session, call_id, tenant_id, name, duration_ms, outcome)
+    elapsed = time.perf_counter() - started
+    # The entry waits only what is left of the turn too: a lock on the call's
+    # row does not keep the guest past it. A cut entry is lost, the answer not.
+    with bounded_by(session, None if seconds_left is None else seconds_left - elapsed):
+        _log_call(session, call_id, tenant_id, name, round(elapsed * 1000, 1), outcome)
     return outcome
 
 

@@ -7,6 +7,8 @@ phone line with the call's routing. Before this, a turn could take six model
 calls of 15 seconds each before the guest heard anything.
 """
 
+import threading
+import time
 import uuid
 from dataclasses import replace
 from datetime import date, datetime
@@ -15,7 +17,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
-from sqlalchemy import create_engine, select, update
+from sqlalchemy import create_engine, select, text, update
 from sqlalchemy.orm import Session
 
 from api.agent import dispatch as dispatch_module
@@ -485,3 +487,71 @@ def test_a_client_that_cannot_be_closed_does_not_fail_the_call(session, line):
 
     # No outage sentence and no transfer: the call had ended in good order.
     assert port.says(sid)[-1] == "Gern, für wann?" and port.transfers(sid) == []
+
+
+# -- waits around a tool on the phone line's bounded session (docs/24) ---------
+
+
+def _lock_the_call(url, call_id, release_after=None):
+    """Another connection holds the call's row, as a second thread of the
+    call would; released after `release_after` seconds, else by the caller."""
+    holder = create_engine(url)
+    conn = holder.connect()
+    conn.execute(
+        text("select id from calls where id = :id for update"), {"id": call_id}
+    )
+
+    def release():
+        conn.rollback()
+        conn.close()
+        holder.dispose()
+
+    if release_after is not None:
+        threading.Timer(release_after, release).start()
+    return release
+
+
+def test_the_log_entry_after_a_tool_waits_no_longer_than_the_turn(
+    migrated_db_url, bounded_db, state
+):
+    """A tool that finished in time is not followed by the line's 2 s on a
+    lock on the call's row for its log entry: the entry gives up at the
+    turn's deadline, and the tool's answer still goes out."""
+    release = _lock_the_call(migrated_db_url, state.call_id)
+    try:
+        with bounded_db(2000)() as db:
+            started = time.monotonic()
+            result = dispatch_module.dispatch(
+                db,
+                state.call_id,
+                state.tenant_id,
+                "get_service_status",
+                {},
+                now=OPEN_NOW,
+                seconds_left=0.3,
+            )
+            waited = time.monotonic() - started
+    finally:
+        release()
+
+    assert result.ok is True
+    assert waited < 0.8
+
+
+def test_the_handover_after_a_cut_tool_still_waits_for_its_writes(
+    migrated_db_url, bounded_db, state, monkeypatch
+):
+    """Past the deadline the core's handover keeps the line's own bound and
+    is never cut by the turn's deadline (rule 5): a lock on the call's row
+    released after half a second still ends in the transfer."""
+    monkeypatch.setitem(dispatch_module.TOOLS, "get_service_status", _out_of_time)
+    clock = Clock()
+    tool = LLMTurn(tool_call=ToolCall(name="get_service_status"))
+    model = SlowModel(clock, (9.5, tool))
+    with bounded_db(2000)() as db:
+        loop = _loop(db, model, clock)
+        _lock_the_call(migrated_db_url, state.call_id, release_after=0.5)
+        result = loop.run_turn(state, "Habt ihr offen?")
+
+    assert result.ended is True and state.stage == "transferred"
+    assert result.say[-1] == SAY_ON_FAILURE
