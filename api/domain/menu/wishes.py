@@ -49,6 +49,8 @@ _LEAD_FILLER = frozenset({"bitte", "aber", "und", "dann", "dafuer"})
 # Verbindet Teile eines Wunsches, ohne selbst etwas zu wuenschen.
 _GLUE = frozenset({"gern", "gerne", "dazu", "noch", "als", "die", "der", "das", "den"})
 _ARTICLES = frozenset({"ein", "eine", "einen", "einem", "einer"})
+# Words a wish may hold besides its options and groups.
+_FILL = _ADD | _LEAD_FILLER | _GLUE
 # Womit ein Satzteil zur eigenen Allergie beginnt, auch ohne Komma davor.
 # "weil", "wegen", "denn": the reason in front of the allergy belongs to its
 # clause, not to the wish before it ("ohne Zwiebeln, weil ich ...", #252).
@@ -1974,7 +1976,9 @@ def _classify(text: str, groups: list[OptionGroup]) -> Wish:
         if behind.kind != "note":
             # A second addition behind the removal ("mit Nudeln, ohne
             # Zwiebeln, mit Tofu") is never kept in the note, where its price
-            # would be lost (#671): one wish carries one option, so ask.
+            # would be lost (#671). Options on both sides of a removal are
+            # not joined here, so ask ("mit Huhn und Nudeln, ohne Zwiebeln"
+            # carries both).
             return Wish(
                 text=f"{addition}, {behind.text}",
                 kind="unknown",
@@ -1987,25 +1991,44 @@ def _classify(text: str, groups: list[OptionGroup]) -> Wish:
         return wish.model_copy(update={"text": text, "note": removal})
     # Bei "Nudeln statt Reis" gilt, was vor "statt" steht.
     cut = next((i for i, w in enumerate(words) if w in _INSTEAD), len(words))
-    wanted = set(words[:cut])
+    head = words[:cut]
     matches = [
         (group, option, used)
         for group in groups
         for option in group.options
-        if (used := _names(option.name, group.group, wanted))
+        if (used := _names(option.name, group.group, head))
     ]
     if not matches:
         return Wish(text=text, kind="unknown")
-    named = {group.group for group in groups if set(_words(group.group)) <= wanted}
+    phrases = _group_phrases(head, groups, matches)
+    in_phrase = {i for start, end, _ in phrases for i in range(start, end)}
+    outside = {word for i, word in enumerate(head) if i not in in_phrase}
+    # A word that names a group here is no option as well: "mit Erdnuss als
+    # Sauce" next to an extra called Sauce (deep review of #1076).
+    matches = [match for match in matches if match[2] <= outside]
+    if not matches:
+        return Wish(text=text, kind="unknown")
+    # Was die Option nicht erklaert, darf nicht still wegfallen: "mit Nudeln und
+    # Pommes" ist kein "mit Nudeln" (Codex PR #139). A group word counts only
+    # where it names a group ("mit Huhn und extra Fleisch" stays unknown), and
+    # the check comes before an option in two groups is asked about ("mit
+    # Reis und Pommes", deep review of #1076).
+    if outside - set().union(*(used for _, _, used in matches)) - _FILL:
+        return Wish(text=text, kind="unknown")
+    named = _named_groups(head, phrases, in_phrase, matches)
     by_name: dict[str, list[tuple[OptionGroup, OptionOut, set[str]]]] = {}
     for match in matches:
         by_name.setdefault(match[1].name, []).append(match)
     chosen = []
-    for found in by_name.values():
+    for name, found in by_name.items():
         # The same option in two groups (Reis als Beilage und als Extra) is
-        # never chosen by us: only the one group the guest named settles it
-        # (Review and Codex PR #139).
-        found = [m for m in found if m[0].group in named] or found
+        # never chosen by us: only the group the guest named with it settles
+        # it (Review and Codex PR #139). A group it does not stand in ("mit
+        # Nudeln als Fleisch") is not understood (Codex PR #1076).
+        if name in named:
+            if not named[name] <= {group.group for group, _, _ in found}:
+                return Wish(text=text, kind="unknown")
+            found = [m for m in found if m[0].group in named[name]]
         if len(found) > 1:
             if len(by_name) > 1:
                 # Asked as a whole, never with half of the wish kept.
@@ -2024,23 +2047,13 @@ def _classify(text: str, groups: list[OptionGroup]) -> Wish:
         # Two options of one group ("mit Reis und Nudeln"), or two that name
         # the same words ("gebratener Reis" next to Reis): not definite.
         return Wish(text=text, kind="unknown")
-    # Was die Option nicht erklaert, darf nicht still wegfallen: "mit Nudeln und
-    # Pommes" ist kein "mit Nudeln" (Codex PR #139). The group of a chosen
-    # option may be named ("als Beilage").
-    groups_said = set().union(*(_words(group.group) for group, _, _ in chosen))
-    if wanted - said - groups_said - _ADD - _LEAD_FILLER - _GLUE:
-        return Wish(text=text, kind="unknown")
-    if not _groups_fit(words[:cut], chosen, said):
-        return Wish(text=text, kind="unknown")
     if len(chosen) > 1:
         # Read back in the order the guest said them, not the card's.
         chosen.sort(key=lambda match: min(words.index(word) for word in match[2]))
-        names = [option.name for _, option, _ in chosen]
         return Wish(
             text=text,
             kind="option",
-            option=f"{', '.join(names[:-1])} und {names[-1]}",
-            price_delta_cents=sum(option.price_delta_cents for _, option, _ in chosen),
+            option=_read_back([option for _, option, _ in chosen]),
             options=[
                 WishOption(
                     group=group.group,
@@ -2062,31 +2075,85 @@ def _classify(text: str, groups: list[OptionGroup]) -> Wish:
     )
 
 
-def _groups_fit(
+_Match = tuple[OptionGroup, OptionOut, set[str]]
+
+
+def _group_phrases(
+    words: list[str], groups: list[OptionGroup], matches: list[_Match]
+) -> list[tuple[int, int, str]]:
+    """Where the wish names a group, as (start, end, group): its whole name
+    right after "als" ("Reis als Beilage") or right after a word of an option
+    ("Erdnuss Sauce"); a name that adds or glues ("Extra", "Dazu") only after
+    "als", since "extra Huhn" adds. The longest name wins ("als warme
+    Beilage"), and a group without a word is never named (deep review of
+    #1076)."""
+    names = sorted(
+        ((tuple(_words(group.group)), group.group) for group in groups),
+        key=lambda name: -len(name[0]),
+    )
+    phrases = []
+    i = 0
+    while i < len(words):
+        for said, group in names:
+            end = i + len(said)
+            if not said or tuple(words[i:end]) != said:
+                continue
+            after_option = i > 0 and any(
+                words[i - 1] in used and words[i] not in used for _, _, used in matches
+            )
+            if (i > 0 and words[i - 1] == "als") or (
+                after_option and not set(said) & _FILL
+            ):
+                phrases.append((i, end, group))
+                i = end - 1
+                break
+        i += 1
+    return phrases
+
+
+def _named_groups(
     words: list[str],
-    chosen: list[tuple[OptionGroup, OptionOut, set[str]]],
-    said: set[str],
-) -> bool:
-    """Each group word belongs to the option it stands with: the nearest
-    option before it, else the one after it. "mit Huhn als Beilage und
-    Nudeln als Fleisch" names each option with the other's group and is not
-    definite (Codex PR #1076)."""
-    at = [
-        (i, group)
+    phrases: list[tuple[int, int, str]],
+    in_phrase: set[int],
+    matches: list[_Match],
+) -> dict[str, set[str]]:
+    """The groups each option is named with: a group named belongs to the
+    nearest option said before it, else to the one after it. "mit Huhn als
+    Beilage und Nudeln als Fleisch" names each option with the other's group
+    (Codex PR #1076)."""
+    at = sorted(
+        (i, option.name)
         for i, word in enumerate(words)
-        for group, _, used in chosen
+        if i not in in_phrase
+        for _, option, used in matches
         if word in used
-    ]
-    for i, word in enumerate(words):
-        if word in said or word in _ADD | _LEAD_FILLER | _GLUE:
-            continue
-        if not any(word in _words(group.group) for group, _, _ in chosen):
-            continue
-        before = [group for j, group in at if j < i]
-        owner = before[-1] if before else next(group for j, group in at if j > i)
-        if word not in _words(owner.group):
-            return False
-    return True
+    )
+    named: dict[str, set[str]] = {}
+    for start, end, group in phrases:
+        before = [name for i, name in at if i < start]
+        owner = before[-1] if before else next(name for i, name in at if i >= end)
+        named.setdefault(owner, set()).add(group)
+    return named
+
+
+def _read_back(options: list[OptionOut]) -> str:
+    """Two or more options as the guest hears them, each with its own delta:
+    "Huhn, 1 Euro günstiger, und Nudeln, 3 Euro Aufpreis". A sum would hide a
+    surcharge behind a cheaper option (deep review of #1076)."""
+    # Import here: ordering imports search, which imports this module.
+    from api.domain.ordering.readback import spoken_euro
+
+    parts = []
+    for option in options:
+        delta = option.price_delta_cents
+        if delta > 0:
+            parts.append(f"{option.name}, {spoken_euro(delta)} Aufpreis")
+        elif delta < 0:
+            parts.append(f"{option.name}, {spoken_euro(-delta)} günstiger")
+        else:
+            parts.append(option.name)
+    priced = any(option.price_delta_cents for option in options[:-1])
+    return f"{', '.join(parts[:-1])}{', und ' if priced else ' und '}{parts[-1]}"
 
 
 def _split_addition(text: str) -> tuple[str, str | None]:
@@ -2147,16 +2214,18 @@ def _split_removal(text: str) -> tuple[str, str | None]:
     return addition, text[tokens[at].start() :].strip(" ,.;")
 
 
-def _names(option: str, group: str, wanted: set[str]) -> set[str]:
+def _names(option: str, group: str, said: list[str]) -> set[str]:
     """Die Woerter des Wunsches, die die Option nennen - leer, wenn sie es nicht
     tun. Als eigenes Wort ("mit Erdnuss") oder zusammengesetzt mit dem
     Gruppennamen ("Erdnusssauce" = Erdnuss + Sauce). Kein beliebiger
-    Wortanfang: "Reisnudeln" ist nicht die Option Reis."""
+    Wortanfang: "Reisnudeln" ist nicht die Option Reis. The words of a longer
+    name stand together: "mit gebratener Ente und Reis" is no "gebratener
+    Reis" (sweep of the #1076 deep review)."""
     words = _words(option)
-    if set(words) <= wanted:
+    if any(said[i : i + len(words)] == words for i in range(len(said))):
         return set(words)
     compound = words[0] + "".join(_words(group)) if len(words) == 1 else None
-    return {compound} if compound in wanted else set()
+    return {compound} if compound in said else set()
 
 
 def open_wish(text: str) -> Wish | None:

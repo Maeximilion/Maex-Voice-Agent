@@ -130,7 +130,7 @@ Settled assumptions: `docs/HISTORY.md` sections "Made Assumptions (archive)" and
 
 ## Open Points from Reviews
 
-77 recorded review findings, each with its trigger, live in `docs/24_OPEN_REVIEW_POINTS.md` (moved there 19.11.2026). `/task` reads the rows that name its task or files.
+80 recorded review findings, each with its trigger, live in `docs/24_OPEN_REVIEW_POINTS.md` (moved there 19.11.2026). `/task` reads the rows that name its task or files.
 
 ## Blockers
 

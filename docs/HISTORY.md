@@ -2679,7 +2679,7 @@ Replaced or removed lines of `.claude/chain/brief-common.md`:
 
 ## Open Points from Reviews (archive, two wish rows fixed 27.11.2026)
 
-Fixed in one PR of chain round 4 (item 7, #1066): `classify_wish` takes two or more options from different groups when each is definite (each in `Wish.options`, read back together with the sum of the card's deltas), and a group the guest names settles an option that stands in two groups. Two options of one group, an option the card does not have, one in two groups next to another option, and options that share a word stay `unknown`.
+Fixed in one PR of chain round 4 (item 7, #1066): `classify_wish` takes two or more options from different groups when each is definite (each in `Wish.options`, read back together, each with its own delta), and a group the guest names with an option, by its whole name after „als" or right after the option, settles an option that stands in two groups. Two options of one group, an option the card does not have, one in two groups next to another option, options that share a word, a group named with another option, and words nothing explains stay `unknown`.
 
 | Point | Why still open | When due |
 |---|---|---|

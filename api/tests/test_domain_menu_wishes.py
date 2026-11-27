@@ -239,7 +239,7 @@ def test_two_options_through_the_search(session, tenant_id):
         ("Fleisch", "Huhn"),
         ("Beilage", "Nudeln"),
     ]
-    assert result.wish.price_delta_cents == 200
+    assert result.wish.option == "Huhn, ein Euro günstiger, und Nudeln, 3 Euro Aufpreis"
 
 
 def test_teil_des_namens_ist_kein_wunsch(session, tenant_id):
@@ -633,7 +633,7 @@ def test_option_in_zwei_gruppen_wird_nachgefragt():
     assert wish.groups == ["Beilage", "Extra"]
 
 
-REIS_IN_ZWEI = [
+RICE_IN_TWO_GROUPS = [
     *BEILAGE,
     OptionGroup(
         group="Extra",
@@ -653,13 +653,13 @@ REIS_IN_ZWEI = [
 )
 def test_a_named_group_settles_an_option_in_two_groups(said, group, delta):
     """Codex PR #139 (docs/24): the guest named the group, so no question."""
-    wish = wish_of(said, REIS_IN_ZWEI)
+    wish = wish_of(said, RICE_IN_TWO_GROUPS)
     assert (wish.kind, wish.group, wish.option) == ("option", group, "Reis")
     assert wish.price_delta_cents == delta
 
 
 def test_both_groups_named_is_still_asked():
-    wish = wish_of("mit Reis als Beilage und als Extra", REIS_IN_ZWEI)
+    wish = wish_of("mit Reis als Beilage und als Extra", RICE_IN_TWO_GROUPS)
     assert (wish.kind, wish.groups) == ("open", ["Beilage", "Extra"])
 
 
@@ -684,12 +684,43 @@ def test_two_options_from_different_groups():
         ("Beilage", "Nudeln", 300),
     ]
     assert wish.options[1].reason == GRUND
-    # Read back as one: the names and the sum of the card's deltas.
+    # Read back as one, each with its own delta: a surcharge is never hidden
+    # in a sum (deep review of #1076). No delta of the whole.
     assert (wish.option, wish.price_delta_cents, wish.group) == (
-        "Huhn und Nudeln",
-        200,
+        "Huhn, ein Euro günstiger, und Nudeln, 3 Euro Aufpreis",
+        None,
         None,
     )
+
+
+def test_two_options_without_a_delta_are_read_back_by_name():
+    wish = wish_of("mit Ente und Reis", BEILAGE)
+    assert (wish.option, wish.price_delta_cents) == ("Ente und Reis", None)
+
+
+def card(*groups: tuple[str, list[tuple[str, int]]]) -> list[OptionGroup]:
+    """A card of option groups from (group, [(option, delta), ...])."""
+    return [
+        OptionGroup(
+            group=group,
+            required=False,
+            options=[
+                OptionOut(name=name, price_delta_cents=delta, default=False)
+                for name, delta in options
+            ],
+        )
+        for group, options in groups
+    ]
+
+
+FLEISCH = ("Fleisch", [("Ente", 0), ("Huhn", -100)])
+EXTRA_MEAT = card(FLEISCH, ("Extra Fleisch", [("Garnelen", 250)]))
+SAUCE_AND_EXTRAS = card(
+    FLEISCH, ("Sauce", [("süßsauer", 0), ("Erdnuss", 50)]), ("Extras", [("Sauce", 50)])
+)
+WARM_SIDE = card(
+    FLEISCH, ("Beilage", [("Reis", 0)]), ("Warme Beilage", [("Reis", 200)])
+)
 
 
 @pytest.mark.parametrize(
@@ -699,15 +730,71 @@ def test_two_options_from_different_groups():
         ("mit Huhn als Beilage und Nudeln als Fleisch", BEILAGE),
         ("mit Nudeln als Fleisch und Huhn", BEILAGE),
         # The group settles Reis only when it stands with Reis.
-        ("mit Huhn als Beilage und Reis", REIS_IN_ZWEI),
+        ("mit Huhn als Beilage und Reis", RICE_IN_TWO_GROUPS),
+        # Deep review of #1076: "extra" adds; it names the group Extra only
+        # after "als", and there next to Huhn.
+        ("mit extra Huhn und Reis", RICE_IN_TWO_GROUPS),
+        ("mit Huhn als Extra und Reis", RICE_IN_TWO_GROUPS),
+        ("mit Reis und Nudeln als Extra", RICE_IN_TWO_GROUPS),
+        # A group word that names no group here is not understood.
+        ("mit Huhn und extra Fleisch", BEILAGE),
+        ("mit Huhn und Fleisch", BEILAGE),
+        # One word of a longer group name is not that group.
+        ("mit Garnelen als Fleisch", EXTRA_MEAT),
+        # The words nothing explains decline an option in two groups too.
+        ("mit Reis und Pommes", RICE_IN_TWO_GROUPS),
     ],
 )
 def test_a_group_named_with_another_option_is_not_understood(said, groups):
     assert wish_of(said, groups).kind == "unknown"
 
 
+@pytest.mark.parametrize(
+    "said", ["mit Erdnuss als Sauce", "mit Erdnuss-Sauce", "mit Erdnuss Sauce"]
+)
+def test_a_word_that_names_the_group_is_no_second_option(said):
+    """Deep review of #1076: "Sauce" names the group of Erdnuss here, not the
+    extra called Sauce."""
+    wish = wish_of(said, SAUCE_AND_EXTRAS)
+    assert (wish.kind, wish.group, wish.option) == ("option", "Sauce", "Erdnuss")
+    assert wish.options is None
+
+
+def test_the_words_of_an_option_stand_together():
+    """Sweep of the #1076 deep review: "gebratener" belongs to the duck here,
+    so the fried rice is not asked for."""
+    groups = card(FLEISCH, ("Beilage", [("Jasminreis", 0), ("gebratener Reis", 250)]))
+    assert wish_of("mit gebratener Ente und Reis", groups).kind == "unknown"
+    wish = wish_of("mit Ente und gebratener Reis", groups)
+    assert [(o.group, o.option) for o in wish.options or []] == [
+        ("Fleisch", "Ente"),
+        ("Beilage", "gebratener Reis"),
+    ]
+
+
+def test_the_longest_group_name_said_counts():
+    wish = wish_of("mit Huhn und Reis als warme Beilage", WARM_SIDE)
+    assert [(o.group, o.option) for o in wish.options or []] == [
+        ("Fleisch", "Huhn"),
+        ("Warme Beilage", "Reis"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("said", "groups"),
+    [
+        # "extra" before the option adds; which group is still asked.
+        ("extra Reis", RICE_IN_TWO_GROUPS),
+        # A group without a word is never named.
+        ("mit Reis", card(("Beilage", [("Reis", 0)]), ("-", [("Reis", 200)]))),
+    ],
+)
+def test_no_group_named_is_still_asked(said, groups):
+    assert wish_of(said, groups).kind == "open"
+
+
 def test_two_options_each_with_its_own_group():
-    wish = wish_of("mit Huhn als Fleisch und Reis als Extra", REIS_IN_ZWEI)
+    wish = wish_of("mit Huhn als Fleisch und Reis als Extra", RICE_IN_TWO_GROUPS)
     assert [(o.group, o.option) for o in wish.options or []] == [
         ("Fleisch", "Huhn"),
         ("Extra", "Reis"),
@@ -733,7 +820,7 @@ def test_two_options_keep_a_removal_next_to_them():
     ],
 )
 def test_two_options_that_are_not_definite_stay_declined(said):
-    groups = REIS_IN_ZWEI if said == "mit Huhn und Reis" else BEILAGE
+    groups = RICE_IN_TWO_GROUPS if said == "mit Huhn und Reis" else BEILAGE
     wish = wish_of(said, groups)
     assert wish.kind == "unknown"
     assert wish.options is None

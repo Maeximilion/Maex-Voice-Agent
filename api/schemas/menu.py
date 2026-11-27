@@ -84,8 +84,9 @@ class Wish(_WithoutEmpty):
     # (Reis als Beilage und als Extra) - der Agent fragt, welche.
     groups: list[str] | None = None
     # Two or more options from different groups: each one here, while
-    # `option` and `price_delta_cents` read them back as one ("Huhn und
-    # Nudeln", the sum of the card's deltas) and `group` stays empty.
+    # `option` reads them back as one, each with its delta ("Huhn, ein Euro
+    # günstiger, und Nudeln, 3 Euro Aufpreis"), and `group` and
+    # `price_delta_cents` stay empty.
     options: list[WishOption] | None = None
 
 

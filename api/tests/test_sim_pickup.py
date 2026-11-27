@@ -921,12 +921,15 @@ def test_option_als_wunsch_erspart_die_rueckfrage(session, tenant):
 
 def test_two_options_of_one_wish_reach_the_order(session, tenant):
     """Codex PR #139 (docs/24): both options of "mit Huhn und Erdnusssauce"
-    land in the order, read back with the card's sum (-1,00 + 0,50)."""
+    land in the order, each read back with its own delta."""
     _, turns = _bestellung(
         session, tenant, "Die knusprige Ente mit Huhn und Erdnusssauce."
     )
     assert "Welche Auswahl bei Fleisch" not in said(turns)
-    assert "Ente knusprig mit Huhn und Erdnuss, 50 Cent günstiger" in said(turns)
+    assert (
+        "Ente knusprig mit Huhn, ein Euro günstiger, und Erdnuss, 50 Cent Aufpreis"
+        in said(turns)
+    )
     assert "Macht 15 Euro" in said(turns)
     [order] = orders(session)
     assert order.status == "confirmed"
