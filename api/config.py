@@ -1,7 +1,7 @@
 """Einstellungen aus der Umgebung. Keine Werte hier hartkodieren."""
 
 import re
-from typing import Literal, Self
+from typing import TYPE_CHECKING, Any, Literal, Self
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -319,4 +319,16 @@ class Settings(BaseSettings):
         return self
 
 
-settings = Settings()
+# Built on first use, not on import (#983 point 1): a tool that imports this
+# module for `Settings` alone, as scripts/call_log.py does, still starts on an
+# invalid .env and reports it itself. `from api.config import settings` builds
+# it at that import, so the API stops on an invalid .env at start as before.
+if TYPE_CHECKING:
+    settings: Settings
+else:
+
+    def __getattr__(name: str) -> Any:
+        if name == "settings":
+            built = globals()["settings"] = Settings()
+            return built
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.120
+> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.121
 
 ---
 
@@ -182,6 +182,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.121 · 27.11.2026:** Chain round 4 item 24 (docs/24, #983 points 1 and 5): api.config builds settings on first use and the menu package loads its names on first use; scripts/call_log.py ends an invalid .env with exit 2 and the setting's name and runs without SQLAlchemy
 - **v2.69.120 · 27.11.2026:** Chain round 4 item 22 (#1084): an allergy said with one dish while the order already holds another goes on no dish by its place either; the core asks "Gilt dies für alle Speisen oder für eine einzelne?" and the answer decides which dishes get the note; the question leaves no allergen open for the next turn, a dish that is out keeps its sold-out sentence, and the gaps left are in docs/24
 - **v2.69.119 · 27.11.2026:** Chain round 4 item 21: #1085 the erasure ledger is replayed after a restore (dsr replay --since, printed by restore.sh --replace), objections come back from the rows that held the number; restore test against a real dump
 - **v2.69.118 · 27.11.2026:** Chain round 4 item 10 (docs/24): the log entry after a tool waits only what is left of the turn, and the phone line's pool gives up after the line's 2 s instead of 30 s; the handover writes after a cut keep the line's bound (rule 5)
