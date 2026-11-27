@@ -513,7 +513,9 @@ def _takes_a_number_back(
 ) -> bool:
     """A piece that hits no dish, behind a number and before a card number or
     ending in one, may take the first number back ("die 23, ne, die 24", "die
-    23 ohne Zwiebeln, quatsch, die 24", "die 23, doch die 24"). No closed list
+    23 ohne Zwiebeln, quatsch, die 24", "die 23, doch die 24"); in a piece that
+    ends in a card number only the words in front of it are searched ("ich
+    meine die 47", "ich meine die 13 mit Allergie"). No closed list
     holds every spoken correction, so such a sentence stays whole and asks;
     cut, the corrected 23 was booked beside the 24 (review #207, regression of
     #721). With no card number after it ("Die 13, danke.", "Die 13 bitte, ich
@@ -532,15 +534,19 @@ def _takes_a_number_back(
     for k, piece in enumerate(pieces):
         number_before = before
         before = before or card_numbers[k] or has_number(piece)
-        if card_numbers[k] or not number_before:
+        if not number_before:
             continue
-        own = _ends_in_card_number(piece, card)
-        if not (own or after[k]):
+        # "ich meine die 47": the number reading skips the words in front and
+        # the piece hits the 47, so only those words are searched: hitting no
+        # dish, they may take the number before them back (docs/24).
+        head = _words_before_card_number(piece, card)
+        if head is None and (card_numbers[k] or not after[k]):
             continue
-        if not normalize_query(piece) or (has_number(piece) and not own):
+        text = piece if head is None else head
+        if not normalize_query(text) or has_number(text):
             continue
         try:
-            search(piece)
+            search(text)
         except NotFound:
             return True
         except Ambiguous:
@@ -566,9 +572,11 @@ def _leads_with_card_number(piece: str, card: CardFormat) -> bool:
 _CARD_NUMBER_LEADS = frozenset({"die", "nummer", "nr"})
 
 
-def _ends_in_card_number(piece: str, card: CardFormat) -> bool:
-    """ "doch die 24": the piece ends in a card number with its article or
-    marker, behind words of its own."""
+def _words_before_card_number(piece: str, card: CardFormat) -> str | None:
+    """ "doch die 24", "ich meine die 13 mit Allergie": the words in front of a
+    card number said with its article or marker, alone or with a wish of its
+    own behind it; None when the piece holds no such number behind words of
+    its own."""
     words = piece.split()
     # Without a number behind it a lead is never a card number
     # (`could_hold_item_number`), so the rest of the piece is read only behind
@@ -577,13 +585,15 @@ def _ends_in_card_number(piece: str, card: CardFormat) -> bool:
     number_after = [False] * (len(words) + 1)
     for i in range(len(words) - 1, -1, -1):
         number_after[i] = number_after[i + 1] or could_hold_item_number(words[i])
-    return any(
-        number_after[i]
-        and fold(word).strip(".") in _CARD_NUMBER_LEADS
-        and sole_item_number(" ".join(words[i:]), card)[0] is not None
-        for i, word in enumerate(words)
-        if i
-    )
+    for i, word in enumerate(words):
+        if (
+            i
+            and number_after[i]
+            and fold(word).strip(".") in _CARD_NUMBER_LEADS
+            and _leads_with_card_number(" ".join(words[i:]), card)
+        ):
+            return " ".join(words[:i])
+    return None
 
 
 # A card letter said on its own, as the ear writes it ("A", "ah").

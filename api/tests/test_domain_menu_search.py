@@ -1554,6 +1554,11 @@ def _clear_parts(session, tid, said: str) -> list[str]:
         ("die 23, ne, die 24 ohne Zwiebeln", "23"),
         ("die 23 ohne Zwiebeln, sorry, die 24 ohne Zwiebeln", "23"),
         ("die 23, Moment, die 13 mit Allergie", "23"),
+        # docs/24: without a comma behind the marker the piece hit the number
+        # after it, so nothing took the number before it back.
+        ("die 23, ich meine die 24", "23"),
+        ("die 23, ich meine die 13 mit Allergie", "23"),
+        ("die 23, nein die 24", "23"),
     ],
 )
 def test_a_spoken_correction_never_books_both(session, sushi, said, taken_back):
@@ -1563,6 +1568,14 @@ def test_a_spoken_correction_never_books_both(session, sushi, said, taken_back):
     clear = _clear_parts(session, sushi, said)
     assert len(clear) < 2, clear
     assert not any(taken_back in part for part in clear), clear
+
+
+def test_a_correction_in_a_list_takes_the_number_before_it_back(session, sushi):
+    """docs/24: in "die 23 und die 13, ich meine die 47" the marker takes the
+    13 back (or the whole list); the sentence asks instead of booking all
+    three."""
+    clear = _clear_parts(session, sushi, "die 23 und die 13, ich meine die 47")
+    assert not any("13" in part for part in clear), clear
 
 
 def test_a_number_said_again_is_not_split_off_in_a_part(session, tenant_id):
