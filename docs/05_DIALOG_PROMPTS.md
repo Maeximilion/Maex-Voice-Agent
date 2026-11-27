@@ -235,9 +235,9 @@ up (`guards.is_open`)
        achten?" (#929), "Wenn ich für ein Gericht die Allergene
        nachsehen soll, nennen Sie mir bitte seine Nummer."). When one
        sentence brought several dishes with an allergy and no ingredient,
-       the core puts the dish in front of the second one ("Zur Nummer 23
-       Frühlingsrollen: Worauf genau ..."), one dish per question in the
-       order of the sentence (`guards.ask_for_the_dish`). Any other
+       the core names all of them in front of the second one ("Zur Nummer
+       23 Frühlingsrollen und Nummer 13 Pho Bo: Worauf genau ..."), and
+       the model writes each answer on its dish (`guards.ask_for_the_dish`). Any other
        sentence of the model goes back once with a hint, a second one
        becomes the offer sentence, or the team when a question was left
        open the turn before (rule 5)

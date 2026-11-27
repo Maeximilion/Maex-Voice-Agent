@@ -188,8 +188,9 @@ class ConversationState(BaseModel):
     # nothing; one that names what someone reacts to always stays (#940).
     allergy_said: list[str] = Field(default_factory=list)
     # The dishes of one sentence that each came with an allergy and no
-    # ingredient, as the core says them ("23 Frühlingsrollen"), in the order
-    # the guest is asked about them (`guards.ask_for_the_dish`). Never sent.
+    # ingredient, as the core says them ("Nummer 23 Frühlingsrollen"), two or
+    # more, named in front of the question about them
+    # (`guards.ask_for_the_dish`). Never sent.
     allergy_dishes: list[str] = Field(default_factory=list)
     # The guest's allergy or allergen of the last turn was not taken up and
     # that turn ended in the offer to look a dish up (`guards.leaves_a_question`,
@@ -691,17 +692,26 @@ def _note_search(state: ConversationState, data: dict[str, Any]) -> None:
     """Remembers which dishes a search delivered and how sure it was. A sentence
     with several positions carries one result per part (`agent/dispatch.py`)."""
     parts = data.get("positions") if data.get("match_type") == "positions" else [data]
-    waiting = [
-        f"{spoken_card(str(hit['number']))} {hit['name']}"
+    unread = [
+        part
         for part in parts or []
-        if part.get("match_type") in CLEAR_MATCHES
-        and (hit := (part.get("results") or [None])[0])
-        and (wish := part.get("wish"))
+        if (wish := part.get("wish"))
         and wish.get("kind") == "allergy"
         and not wish.get("ingredient")
     ]
-    if len(waiting) > 1:
-        state.allergy_dishes = waiting
+    if unread:
+        # A dish that is out is no dish of the order (`dispatch._search_menu`);
+        # the same dish twice is named once.
+        waiting = dict.fromkeys(
+            f"Nummer {spoken_card(str(hit['number']))} {hit['name']}"
+            for part in unread
+            if part.get("match_type") in CLEAR_MATCHES
+            and (hit := (part.get("results") or [None])[0])
+            and not hit.get("sold_out")
+        )
+        # A new sentence with such an allergy replaces the dishes of the one
+        # before (`guards.ask_for_the_dish`).
+        state.allergy_dishes = list(waiting) if len(waiting) > 1 else []
     for part in parts or []:
         hits = part.get("results") or []
         clear = part.get("match_type") in CLEAR_MATCHES

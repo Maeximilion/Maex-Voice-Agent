@@ -1,25 +1,33 @@
-"""The question for an allergy without its ingredient names its dish when
+"""The question for an allergy without its ingredient names the dishes when
 several such dishes wait (docs/24, deep review of chain round 4 item 14).
 
 "Die 23 mit Allergie und die 13 mit Allergie." asked "Worauf genau soll die
-Küche achten?" twice: the answers went on the dishes in order, but the guest
-never heard which dish each question was for. Whole calls through the
-conversation loop; caller sentences in German, the core parses German.
+Küche achten?" twice and never told the guest which dishes it was about. The
+core names all waiting dishes in front of the question, never one: the model
+writes each answer on its dish, and a core that guessed which one the model
+asks about led answers to the wrong dish (`/code-review max` of item 30).
+Whole calls through the conversation loop; caller sentences in German, the
+core parses German.
 """
 
+from datetime import UTC, datetime
+
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, update
 from sqlalchemy.orm import Session
 
 from api.agent.guards import SAY_ALLERGY_NOTED, SAY_ASK_ALLERGY
 from api.agent.llm import LLMTurn, ToolCall
 from api.domain.menu.importer import apply, parse
+from api.models import MenuItem
 from api.tests.test_agent_allergens_beyond import CALLER, run, state_for
 from api.tests.test_domain_draft_order import KARTE, NOW, _tenant
 
 TWO = "Die 23 mit Allergie und die 13 mit Allergie."
-FOR_23 = "Zur Nummer 23 Frühlingsrollen: Worauf genau soll die Küche achten?"
-FOR_13 = "Zur Nummer 13 Pho Bo: Worauf genau soll die Küche achten?"
+BOTH = (
+    "Zur Nummer 23 Frühlingsrollen und Nummer 13 Pho Bo: "
+    "Worauf genau soll die Küche achten?"
+)
 
 
 @pytest.fixture
@@ -31,12 +39,17 @@ def session(migrated_db_url):
 
 
 @pytest.fixture
-def state(session):
+def tenant(session):
     tenant_id = _tenant(session, "Testbetrieb")
     plan = parse(KARTE)
     assert plan.ok, plan.errors
     apply(session, tenant_id, plan, now=NOW)
-    return state_for(session, tenant_id, phone=CALLER)
+    return tenant_id
+
+
+@pytest.fixture
+def state(session, tenant):
+    return state_for(session, tenant, phone=CALLER)
 
 
 def searched(said: str) -> LLMTurn:
@@ -47,17 +60,18 @@ def ask() -> LLMTurn:
     return LLMTurn(say=SAY_ASK_ALLERGY)
 
 
-def test_each_question_names_its_dish_in_order(session, state):
+def test_the_question_names_every_waiting_dish(session, state):
     first, _ = run(session, state, TWO, searched(TWO), ask())
-    second, _ = run(session, state, "Erdnüsse.", ask())
-    third, _ = run(session, state, "Sesam.", LLMTurn(say=SAY_ALLERGY_NOTED))
+    # One dish answered: the model asks on, the guest hears both dishes
+    # again and says which one is still open; the core never guesses.
+    second, _ = run(session, state, "Bei der 23 Erdnüsse.", ask())
+    third, _ = run(session, state, "Bei der 13 Sesam.", LLMTurn(say=SAY_ALLERGY_NOTED))
 
-    assert first.say == [FOR_23]
-    assert second.say == [FOR_13]
+    assert first.say == [BOTH]
+    assert second.say == [BOTH]
     assert third.say == [SAY_ALLERGY_NOTED]
     assert state.allergy_dishes == []
-    # The answers are kept for the note as before.
-    assert state.allergy_said[-2:] == ["Erdnüsse.", "Sesam."]
+    assert state.allergy_said[-2:] == ["Bei der 23 Erdnüsse.", "Bei der 13 Sesam."]
 
 
 def test_one_dish_keeps_the_plain_question(session, state):
@@ -68,22 +82,34 @@ def test_one_dish_keeps_the_plain_question(session, state):
     assert state.allergy_dishes == []
 
 
-def test_a_question_back_hears_the_same_dish_again(session, state):
+def test_the_model_may_say_the_named_question_itself(session, state):
+    """It sees the sentence as its last one and may copy it: the core's own
+    sentence, neither refused nor named twice."""
     run(session, state, TWO, searched(TWO), ask())
-    again, _ = run(session, state, "Wie bitte?", ask())
-    then, _ = run(session, state, "Gegen Erdnüsse.", ask())
+    again, _ = run(session, state, "Wie bitte?", LLMTurn(say=BOTH))
 
-    assert again.say == [FOR_23]
-    assert then.say == [FOR_13]
+    assert again.say == [BOTH]
 
 
-def test_the_sentence_said_again_starts_at_its_first_dish(session, state):
-    """A new search of the same sentence sets the dishes anew; the guest's
-    words of that turn answer nothing of the old list."""
+def test_a_later_sentence_with_one_such_dish_ends_the_old_dishes(session, state):
     run(session, state, TWO, searched(TWO), ask())
-    again, _ = run(session, state, TWO, searched(TWO), ask())
+    said = "Und die 47 mit Allergie."
+    later, _ = run(session, state, said, searched(said), ask())
 
-    assert again.say == [FOR_23]
+    assert later.say == [SAY_ASK_ALLERGY]
+
+
+def test_a_dish_that_is_out_is_not_named(session, tenant, state):
+    session.execute(
+        update(MenuItem)
+        .where(MenuItem.tenant_id == tenant, MenuItem.number == "23")
+        .values(sold_out_until=datetime(2030, 1, 1, tzinfo=UTC))
+    )
+    session.commit()
+    result, _ = run(session, state, TWO, searched(TWO), ask())
+
+    assert result.say == [SAY_ASK_ALLERGY]
+    assert state.allergy_dishes == []
 
 
 def test_a_sentence_without_the_question_ends_the_wait(session, state):

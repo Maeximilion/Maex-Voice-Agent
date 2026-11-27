@@ -705,13 +705,10 @@ SAY_ASK_ALLERGY = "Worauf genau soll die Küche achten?"
 # A later allergy whose dish is unclear ("Meine Frau verträgt keinen Sesam",
 # #929, Maxi 24.11.2026).
 SAY_ASK_ALLERGY_DISH = "Für welches Gericht soll die Küche darauf achten?"
-# The same question about one of several dishes that each came with an
-# allergy and no ingredient ("Die 23 mit Allergie und die 13 mit Allergie.",
-# docs/24): the core names the dish in front of it (`ask_for_the_dish`).
-SAY_ASK_ALLERGY_FOR = "Zur Nummer {dish}: " + SAY_ASK_ALLERGY
-_ASKED_FOR_A_DISH = re.compile(
-    r"(?:Zur Nummer [^:?.]*: )?" + re.escape(SAY_ASK_ALLERGY)
-)
+# The same question when one sentence brought several dishes with an allergy
+# and no ingredient ("Die 23 mit Allergie und die 13 mit Allergie.", docs/24):
+# the core names all of them in front of it (`ask_for_the_dish`).
+SAY_ASK_ALLERGY_FOR = "Zur {dishes}: " + SAY_ASK_ALLERGY
 SAY_ALLERGENS_OFFER = (
     "Wenn ich für ein Gericht die Allergene nachsehen soll, nennen Sie mir bitte "
     "seine Nummer."
@@ -1173,8 +1170,9 @@ def is_open(turn: AllergenTurn, state: ConversationState) -> bool:
 
 def _without_core(turn: AllergenTurn, state: ConversationState, say: str) -> str:
     """`say` without the sentences the core wrote: the read-back, the
-    booking, the tools' sentences of this turn, the fixed sentences, and the
-    table sentence the guest heard last."""
+    booking, the tools' sentences of this turn, the fixed sentences (the
+    question with its dishes before the bare one), and the table sentence the
+    guest heard last."""
     rest = say
     last = state.last_said or ""
     table = last if last.startswith(SAY_ALLERGENS_LEAD) else None
@@ -1183,6 +1181,7 @@ def _without_core(turn: AllergenTurn, state: ConversationState, say: str) -> str
         state.booking_say,
         table,
         *turn.tool_says,
+        named_allergy_question(state),
         *FIXED_ALLERGY_SAYS,
     ):
         if own:
@@ -1730,33 +1729,31 @@ def unnoted_allergy(state: ConversationState, call: ToolCall) -> ToolResult | No
     return ToolResult(ok=False, error_code="invalid_input", hint=hint)
 
 
-def note_dish_answered(state: ConversationState, said: str) -> None:
-    """At the start of a turn: the first dish of `state.allergy_dishes` is
-    answered when the guest replied to its question with anything but a
-    question of their own ("Wie bitte?" hears the same dish again). Before
-    the model, so a search of this turn that sets the dishes anew keeps its
-    first one."""
+def named_allergy_question(state: ConversationState) -> str | None:
+    """`SAY_ASK_ALLERGY` with the dishes of `state.allergy_dishes` in front
+    ("Zur Nummer 23 Frühlingsrollen und Nummer 13 Pho Bo: Worauf genau soll
+    die Küche achten?"), None for fewer than two. All of them, never one: the
+    model writes each answer on its dish, and a core that guessed which dish
+    the model asks about would lead the guest's answer to another one when
+    the two drift (`/code-review max` of chain round 4 item 30)."""
     dishes = state.allergy_dishes
-    if (
-        dishes
-        and SAY_ASK_ALLERGY_FOR.format(dish=dishes[0]) in (state.last_said or "")
-        and not said.rstrip().endswith("?")
-    ):
-        state.allergy_dishes = dishes[1:]
+    if len(dishes) < 2:
+        return None
+    listed = ", ".join(dishes[:-1]) + " und " + dishes[-1]
+    return SAY_ASK_ALLERGY_FOR.format(dishes=listed)
 
 
 def ask_for_the_dish(state: ConversationState, say: str) -> str:
-    """`say` with the dish named in front of `SAY_ASK_ALLERGY` while dishes
-    of one sentence wait for the ingredient of their allergy
-    (`state.allergy_dishes`, `note_dish_answered`): the guest hears which
-    dish each question is for, in the order the answers go on them. A
-    sentence without the question ends the wait."""
+    """`say` with the waiting dishes named in front of `SAY_ASK_ALLERGY`
+    (`named_allergy_question`), so the guest hears which dishes the question
+    is for. A sentence without the question ends the wait: a later question
+    may be about another allergy."""
     if SAY_ASK_ALLERGY not in say:
         state.allergy_dishes = []
-    if not state.allergy_dishes:
+    named = named_allergy_question(state)
+    if named is None or named in say:
         return say
-    asked = SAY_ASK_ALLERGY_FOR.format(dish=state.allergy_dishes[0])
-    return _ASKED_FOR_A_DISH.sub(lambda _: asked, say, count=1)
+    return say.replace(SAY_ASK_ALLERGY, named, 1)
 
 
 def _word_in(word: str, text: str) -> bool:
