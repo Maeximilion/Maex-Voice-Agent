@@ -330,6 +330,8 @@ def _position_parts(
     high: float | None,
     low: float | None,
     card: CardFormat | None = None,
+    *,
+    inner: bool = False,
 ) -> list[str]:
     """The positions of a sentence: first by the sentence (`split_positions`),
     then with the menu.
@@ -354,7 +356,7 @@ def _position_parts(
     numbers; with a name there ("zweimal die 24 und Pho Bo") the part answered
     that it takes the dishes in turn, and took neither (eval abholung_0081).
     """
-    pieces = raw_pieces(query)
+    pieces = raw_pieces(query, inner=inner)
     if len(pieces) > 1:
         # Read the menu once for all parts, pieces and spans (review PR #155).
         card = card if card is not None else card_format(session, tenant_id)
@@ -362,13 +364,15 @@ def _position_parts(
             _piece_search(session, tenant_id, now, high, low, card), pieces, card
         ):
             return [query]
-    parts = split_positions(query)
+    parts = split_positions(query, inner=inner)
     if len(parts) > 1:
         card = card if card is not None else card_format(session, tenant_id)
         cut: list[str] = []
         for part in parts:
             try:
-                cut += _position_parts(session, tenant_id, part, now, high, low, card)
+                cut += _position_parts(
+                    session, tenant_id, part, now, high, low, card, inner=True
+                )
             except Ambiguous:
                 # "die 13 und die 24, und 30": only this part asks for its
                 # number, the 13 is still taken (Codex PR #147). A part that
@@ -518,8 +522,7 @@ def _takes_a_number_back(
     ("Ente" between two numbers is a dish to ask about), filler or a quantity
     alone ("zweimal", "also"), nor a piece with a quantity, a price or a time of
     its own ("zwei Cola", "für 8,50", "um 19 Uhr"): a correction carries none."""
-    said = [sole_item_number(piece, card) for piece in pieces]
-    card_numbers = [ref is not None or more for ref, more in said]
+    card_numbers = [_leads_with_card_number(piece, card) for piece in pieces]
     # Read once from each end instead of again for each piece (docs/24): is
     # there a card number in a piece after this one, and a number before it.
     after = [False] * len(pieces)
@@ -543,6 +546,19 @@ def _takes_a_number_back(
         except Ambiguous:
             continue
     return False
+
+
+def _leads_with_card_number(piece: str, card: CardFormat) -> bool:
+    """Is the piece a card number, alone ("die 24") or with a wish of its own
+    behind it ("die 24 mit Reis")? The second is a position of its own since
+    docs/24 (own test PR #139), so "die 23, quatsch, die 24 mit Reis" still
+    takes the 23 back and asks."""
+    ref, more = sole_item_number(piece, card)
+    if ref is not None or more:
+        return True
+    # Only the first cut: the dish in front of the earliest wish word.
+    candidates = wish_candidates(piece)
+    return bool(candidates) and sole_item_number(candidates[0][0], card)[0] is not None
 
 
 # What stands in front of a card number said with its own word: "die 24",

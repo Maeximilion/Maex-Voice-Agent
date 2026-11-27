@@ -15,6 +15,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
+from api.agent.dispatch import SAY_ALLERGY_SCOPE
 from api.agent.guards import SAY_ASK_ALLERGY
 from api.agent.llm import LLMError, LLMTurn, ToolCall
 from api.domain.menu.normalize import normalize_query
@@ -73,6 +74,8 @@ _POLITE = frozenset({"bitte", "danke", "denn", "eigentlich"})
 # and said as the fixed one (`scripted_llm`).
 SAY_ALLERGY_WHICH = SAY_ASK_ALLERGY
 SAY_ALLERGY_WHICH_FOR = "Wogegen sind Sie bei {name} allergisch?"
+# How a guest says that an allergy holds for every dish of the sentence.
+_EVERY_DISH = frozenset({"alle", "allen", "alles", "beide", "beiden"})
 SAY_ADDRESS = (
     "An welche Adresse dürfen wir liefern? Bitte nennen Sie Postleitzahl, Ort, "
     "Straße und Hausnummer."
@@ -167,6 +170,12 @@ class PickupScript:
         # answer is the ingredient, not a dish (Codex PR #139, P1).
         # Several positions: each one separately, in order (Codex PR #139, P1).
         self._allergy_for: list[CartItem] = []
+        # An allergy said with several dishes and the dishes of that sentence:
+        # SAY_ALLERGY_SCOPE is open until the answer names its dishes.
+        self._allergy_scope: tuple[dict[str, Any], list[CartItem]] | None = None
+        # The same, while a dish of that sentence is still to be chosen: the
+        # allergy and where the sentence's dishes begin in the cart.
+        self._scope_waiting: tuple[dict[str, Any], int] | None = None
         # If several are open, each question names its dish.
         self._allergy_named = False
         # What is asked after the allergy: never two questions at once,
@@ -206,6 +215,8 @@ class PickupScript:
             self._same_open = False
             self._use_stored = _agrees(text)
             return self._next(slots, patch)
+        if self._allergy_scope:
+            return self._answer_scope(text, slots, patch)
         if self._allergy_for:
             return self._answer_allergy(text, slots, patch)
         if self._group_for:
@@ -483,6 +494,7 @@ class PickupScript:
             # "heute aus" is a statement, not a question: it goes along
             # directly, without a second search (review PR #133).
             sold_out: list[str] = []
+            before = len(self.cart)
             for part in data["positions"]:
                 if not part["ok"]:
                     # Every unclear part is asked about, one after the other
@@ -502,9 +514,19 @@ class PickupScript:
                     sold_out.append(said)
                 else:
                     unclear = unclear or said
-            if (self._allergy_for or self._group_for) and unclear:
+            lead_say = data.get("say")
+            if data.get("allergy") and (unclear or self._later):
+                # A dish of the sentence is still open: its question first, the
+                # scope once every dish of the sentence is known (Codex PR #1082).
+                self._scope_waiting = (data["allergy"], before)
+                lead_say = _join(*(lead_say or "").split(SAY_ALLERGY_SCOPE)) or None
+            elif data.get("allergy") and len(self.cart) > before:
+                self._allergy_scope = (data["allergy"], self.cart[before:])
+            if (
+                self._allergy_for or self._group_for or self._allergy_scope
+            ) and unclear:
                 self._after_allergy, unclear = unclear, None
-            lead = _join(self.take_carry(), data.get("say"), *sold_out, unclear)
+            lead = _join(self.take_carry(), lead_say, *sold_out, unclear)
             return self._next(slots, {}, lead=lead)
         carried = self._carried_wish(reopen, data)
         if carried is not None:
@@ -754,6 +776,39 @@ class PickupScript:
             self._allergy_named = False
         return self._next(slots, patch, lead=_join(lead, self._take_deferred()))
 
+    def _answer_scope(
+        self, text: str, slots: dict[str, Any], patch: dict[str, Any]
+    ) -> LLMTurn:
+        """The answer to SAY_ALLERGY_SCOPE, read the way a model would: every
+        dish of that sentence ("für alle", "beide"), or the ones it names by
+        number or name. Anything else asks again (Maxi, 27.11.2026)."""
+        assert self._allergy_scope is not None
+        wish, items = self._allergy_scope
+        said = text.casefold()
+        words = set(re.findall(r"\w+", said))
+        if words & _EVERY_DISH:
+            chosen = items
+        else:
+            chosen = [
+                i
+                for i in items
+                if i.number.casefold() in words or i.name.casefold() in said
+            ]
+        if not chosen:
+            return LLMTurn(
+                say=SAY_ALLERGY_SCOPE,
+                state_patch=patch or None,
+                understanding_failure="allergy",
+            )
+        self._allergy_scope = None
+        for item in chosen:
+            if wish.get("ingredient"):
+                # Next to what the dish already carries ("ohne Zwiebeln").
+                item.note = kitchen_note(item.note, wish["text"])
+            else:
+                self._apply_wish(item, {}, wish)
+        return self._next(slots, patch, lead=self._take_deferred())
+
     def asks_allergy(self) -> bool:
         """An allergy waits for its ingredient: the open question of the
         script is the one about it."""
@@ -769,7 +824,7 @@ class PickupScript:
 
     def _take_deferred(self) -> str | None:
         """The question that was held back, once no other one is open."""
-        if self._allergy_for or self._group_for:
+        if self._allergy_scope or self._allergy_for or self._group_for:
             return None
         deferred, self._after_allergy = self._after_allergy, None
         return deferred
@@ -852,11 +907,19 @@ class PickupScript:
     ) -> LLMTurn:
         """Der naechste Schritt aus dem, was schon feststeht."""
         state_patch = patch or None
-        if self._allergy_for or self._group_for:
+        if self._scope_waiting and not self._later and self.phase != "choose":
+            allergy, start = self._scope_waiting
+            self._scope_waiting = None
+            self._allergy_scope = (allergy, self.cart[start:])
+        if self._allergy_scope or self._allergy_for or self._group_for:
             # Only the question about the allergy or the group, no second one
             # next to it. If it is already in the search's sentence, not again.
             question = (
-                self._allergy_question() if self._allergy_for else self._group_for[0][3]
+                SAY_ALLERGY_SCOPE
+                if self._allergy_scope
+                else self._allergy_question()
+                if self._allergy_for
+                else self._group_for[0][3]
             )
             said = _join(lead) or ""
             return LLMTurn(
