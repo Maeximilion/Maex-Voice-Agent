@@ -2785,6 +2785,13 @@ Replaced lines of `.claude/chain/brief-common.md`:
 > - Slow mode: a 45-minute sleep after each finished part.
 > - Paused (super slow, Hold, or above the lane count after turbo; the coordinator tells you): one background `sleep 3000` (50 minutes, never 60 or more), renewed, then read `~/.claude/chain/next-lane.txt` and `~/.claude/chain/notes.txt`; never end a turn without that sleep running. The baton names your item (`item 14`) or "go on item N" arrives: message the coordinator "lane taken item N" and go on.
 
+## Open Points from Reviews (archive, correction without a comma fixed 27.11.2026)
+
+Fixed by chain round 4 item 25 (#1066): `sole_item_number` reads "ich meine die 47" as the card number 47, so `_takes_a_number_back` (`api/domain/menu/search.py`) never searched the words in front of it. A piece with words of its own in front of a card number (alone or with a wish behind it) now searches only those words (`_words_before_card_number`, which replaced `_ends_in_card_number`); hitting no dish, they keep the sentence whole and it asks, as it already did with a comma. Filler, an ordering phrase ("ich nehme", "dann noch") and a quantity ("zweimal") in front take nothing back. Tests in `api/tests/test_domain_menu_search.py`.
+
+| Point | Why still open | When due |
+|---|---|---|
+| A correction without a comma books both dishes (`api/domain/menu/search.py` `_takes_a_number_back`) | Deep review of chain round 4 item 14 (27.11.2026), older than it: in "die 23, ich meine die 13 mit Allergie" or "die 23 und die 13, ich meine die 47" the piece "ich meine die 47" hits the 47, so nothing takes the number before it back and both dishes are booked; with a comma after "ich meine" the sentence asks. The read-back before the yes names every dish. | with the next splitter change |
 ## Open Points from Reviews (archive, partly fixed rows shortened in the sweep 27.11.2026)
 
 Chain round 4 item 28 (#1066): every row of docs/24 checked against `main`. No row was fully fixed; these four were fixed in part (#788, #860, #368, #124, #127, #820, #822, #825, T-8.7). Rows as they stood:
@@ -2810,3 +2817,12 @@ Shortened by item 29 of chain round 4 (#1066): `sole_item_number` reads the sent
 | Point | Why still open | When due |
 |---|---|---|
 | A long piece costs `sole_item_number` more than linear time (`api/domain/menu/numberwords.py` `sole_item_number`, called per lead by `api/domain/menu/search.py` `_ends_in_card_number`) | Chain round 4 item 9 (27.11.2026) made the three splitting helpers of `search.py` linear and kept their results; left over: `sole_item_number` compares each token with every number (`_connects`, `after_marker`, `_apart`), and `_ends_in_card_number` still calls it once for each "die", "nummer" or "nr" that has a number behind it, as before. Measured within the 300-character cap (deep review of item 9): about 63 ms for "Ente" followed by "die 5" 49 times (49 leads, each with a number behind it), 23 ms for "doch die die ... die 24 Ente" with 72 leads; without the cap the second shape costs 124 ms at 150 leads and 751 ms at 300. The old code cost the same here. | Before a caller without the 300-character cap goes live |
+
+## Open Points from Reviews (archive, rows changed by chain round 4 item 25, 27.11.2026)
+
+The two rows as they stood before item 25 renamed `_ends_in_card_number` and fixed "ich meinte die 24".
+
+| Point | Why still open | When due |
+|---|---|---|
+| A long piece still costs `_ends_in_card_number` leads times length (`api/domain/menu/search.py` `_ends_in_card_number`, which calls `api/domain/menu/numberwords.py` `sole_item_number` once per lead) | Chain round 4 item 29 (27.11.2026) made `sole_item_number` linear in the piece's length with the same results (old-against-new test `api/tests/test_domain_numberwords_linear.py`). Left over: `_ends_in_card_number` still calls it once for each "die", "nummer" or "nr" that has a number behind it, each time on the rest of the piece, as before. Measured on one machine, before and after item 29: "Ente" followed by "die 5" 49 times 60 and 19 ms, "doch die die ... die 24 Ente" with 72 leads 23 and 14 ms (both within the 300-character cap); without the cap the second shape costs 129 and 54 ms at 150 leads, 773 and 207 ms at 300. | Before a caller without the 300-character cap goes live |
+| Spoken corrections that still book both numbers (`api/domain/menu/search.py` `_takes_a_number_back`, #911) | Deep review of the #721/#735 regression fix, 23.11.2026, all as on main: "die 23, ich meinte die 24" and "die 23, also die 24" (the filler rule makes the second piece a plain number), "die 23, also, die 24" (a piece of filler alone never counts, so "zweimal" does not ask), a correction word that fuzzily hits a dish ("sorry" next to "Mango Sorbet", "ne" next to "Nem Rán": the piece is a dish to ask about, as "Ente" between two numbers must stay), and "die 23, sorry und eine Erdnussallergie" (the allergy clause is merged into the correction part). Telling a correction from a dish or a quantity needs the parser redesign, not another word list. | with the menu parser redesign (#207 batch 2, the Fable consult of 15.11.2026) |

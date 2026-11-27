@@ -1,6 +1,7 @@
 """The splitting helpers of `search.py` stay linear and give the same results.
 
-`_takes_a_number_back`, `_ends_in_card_number` and `_keep_allergy_clauses`
+`_takes_a_number_back`, `_ends_in_card_number` (now
+`_words_before_card_number`) and `_keep_allergy_clauses`
 used to read earlier pieces, the rest of a piece or the rest of the list again
 for each piece (docs/24, deep review of round 3 item 7). The old versions are
 kept below as the reference only: every caller sentence of the menu tests and
@@ -251,14 +252,19 @@ def test_the_corpus_holds_test_and_eval_sentences() -> None:
 
 
 @pytest.mark.parametrize("card", CARDS, ids=["plain", "prefixes"])
-def test_ends_in_card_number_matches_the_old_version(card: CardFormat) -> None:
-    differ = []
+def test_words_before_card_number_finds_every_old_end(card: CardFormat) -> None:
+    """`_words_before_card_number` replaced `_ends_in_card_number` (docs/24,
+    correction without a comma) and also finds a card number with a wish of
+    its own behind it ("ich meine die 13 mit Allergie"); every piece the old
+    helper found it finds as well."""
+    missed = []
     for sentence in _corpus():
         for piece in {sentence, *raw_pieces(sentence)}:
-            old = _old_ends_in_card_number(piece, card)
-            if search._ends_in_card_number(piece, card) != old:
-                differ.append((piece, old))
-    assert differ == []
+            if _old_ends_in_card_number(piece, card) and (
+                search._words_before_card_number(piece, card) is None
+            ):
+                missed.append(piece)
+    assert missed == []
 
 
 @pytest.mark.parametrize("card", CARDS, ids=["plain", "prefixes"])
@@ -270,7 +276,11 @@ def test_takes_a_number_back_matches_the_old_version(card: CardFormat) -> None:
         new_calls: list[str] = []
         old = _old_takes_a_number_back(_stub_search(old_calls), pieces, card)
         new = search._takes_a_number_back(_stub_search(new_calls), pieces, card)
-        if (old, old_calls) != (new, new_calls) and not _numbered_wish(pieces, card):
+        if (
+            (old, old_calls) != (new, new_calls)
+            and not _numbered_wish(pieces, card)
+            and not _words_before_a_number(pieces, card)
+        ):
             differ.append((sentence, old, new, old_calls, new_calls))
     assert differ == []
 
@@ -283,6 +293,16 @@ def _numbered_wish(pieces: list[str], card: CardFormat) -> bool:
         search._leads_with_card_number(piece, card)
         and sole_item_number(piece, card) == (None, False)
         for piece in pieces
+    )
+
+
+def _words_before_a_number(pieces: list[str], card: CardFormat) -> bool:
+    """A piece with words of its own in front of a card number ("ich meine
+    die 47") searches only those words since docs/24 (correction without a
+    comma), on purpose; the old version searched the whole piece, which hit
+    the number. Only such sentences may differ."""
+    return any(
+        search._words_before_card_number(piece, card) is not None for piece in pieces
     )
 
 
@@ -327,7 +347,7 @@ def test_keep_allergy_clauses_matches_on_generated_part_lists() -> None:
 
 
 def test_could_hold_item_number_finds_every_number_sole_item_number_reads() -> None:
-    """The shortcut of `_ends_in_card_number`: a text without such a token is
+    """The shortcut of `_words_before_card_number`: a text without such a token is
     never a card number, valid or not. Checked on what that helper reads: every
     rest of a piece from one of its words on."""
     for sentence in _corpus():
@@ -370,7 +390,7 @@ def test_long_sentences_cost_linear_time() -> None:
                 )
             ),
             _seconds(lambda: search._keep_allergy_clauses(", ".join(parts), parts)),
-            _seconds(lambda: search._ends_in_card_number(piece, NO_PREFIXES)),
+            _seconds(lambda: search._words_before_card_number(piece, NO_PREFIXES)),
         )
 
     small = [min(c) for c in zip(*(costs(1500) for _ in range(3)), strict=True)]

@@ -108,3 +108,4 @@ date,task,session,model,calls,first,at_first_edit,last,peak
 2026-11-27,1085,f7348a15-c194-4671-b4fb-ec650c24495e,claude-opus-5-5,65,105288,173319,239583,239583
 2026-11-27,chain4-item10 turn deadline waits,04632413-65b6-440d-b4b3-60fb96131fa0,claude-opus-5-5,104,105694,161093,283918,283918
 2026-11-27,chain-r4-28,a5fabc55-0ef4-4ccf-99b5-5a9815654534,claude-sonnet-5-5,21,104837,167588,174535,174535
+2026-11-27,chain4-item25 correction without comma,6861f9f8-a84e-4ece-a7a7-51bc37ede320,claude-opus-5-5,120,105298,136822,309565,309565
