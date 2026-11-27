@@ -27,6 +27,7 @@ few hundred rows the difference is small; as the menu grows, the index carries
 the search.
 """
 
+import re
 import uuid
 import zlib
 from collections.abc import Callable
@@ -48,6 +49,7 @@ from api.domain.menu.numberwords import (
     canonical_card,
     could_hold_item_number,
     fold,
+    hesitation,
     sole_item_number,
     spoken_card,
 )
@@ -523,37 +525,107 @@ def _takes_a_number_back(
     cut stays as before. Neither does a piece that hits a dish unclearly
     ("Ente" between two numbers is a dish to ask about), filler or a quantity
     alone ("zweimal", "also"), nor a piece with a quantity, a price or a time of
-    its own ("zwei Cola", "für 8,50", "um 19 Uhr"): a correction carries none."""
-    card_numbers = [_leads_with_card_number(piece, card) for piece in pieces]
-    # Read once from each end instead of again for each piece (docs/24): is
-    # there a card number in a piece after this one, and a number before it.
+    its own ("zwei Cola", "für 8,50", "um 19 Uhr"): a correction carries none.
+
+    Item 31 (docs/24): whatever stands in front counts, a dish too ("Pho Bo,
+    ich meine die 24"); a pause takes back as a word does ("die 23, also die
+    24", "die 23, äh die 24"); a number piece reads its words behind the
+    number as well ("die 24 meine ich"); and a piece that hits dishes only by
+    sound, with no word of their names, is no dish here ("sorry" next to
+    "Mango Sorbet"). Each only makes the sentence ask, never books."""
+    leads = [_leads_with_card_number(piece, card) for piece in pieces]
+    heads = [_words_before_card_number(piece, card) for piece in pieces]
+    # Read once from the end instead of again for each piece (docs/24): is
+    # there a card number in a piece after this one, alone or behind words of
+    # its own ("sorry, Pho Bo die 13").
     after = [False] * len(pieces)
     for k in range(len(pieces) - 2, -1, -1):
-        after[k] = after[k + 1] or card_numbers[k + 1]
-    before = False
-    for k, piece in enumerate(pieces):
-        number_before = before
-        before = before or card_numbers[k] or has_number(piece)
-        if not number_before:
-            continue
-        # "ich meine die 47": the number reading skips the words in front and
-        # the piece hits the 47, so only those words are searched: hitting no
-        # dish, they may take the number before them back (docs/24).
-        head = _words_before_card_number(piece, card)
-        if head is None and (card_numbers[k] or not after[k]):
+        after[k] = after[k + 1] or leads[k + 1] or heads[k + 1] is not None
+    for k, piece in enumerate(pieces[1:], start=1):
+        # "die 24 meine ich": the number reading lets "meine", "genau" and a
+        # pause through behind the number as well; besides order filler
+        # ("bitte", "danke") each may take the number before back.
+        if sole_item_number(piece, card)[0] is not None:
+            tail = _words_behind_number(piece)
+            if normalize_query(tail) or _pauses(tail):
+                return True
+        # "doch die 47", "ich meine die Sommerrollen": only the words in front
+        # of the number or the dish are searched.
+        head = heads[k]
+        if head is None and not leads[k]:
+            head = _words_before_a_dish(search, piece)
+            if head is not None and has_number(head):
+                continue
+        if head is None and (leads[k] or not after[k]):
             continue
         text = piece if head is None else head
         # A quantity in front goes with the number ("doch zweimal die 24"), so
-        # only a head of filler alone takes nothing back ("zweimal", "bitte").
-        if not normalize_query(text) or (head is None and has_number(text)):
+        # a head of filler alone takes nothing back unless it is a pause.
+        if not normalize_query(text):
+            if _pauses(text):
+                return True
+            continue
+        if head is None and has_number(text):
             continue
         try:
-            search(text)
+            found = search(text)
         except NotFound:
             return True
         except Ambiguous:
             continue
+        if not _names_a_word_of(text, found):
+            return True
     return False
+
+
+_ARTICLES = frozenset({"die", "der", "das", "den"})
+
+
+def _words_before_a_dish(
+    search: Callable[[str], SearchResult], piece: str
+) -> str | None:
+    """ "ich meine die Sommerrollen" -> "ich meine": the words in front of the
+    first article, when the rest from it on clearly hits a dish; None
+    otherwise."""
+    words = piece.split()
+    at = next((i for i, w in enumerate(words) if i and fold(w) in _ARTICLES), None)
+    if at is None:
+        return None
+    try:
+        found = search(" ".join(words[at:]))
+    except (NotFound, Ambiguous):
+        return None
+    return " ".join(words[:at]) if found.match_type in CLEAR_MATCHES else None
+
+
+def _words_behind_number(piece: str) -> str:
+    """ "die 24 meine ich" -> "meine ich": the words behind the last word that
+    may hold a number."""
+    words = piece.split()
+    last = max(
+        (i for i, w in enumerate(words) if could_hold_item_number(w)), default=-1
+    )
+    return " ".join(words[last + 1 :])
+
+
+def _pauses(text: str) -> bool:
+    """A hesitation or "also" between two positions: a correction as often as
+    not, so the sentence asks (docs/24)."""
+    return any(
+        word == "also" or hesitation(word) for word in re.findall(r"\w+", fold(text))
+    )
+
+
+def _names_a_word_of(text: str, found: SearchResult) -> bool:
+    """Does the text say a word of a dish it hit? "Ente" names its dishes;
+    "sorry" hits "Mango Sorbet" by its sound alone (docs/24)."""
+    if found.match_type not in ("fuzzy_single", "ambiguous"):
+        return True
+    said = set(re.findall(r"\w+", normalize_query(text)))
+    return any(
+        said.intersection(re.findall(r"\w+", normalize_query(hit.name)))
+        for hit in found.results
+    )
 
 
 def _leads_with_card_number(piece: str, card: CardFormat) -> bool:

@@ -268,21 +268,25 @@ def test_words_before_card_number_finds_every_old_end(card: CardFormat) -> None:
 
 
 @pytest.mark.parametrize("card", CARDS, ids=["plain", "prefixes"])
-def test_takes_a_number_back_matches_the_old_version(card: CardFormat) -> None:
-    differ = []
+def test_takes_a_number_back_asks_wherever_the_old_version_did(
+    card: CardFormat,
+) -> None:
+    """Chain round 4 item 31 (docs/24) takes a number back in more shapes on
+    purpose (a dish in front, a pause, words behind the number, a hit by sound
+    alone, a correction to a dish name), so the comparison of every search
+    went; the new version still takes back wherever the old one did."""
+    lost = []
     for sentence in _corpus():
         pieces = raw_pieces(sentence)
-        old_calls: list[str] = []
-        new_calls: list[str] = []
-        old = _old_takes_a_number_back(_stub_search(old_calls), pieces, card)
-        new = search._takes_a_number_back(_stub_search(new_calls), pieces, card)
+        old = _old_takes_a_number_back(_stub_search([]), pieces, card)
         if (
-            (old, old_calls) != (new, new_calls)
+            old
+            and not search._takes_a_number_back(_stub_search([]), pieces, card)
             and not _numbered_wish(pieces, card)
             and not _words_before_a_number(pieces, card)
         ):
-            differ.append((sentence, old, new, old_calls, new_calls))
-    assert differ == []
+            lost.append(sentence)
+    assert lost == []
 
 
 def _numbered_wish(pieces: list[str], card: CardFormat) -> bool:

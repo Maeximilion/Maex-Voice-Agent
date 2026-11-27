@@ -278,7 +278,12 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    13") opens a position even with a wish behind it: „die 23 ohne Karotten und
    die 13 mit Allergie" is two positions, each with its own wish, and a
    correction in front of it („die 23, quatsch, die 24 mit Reis") still keeps
-   the sentence whole. Only digits count, behind „die/der/das/den" two or
+   the sentence whole. So does a correction of any position before it, a
+   dish too („Pho Bo, ich meine die 24"), a pause („die 23, also die 24",
+   „die 23, äh die 24"), words behind the number („die 23, die 24 meine
+   ich"), a word that hits dishes only by its sound („sorry" next to „Mango
+   Sorbet") and a correction to a dish name („die 23, ich meine die
+   Sommerrollen"): the sentence asks, never books both. Only digits count, behind „die/der/das/den" two or
    more, behind „Nummer" a single digit too; an article, a number word or a
    single digit often points back at portions just named („zweimal die 13,
    die eine mit Erdnussallergie") and stays with the position before, as does

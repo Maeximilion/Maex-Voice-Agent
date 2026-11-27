@@ -1583,6 +1583,105 @@ def test_a_spoken_correction_never_books_both(session, sushi, said, taken_back):
     assert not any(taken_back in part for part in clear), clear
 
 
+@pytest.fixture
+def near_words(session, tenant_id):
+    """The sushi menu with dishes a correction word fuzzily hits: "sorry" next
+    to "Mango Sorbet", "ne" next to "Nem Rán", "ich meine" next to "Chow
+    Mein"."""
+    rows = (
+        "S1;Lachs Nigiri;Sushi;4,50;;ja\n"
+        "S12;Thunfisch Maki;Sushi;5,90;;ja\n"
+        "60;Mango Sorbet;Desserts;4,50;;ja\n"
+        "61;Nem Rán;Vorspeisen;5,50;;ja\n"
+        "62;Chow Mein;Hauptgerichte;11,50;;ja\n"
+    )
+    plan = parse(
+        {MENU_FILE: KARTE[MENU_FILE] + rows, ALIASES_FILE: KARTE[ALIASES_FILE]}
+    )
+    assert plan.ok, plan.errors
+    apply(session, tenant_id, plan, now=NOW)
+    return tenant_id
+
+
+# docs/24 "Spoken corrections that still book both numbers" (chain round 4
+# item 31): the shapes the deep reviews of 23.11. and 27.11.2026 found.
+_TAKEN_BACK = [
+    # A pause between the numbers, with or without its own comma.
+    ("die 23, also die 24", "23"),
+    ("die 23, also, die 24", "23"),
+    ("die 23, äh die 24", "23"),
+    # The correction behind the number.
+    ("die 23, die 24 meine ich", "23"),
+    # A correction from or to a dish name, or to a name with a number.
+    ("Pho Bo, ich meine die 24", "Pho Bo"),
+    ("die 23, ich meine die Sommerrollen", "23"),
+    ("die 23, sorry, Pho Bo die 13", "23"),
+    ("die 23, sorry und eine Erdnussallergie, die 24", "23"),
+    ("die 23, sorry, die 24 und eine Erdnussallergie", "23"),
+]
+
+
+@pytest.mark.parametrize(("said", "taken_back"), _TAKEN_BACK)
+def test_a_correction_takes_the_position_before_it_back(
+    session, sushi, said, taken_back
+):
+    """The sentence asks instead of booking the corrected position."""
+    clear = _clear_parts(session, sushi, said)
+    assert len(clear) < 2, clear
+    assert not any(taken_back in part for part in clear), clear
+
+
+@pytest.mark.parametrize(
+    ("said", "taken_back"),
+    [
+        *_TAKEN_BACK,
+        ("die 23, sorry, die 24", "23"),
+        ("die 23, ne, die 24", "23"),
+        ("die 23, ich meine die 24", "23"),
+        ("die 23, ich meine 24", "23"),
+    ],
+)
+def test_a_correction_word_that_sounds_like_a_dish_still_takes_back(
+    session, near_words, said, taken_back
+):
+    """A piece that hits dishes by its sound alone, with no word of their
+    names ("sorry" and "Mango Sorbet"), is no dish between two positions."""
+    clear = _clear_parts(session, near_words, said)
+    assert len(clear) < 2, clear
+    assert not any(taken_back in part for part in clear), clear
+
+
+@pytest.mark.parametrize("said", ["die 23, doch 24", "die 23, ich meine die 24 danke"])
+def test_a_second_number_the_number_reading_refuses_is_never_booked(
+    session, sushi, said
+):
+    """Left open in docs/24: the number reading takes no number from "doch
+    24", so the 23 stays clear and the rest is not found; never both."""
+    assert _clear_parts(session, sushi, said) == ["die 23"]
+
+
+@pytest.mark.parametrize(
+    ("said", "clear"),
+    [
+        ("Pho Bo, die 24", ["Pho Bo", "die 24"]),
+        (
+            "die 13, ich nehme die Sommerrollen",
+            ["die 13", "ich nehme die Sommerrollen"],
+        ),
+        ("die 13, und dann die Sommerrollen", ["die 13", "und dann die Sommerrollen"]),
+        ("die 13, zweimal die Sommerrollen", ["die 13", "zweimal die Sommerrollen"]),
+        ("die 13, die 24 bitte", ["die 13", "die 24 bitte"]),
+        ("die 23 und Ente und die 24", ["die 23", "die 24"]),
+    ],
+)
+def test_order_words_between_positions_take_nothing_back(
+    session, near_words, said, clear
+):
+    """Item 31 asks only where a pause, a word that hits no dish or a hit by
+    sound stands; order filler and a named dish leave every position."""
+    assert _clear_parts(session, near_words, said) == clear
+
+
 @pytest.mark.parametrize(
     "said",
     [
