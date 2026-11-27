@@ -1989,9 +1989,7 @@ def _classify(text: str, groups: list[OptionGroup]) -> Wish:
             # Zwiebeln, dafuer mit Pommes" (Review PR #139).
             return Wish(text=addition, kind="unknown", note=removal)
         return wish.model_copy(update={"text": text, "note": removal})
-    # Bei "Nudeln statt Reis" gilt, was vor "statt" steht.
-    cut = next((i for i, w in enumerate(words) if w in _INSTEAD), len(words))
-    head = words[:cut]
+    head = _without_swapped(words, groups)
     matches = [
         (group, option, used)
         for group in groups
@@ -2049,7 +2047,7 @@ def _classify(text: str, groups: list[OptionGroup]) -> Wish:
         return Wish(text=text, kind="unknown")
     if len(chosen) > 1:
         # Read back in the order the guest said them, not the card's.
-        chosen.sort(key=lambda match: min(words.index(word) for word in match[2]))
+        chosen.sort(key=lambda match: min(head.index(word) for word in match[2]))
         return Wish(
             text=text,
             kind="option",
@@ -2076,6 +2074,38 @@ def _classify(text: str, groups: list[OptionGroup]) -> Wish:
 
 
 _Match = tuple[OptionGroup, OptionOut, set[str]]
+
+# Where the part a "statt" swaps out ends: "Nudeln statt Reis und Huhn".
+_SWAPPED_END = _ADD | _LEAD_FILLER | {"oder"}
+
+
+def _without_swapped(words: list[str], groups: list[OptionGroup]) -> list[str]:
+    """The wished words without what a "statt" swaps out: "Nudeln statt Reis
+    und Huhn" -> nudeln, und, huhn. The swapped part runs to the next joining
+    word, and what follows it still has to be understood. A "statt" inside an
+    option's own name stays, so "Nudeln statt Reis" on the card is matched as
+    a whole (deep review of #1076)."""
+    if not _INSTEAD & set(words):
+        return words
+    named: set[int] = set()
+    for group in groups:
+        for option in group.options:
+            name = _words(option.name)
+            if _INSTEAD & set(name):
+                for i in range(len(words) - len(name) + 1):
+                    if words[i : i + len(name)] == name:
+                        named.update(range(i, i + len(name)))
+    kept = []
+    i = 0
+    while i < len(words):
+        if words[i] in _INSTEAD and i not in named:
+            i += 1
+            while i < len(words) and words[i] not in _SWAPPED_END:
+                i += 1
+            continue
+        kept.append(words[i])
+        i += 1
+    return kept
 
 
 def _group_phrases(

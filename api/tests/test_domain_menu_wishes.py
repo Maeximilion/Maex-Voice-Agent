@@ -2486,3 +2486,76 @@ def test_a_comma_chain_is_read_in_linear_time():
 )
 def test_health_words_need_the_whole_word(text, health):
     assert speaks_of_health(text) is health
+
+
+# --- Everything after the first "statt" was cut (deep review of #1076) -------------
+
+# The register names a swap as one option of its own (eval card dishes 32, 33).
+SWAP_OPTION = [
+    OptionGroup(
+        group="Fleisch",
+        required=True,
+        options=[
+            OptionOut(name="Huhn", price_delta_cents=0, default=True),
+            OptionOut(name="Tofu", price_delta_cents=0, default=False),
+        ],
+    ),
+    OptionGroup(
+        group="Extras",
+        required=False,
+        options=[
+            OptionOut(name="Nudeln statt Reis", price_delta_cents=350, default=False),
+            OptionOut(name="extra Gemüse", price_delta_cents=150, default=False),
+        ],
+    ),
+]
+
+
+@pytest.mark.parametrize("said", ["Nudeln statt Reis", "mit Nudeln statt Reis bitte"])
+def test_an_option_named_with_statt_matches_as_a_whole(said):
+    wish = wish_of(said, SWAP_OPTION)
+    assert (wish.kind, wish.group, wish.option) == (
+        "option",
+        "Extras",
+        "Nudeln statt Reis",
+    )
+    assert wish.price_delta_cents == 350
+
+
+def test_a_second_option_next_to_a_statt_option_is_kept():
+    """abholung_0064: "mit Tofu und Nudeln statt Reis" was declined."""
+    wish = wish_of("mit Tofu und Nudeln statt Reis", SWAP_OPTION)
+    assert wish.kind == "option"
+    assert [(o.group, o.option, o.price_delta_cents) for o in wish.options] == [
+        ("Fleisch", "Tofu", 0),
+        ("Extras", "Nudeln statt Reis", 350),
+    ]
+
+
+@pytest.mark.parametrize(
+    "said", ["Nudeln statt Reis und Huhn", "Nudeln statt Reis, mit Huhn"]
+)
+def test_words_after_the_swapped_part_still_count(said):
+    """ "Nudeln statt Reis und Huhn" dropped Huhn without a word."""
+    wish = wish_of(said, BEILAGE)
+    assert wish.kind == "option"
+    assert [(o.group, o.option) for o in wish.options] == [
+        ("Beilage", "Nudeln"),
+        ("Fleisch", "Huhn"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        # Pommes is on no card here: never cut away, so the wish is asked.
+        "Nudeln statt Reis und Pommes",
+        "Nudeln statt Reis oder Pommes",
+        # A swap the card does not name as a whole is not guessed at.
+        "Nudeln statt gebratenem Reis",
+    ],
+)
+def test_what_the_swap_leaves_unclear_is_asked(said):
+    assert wish_of(said, SWAP_OPTION if "gebratenem" in said else BEILAGE).kind == (
+        "unknown"
+    )
