@@ -26,7 +26,7 @@
 **Wann:** sofort, wenn der Gast ein Gericht oder eine Nummer nennt, mit seinem ganzen Satz: bevor du etwas dazu sagst, nachfragst oder es in eine Bestellung kommt.
 **Eingabe:** `query` (das Gesagte, so wie es kam).
 **Liefert:** `match_type` (`exact_number` · `alias` · `fuzzy_single` · `ambiguous`) und `results` mit `menu_item_id`, Nummer, Name, Preis, `sold_out`, `option_groups`. Nennt der Satz einen Wunsch („ohne Karotten"), dazu `wish`: `kind` `note` (Weglassen), `option` (steht auf der Karte, mit `group`, `option`, `price_delta_cents`, `reason`; bei zweien nur `options`), `allergy` (mit `ingredient` ins `note`, ohne erst fragen, wogegen, nie die Worte roh notieren; keine Zusage), `unknown` (nicht anbieten, `say` sprechen) oder `open` (nachfragen: Gericht wählen lassen oder, mit `groups`, die Gruppe). Ein Weglassen zur Zugabe steht in `wish.note` und gehört ebenfalls in `note`.
-**Mehrere Gerichte in einem Satz:** das Tool zerlegt selbst und liefert `match_type: "positions"` mit einem Eintrag je Teil (`query`, `ok`, Ergebnis oder `error_code` und `say`).
+**Mehrere Gerichte in einem Satz:** das Tool zerlegt selbst und liefert `match_type: "positions"` mit einem Eintrag je Teil (`query`, `ok`, Ergebnis oder `error_code` und `say`). Nennt der Satz dabei eine Allergie, hängt sie an keiner Position: sie steht in `allergy`, und `say` fragt, ob sie für alle Gerichte gilt oder für eines. Notiere sie nach der Antwort an jedem genannten Gericht.
 **Regel:** bei `ambiguous` nachfragen, nie selbst wählen. `not_found`: `say` sprechen. Das `say` eines eindeutigen Treffers wiederholt das Verstandene: sprich es, dann weiter.
 
 ## get_item_details

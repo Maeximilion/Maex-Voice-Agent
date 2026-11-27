@@ -200,7 +200,11 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    Position fällt mehr still weg. Der eigene
    Gesprächskern (`agent/dispatch.py`) fragt nicht nach, sondern zerlegt selbst
    und sucht je Teil: Antwort `match_type: "positions"` mit einem Eintrag je Teil
-   (`query`, `ok`, Treffer oder `error_code` und `say`). Trennt der Satz allein
+   (`query`, `ok`, Treffer oder `error_code` und `say`). The only allergy of a
+   sentence that clearly names several dishes stays on none of them (Maxi,
+   27.11.2026, #1067): the answer carries it as `allergy`, its `say` ends in
+   „Gilt dies für alle Speisen oder für eine einzelne?" (a fixed sentence of
+   an allergy turn), and the guest's answer decides which dishes get the note. Trennt der Satz allein
    nicht („die 23 und Pho Bo": „Pho Bo" ohne Menge), prüfen beide Wege mit der
    Karte (`position_parts` in `domain/menu/search.py`): trifft jedes Stück an
    den Trennern für sich eindeutig ein anderes Gericht, sind es mehrere
