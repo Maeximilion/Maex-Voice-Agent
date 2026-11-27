@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.106
+> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.107
 
 ---
 
@@ -147,6 +147,7 @@ Settled assumptions: `docs/HISTORY.md` sections "Made Assumptions (archive)" and
 
 | Date | What |
 |---|---|
+| 27.11.2026 | **#1062: a card for a caller who left the team's ringing only after 5 s** (Maxi, 26.11.2026 on #1046). The dialplan stamps the start of the first team leg's `Dial` (`RINGFROM`, to the millisecond) and `h` reports the seconds since then as `waited`; `voice` writes the card only from `VOICE_LEFT_MIN_RING_SECONDS` (5) on, so a wrong number or a one-ring call leaves none, as before #1046. A missing or garbled measure keeps the card (rule 5). Dialplan harness on 22.11.0: 1.5 s, 4.5 s and no leg yet, no card; 6.5 s and the second leg, the card. Card text unchanged. |
 | 26.11.2026 | **STATUS upkeep 26.11.2026 (#562).** No done or decided row was older than one month, so the rule moved nothing; the file stood at 63.8 KB, the changelog 27 KB of it. Maxi chose to move the 70 changelog lines of 18.11. to 23.11.2026, unchanged, to `docs/HISTORY.md` section "STATUS upkeep (archive, changelog entries 18.11. to 23.11.2026, 26.11.2026)" (63.8 to about 52 KB). Open rows stay. With it the README's stale assets are redrawn (95 of 116 tasks, as of 24.11.2026), and `docs/metrics/capabilities.toml` names the English call log flags, so a render no longer turns the README back to `--frist-tage N --loeschen`. |
 | 25.11.2026 | **Deep review of #972 (own Asterisk 22.12.0 image, outage path), round 3 item 6.** The CI check of the image now proves what it says: its frozen `voice` really holds the connection (the old stand-in closed it, so issue #1979 was never checked) and each frozen Dial must take between `connection_timeout` and three times that (real image: 4.0 s); Asterisk starts through the image's entrypoint with the service's command and rights; 33 modules the dialplan, features.conf and pjsip.conf need must run, matched by whole name and not `Not Running`; a crash after the last phase fails; every CLI call is bounded. The image build stops on a patch that does not apply; the gate on `main` reads the whole push; Dependabot keeps the Asterisk base apart. Filed in docs/24: a cold-cache rebuild at deploy recreates Asterisk and cuts live calls, and the wire contract is unseen on 22.12.0 |
 | 24.11.2026 | **#888 round 3: five gaps of the scripted stand-in closed (docs/24).** "Die drei und zwanzig" is card 23 once, not 3 x 20; "Warme Beilage" picks that group over "Beilage" (both said: asked again); "Nein, doch die 23" and "Nein, lieber zwei Nummer 13" keep the dish and their own quantity; when `get_service_status` reports neither pickup nor delivery open, the stand-in says so at once and asks for no dish (with delivery open the core still offers it at the draft, `abholung_0090`). `sim/` only, tests in `api/tests/test_sim_pickup.py`, rows moved to `docs/HISTORY.md`. The surcharge reason stays open: it needs a German word pattern, Maxi's word (#798). |
@@ -179,7 +180,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.106 · 27.11.2026:** docs/24 (Codex PR #139): a wish with two options from different groups ("mit Huhn und Nudeln") reaches the model with each option, and a named group settles an option in two groups ("mit Reis als Beilage"); not definite stays unknown (#1066 item 7)
+- **v2.69.107 · 27.11.2026:** docs/24 (Codex PR #139): a wish with two options from different groups ("mit Huhn und Nudeln") reaches the model with each option, and a named group settles an option in two groups ("mit Reis als Beilage"); not definite stays unknown (#1066 item 7)
+- **v2.69.106 · 27.11.2026:** #1062 (Maxi on #1046): a caller who hangs up after the handover and before a team leg answers leaves a callback card only once the team rang VOICE_LEFT_MIN_RING_SECONDS (5); the dialplan's h measures the time since the first team leg's Dial
 - **v2.69.105 · 27.11.2026:** #1060: n8n 2.49.7, the newest stable release; the export imports and publishes against it, and a test holds the pin to a release named in a Checked line of n8n/README.md
 - **v2.69.104 · 27.11.2026:** #1063 (Maxi, 26.11.2026, on #1054): the once-a-day push of an operator's TOTP code counts the calendar day in `Europe/Berlin`, not 24 hours from the last push; a push at 23:50 no longer keeps the next morning quiet, and a clock change day keeps its one push
 - **v2.69.103 · 27.11.2026:** Chain: no queued sessions: only as many item sessions as build lanes plus the ship lane, a freed lane starts the next planned item, merged PRs are hidden on the ship lane, a round left running shuts the PC down when no lane can be filled (#1066 item 11)
