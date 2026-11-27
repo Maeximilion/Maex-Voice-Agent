@@ -135,15 +135,51 @@ def _eval_sentences() -> set[str]:
 
 
 _FRAGMENTS = [
-    "die 23", "die 24", "Nummer 24", "Nr. 12", "nr 7", "die 25g", "die 30 a",
-    "doch die 24", "ne, die 24", "quatsch die 24", "nein nummer 13",
-    "die", "nummer", "nr.", "die die 24", "die 24 nr", "zwei Nummer 23",
-    "S12", "Sushi zwölf", "die dreiundzwanzig", "drei und zwanzig",
-    "Ente", "Pho Bo", "Fisch und Chips", "knusprige Ente", "Ente süß sauer",
-    "einer Sesamallergie", "und einer Sesamallergie", "ich habe eine Erdnussallergie",
-    "meine Frau ist gegen Sesam allergisch", "und auch noch", "und",
-    "ohne Zwiebeln", "mit Reis", "zweimal", "also", "danke", "bitte", "äh",
-    "zwei Cola", "für 8,50", "um 19 Uhr", "die 99", "Nummer 1000", "tausend",
+    "die 23",
+    "die 24",
+    "Nummer 24",
+    "Nr. 12",
+    "nr 7",
+    "die 25g",
+    "die 30 a",
+    "doch die 24",
+    "ne, die 24",
+    "quatsch die 24",
+    "nein nummer 13",
+    "die",
+    "nummer",
+    "nr.",
+    "die die 24",
+    "die 24 nr",
+    "zwei Nummer 23",
+    "S12",
+    "Sushi zwölf",
+    "die dreiundzwanzig",
+    "drei und zwanzig",
+    "Ente",
+    "Pho Bo",
+    "Fisch und Chips",
+    "knusprige Ente",
+    "Ente süß sauer",
+    "einer Sesamallergie",
+    "und einer Sesamallergie",
+    "ich habe eine Erdnussallergie",
+    "meine Frau ist gegen Sesam allergisch",
+    "und auch noch",
+    "und",
+    "ohne Zwiebeln",
+    "mit Reis",
+    "zweimal",
+    "also",
+    "danke",
+    "bitte",
+    "äh",
+    "zwei Cola",
+    "für 8,50",
+    "um 19 Uhr",
+    "die 99",
+    "Nummer 1000",
+    "tausend",
 ]
 _SEPARATORS = [", ", " und ", " ", ". ", ", und ", " oder "]
 
@@ -188,7 +224,11 @@ def _stub_search(calls: list[str]) -> Callable[[str], SearchResult]:
 
 
 def _part_lists(sentence: str) -> list[list[str]]:
-    lists = [raw_pieces(sentence), split_positions(sentence), cut_at_separators(sentence)]
+    lists = [
+        raw_pieces(sentence),
+        split_positions(sentence),
+        cut_at_separators(sentence),
+    ]
     return [parts for parts in lists if parts]
 
 
@@ -236,8 +276,16 @@ def test_keep_allergy_clauses_matches_the_old_version() -> None:
 
 
 _CLAUSES = [
-    "einer Sesamallergie", "und einer Sesamallergie", "ich bin gegen Sesam allergisch",
-    "und", "auch noch", "die 23", "Ente", "Pho Bo", "und die", "noch eine Erdnussallergie",
+    "einer Sesamallergie",
+    "und einer Sesamallergie",
+    "ich bin gegen Sesam allergisch",
+    "und",
+    "auch noch",
+    "die 23",
+    "Ente",
+    "Pho Bo",
+    "und die",
+    "noch eine Erdnussallergie",
 ]
 
 
@@ -296,7 +344,9 @@ def test_long_sentences_cost_linear_time() -> None:
 
     small = [min(c) for c in zip(*(costs(1500) for _ in range(3)), strict=True)]
     large = [min(c) for c in zip(*(costs(3000) for _ in range(3)), strict=True)]
-    for name, a, b in zip(("takes_back", "keep_allergy", "ends_in_card"), small, large, strict=True):
+    for name, a, b in zip(
+        ("takes_back", "keep_allergy", "ends_in_card"), small, large, strict=True
+    ):
         assert b < 3 * a + 0.002, (name, a, b)
 
 
