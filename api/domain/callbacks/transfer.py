@@ -64,7 +64,8 @@ SUMMARY_MISSED = "Ans Team weitergeleitet, dort hat niemand abgenommen."
 # handed the call on, and the team never rang (#252 no. 9).
 SUMMARY_HUNG_UP = "Aufgelegt, bevor das Team klingelte."
 # The dialplan's `h` (#888 round 3): the caller hung up after the line handed
-# the call on and before a team leg answered, once the team rang 5 s (#1062).
+# the call on and before a team leg answered, once the team rang
+# `voice_left_min_ring_seconds` (5 s, #1062).
 SUMMARY_LEFT = "Ans Team weitergeleitet, der Gast hat aufgelegt, bevor jemand abnahm."
 SUMMARY_BY_REASON = {
     "cancellation": "Kunde wollte etwas stornieren.",
@@ -133,7 +134,7 @@ def team_missed(
     False: there was no team leg, the caller hung up before the line handed
     the call on (mode `shadow` with the recording question, #252 no. 9).
     `left`: the caller hung up after the line handed the call on and before a
-    team leg answered, once the team rang 5 s (the dialplan's `h`, #888
+    team leg answered, once the team rang long enough (the dialplan's `h`, #888
     round 3, #1062); the card says so instead of that nobody answered.
     `kitchen_note`: the guest spoke of an allergy in the call; the card leads
     its text with the marker the core's cards carry, once (#956).

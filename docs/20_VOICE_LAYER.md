@@ -417,10 +417,10 @@ is rung (Maxi, 20.10.2026). The outage paths (paused, shadow, `voice` down, a fa
   runs the extension `h` of `[ai]` once the dialplan ends; it sends the same report with `left=1`
   and `waited`, the seconds since the first team leg's `Dial` started (`RINGFROM`, set once right
   before it, wall clock to the millisecond; 0 when no leg started, empty when one started and left
-no stamp). `voice` writes the card only
-  when `waited` is at least `VOICE_LEFT_MIN_RING_SECONDS` (Maxi, 26.11.2026 on #1046 and #1032:
-  5 s, #1062): the team's only notice then, since its telephone shows only a missed call from our
-  registration (T-10.2). A caller gone sooner (a wrong number, a one-ring call) leaves no card and ends as before #1046. The time
+  no stamp). `voice` writes the card only when `waited` is at least `VOICE_LEFT_MIN_RING_SECONDS`
+  (Maxi, 26.11.2026 on #1046 and #1032: 5 s, #1062): the team's only notice then, since its
+  telephone shows only a missed call from our registration (T-10.2). A caller gone sooner (a wrong
+  number, a one-ring call) leaves no card and ends as before #1046. The time
   is measured in the dialplan, the only place that knows when a leg started, also for a call
   `voice` never answered, and from the start of the `Dial`, a little before the leg rings, so it
   errs toward a card; only a wall clock stepped back during the ringing shortens it. A `waited` that is missing, not a number,
