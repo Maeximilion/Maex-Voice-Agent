@@ -16,14 +16,13 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import ValidationError
 from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import sessionmaker
 from starlette.websockets import WebSocketDisconnect
 
 from api.agent.llm import LLMError
 from api.agent.recording import SAY_WHAT_CAN_I_DO
-from api.config import Settings, settings
+from api.config import settings
 from api.core.errors import NotFound
 from api.domain.calls import tenant_named
 from api.models import Callback
@@ -33,7 +32,7 @@ from api.telephony import watchdog as voice_watchdog
 from api.telephony.adapters import speech_engines, tts_piper
 from api.telephony.adapters.fake_speech import FakeEar, FakeMouth
 from api.telephony.app import Voice, create_app, voice_from_settings
-from api.telephony.handler import ANNOUNCEMENTS, GREETING
+from api.telephony.handler import ANNOUNCEMENTS, GREETING, CallHandler
 from api.telephony.router import _write
 from api.telephony.session import Lines
 from api.tests.test_compose_ports import _load
@@ -133,6 +132,10 @@ class Core:
     team_phone = TEAM
 
 
+# The threshold of Maxi's decision (#1062); the tests name it, not `.env`.
+LEFT_MIN_RING_SECONDS = 5.0
+
+
 @pytest.fixture
 def phone():
     lines = Lines()
@@ -145,7 +148,7 @@ def phone():
         mouth=FakeMouth,
         silence_seconds=60.0,
         team_phone=lambda: core.team_phone,
-        left_min_ring_seconds=settings.voice_left_min_ring_seconds,
+        left_min_ring_seconds=LEFT_MIN_RING_SECONDS,
     )
     with TestClient(create_app(voice)) as client:
         yield client, core
@@ -450,7 +453,7 @@ def test_without_a_token_nothing_is_let_in():
         mouth=FakeMouth,
         silence_seconds=60.0,
         team_phone=lambda: TEAM,
-        left_min_ring_seconds=settings.voice_left_min_ring_seconds,
+        left_min_ring_seconds=LEFT_MIN_RING_SECONDS,
     )
     assert not voice.authorized(basic("")["authorization"])
 
@@ -755,14 +758,6 @@ def test_a_ring_time_does_not_touch_the_card_of_legs_nobody_answered(phone):
     assert core.left is False
 
 
-def test_the_ring_threshold_is_a_setting_of_five_seconds():
-    """Maxi's decision of 26.11.2026 (#1046, #1062), set by the environment."""
-    assert Settings().voice_left_min_ring_seconds == 5.0
-    assert Settings(voice_left_min_ring_seconds=8).voice_left_min_ring_seconds == 8.0
-    with pytest.raises(ValidationError):
-        Settings(voice_left_min_ring_seconds=-1)
-
-
 def test_the_stop_door_wants_the_token(phone):
     client, core = phone
     assert client.post(f"/calls/{CALL}/recording/stop").status_code == 401
@@ -1065,7 +1060,7 @@ def voice_for(session, tenant) -> Voice:  # noqa: F811 - fixtures
         mouth=FakeMouth,
         silence_seconds=60.0,
         team_phone=handler.team_phone,
-        left_min_ring_seconds=settings.voice_left_min_ring_seconds,
+        left_min_ring_seconds=LEFT_MIN_RING_SECONDS,
     )
 
 
@@ -1241,6 +1236,19 @@ def its_database(startable, migrated_db_url, bounded_db, tenant):  # noqa: F811
 def test_the_service_starts_for_its_tenant(its_database):
     voice = voice_from_settings()
     assert voice.authorized(basic(TOKEN)["authorization"])
+
+
+def test_the_service_takes_the_ring_threshold_from_its_settings(its_database):
+    """#1062: the threshold is `voice_left_min_ring_seconds`, not a number of
+    the code; here 8 s instead of the default 5."""
+    its_database.setattr(settings, "voice_left_min_ring_seconds", 8.0)
+    its_database.setattr(
+        CallHandler, "on_team_missed", lambda self, sid, left=False: True
+    )
+    voice = voice_from_settings()
+
+    assert voice.missed(CALL, left=True, waited="7.999") is False
+    assert voice.missed(CALL, left=True, waited="8") is True
 
 
 @pytest.mark.parametrize("team", ["database", "settings"])

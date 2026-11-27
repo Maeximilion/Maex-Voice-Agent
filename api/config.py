@@ -120,8 +120,10 @@ class Settings(BaseSettings):
     voice_silence_seconds: float = Field(default=8.0, gt=0)
     # A caller who hangs up after the handover and before a team leg answers
     # leaves a callback card only once the team rang this long (Maxi,
-    # 26.11.2026, #1046, #1062); measured by the dialplan's `h`.
-    voice_left_min_ring_seconds: float = Field(default=5.0, ge=0)
+    # 26.11.2026, #1046, #1062); measured by the dialplan's `h`. At most 30, the
+    # ring time of one leg: more would take the card of every caller who left
+    # while the first leg rang (rule 5).
+    voice_left_min_ring_seconds: float = Field(default=5.0, ge=0, le=30)
     # Ear and mouth by the names of their engines in
     # `telephony/adapters/speech_engines.py` (`EARS`, `MOUTHS`), the local
     # engines of the test phase (docs/20 §6).

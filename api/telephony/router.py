@@ -13,7 +13,9 @@
   "none" otherwise, and the dialplan tells the caller which (docs/20 §5,
   T-10.8). With `left=1` from the dialplan's `h`: the caller hung up after the
   call was handed to the team and before a leg answered, maybe before
-  TEAM_PHONE was tried; the card says so, and nobody is told anything.
+  TEAM_PHONE was tried; the card says so, and nobody is told anything. Only
+  once the team rang `voice_left_min_ring_seconds` by `waited`, the seconds
+  since the first team leg started (#1062); "none" before that.
 - `/calls/{call_id}/recording/stop`: the team pressed the stop key on a recorded
   team leg, and the dialplan stopped and deleted the file. "stopped" once the
   withdrawal is logged, "none" otherwise (docs/20 §5, T-11.3).
