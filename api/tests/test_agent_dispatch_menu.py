@@ -502,6 +502,41 @@ def test_wunsch_in_einer_aufzaehlung(session, tenant_id, call_id):
     assert "Nummer 23, ohne Karotten und Nummer 13 Pho Bo" in result.data["say"]
 
 
+@pytest.mark.parametrize(
+    ("query", "wishes"),
+    [
+        (
+            "die 23 ohne Karotten und die 13 mit Allergie",
+            [("note", "ohne Karotten"), ("allergy", "mit Allergie")],
+        ),
+        (
+            "die 23 ohne Karotten und die 13 ohne Zwiebeln",
+            [("note", "ohne Karotten"), ("note", "ohne Zwiebeln")],
+        ),
+        ("die 23 und die 13 ohne Zwiebeln", [None, ("note", "ohne Zwiebeln")]),
+        (
+            "die 23 und die 13 mit Erdnussallergie",
+            [None, ("allergy", "WICHTIG !!! Allergie: Erdnuss")],
+        ),
+    ],
+)
+def test_each_number_in_a_list_keeps_its_own_wish(
+    session, tenant_id, call_id, query, wishes
+):
+    """docs/24, own test PR #139: a second number with a wish of its own was
+    glued to the first position, and the sentence ended in "nicht gefunden,
+    Nummer?". Each number is its own position now, its wish stays with it,
+    and an allergy is never moved to the other dish."""
+    result = run(session, tenant_id, call_id, "search_menu", {"query": query})
+    assert result.data["match_type"] == "positions"
+    first, second = result.data["positions"]
+    assert [p["results"][0]["number"] for p in (first, second)] == ["23", "13"]
+    assert [
+        (p["wish"]["kind"], p["wish"]["text"]) if p["wish"] else None
+        for p in (first, second)
+    ] == wishes
+
+
 def test_wiederholung_mit_leeren_vorgaben_ist_derselbe_entwurf(
     session, tenant_id, call_id
 ):

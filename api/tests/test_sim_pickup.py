@@ -910,6 +910,22 @@ def test_hinweis_landet_in_der_bestellung(session, tenant):
     assert _notes(session, order) == ["ohne Karotten"]
 
 
+def test_two_numbers_with_their_own_wishes_reach_the_order(session, tenant):
+    """docs/24, own test PR #139: "Die 23 ohne Karotten und die 13 mit
+    Allergie" ended in "nicht gefunden, Nummer?". Now both dishes are taken,
+    the removal stays at the 23, and the allergy is asked for at the 13 and
+    noted there in the guest's words, never at the 23."""
+    _, turns = _bestellung(
+        session, tenant, "Die 23 ohne Karotten und die 13 mit Allergie.", "Erdnüsse."
+    )
+    assert "nicht gefunden" not in said(turns)
+    assert "Worauf genau" in " ".join(turns[1].say)
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert positions(session, order) == [("23", 1, []), ("13", 1, [])]
+    assert _notes(session, order) == ["ohne Karotten", "WICHTIG !!! Allergie: Erdnüsse"]
+
+
 def test_option_als_wunsch_erspart_die_rueckfrage(session, tenant):
     """ "mit Huhn" ist die Option der Pflichtgruppe Fleisch: keine Frage mehr
     nach Ente oder Huhn, die Wahl steht in der Bestellung."""

@@ -94,6 +94,21 @@ from api.tests.test_domain_menu_search import (  # noqa: F401
             ["die 23 und zwei Portionen ohne Koriander"],
         ),
         ("die 23 und eine mit Reis", ["die 23 und eine mit Reis"]),
+        # A card number with its own word opens a position, a wish behind it
+        # is its own (docs/24, own test PR #139).
+        (
+            "die 23 ohne Karotten und die 13 mit Allergie",
+            ["die 23 ohne Karotten", "die 13 mit Allergie"],
+        ),
+        ("die 23 und die 13 ohne Zwiebeln", ["die 23", "die 13 ohne Zwiebeln"]),
+        (
+            "die 23 und Nummer 13 mit Erdnussallergie",
+            ["die 23", "Nummer 13 mit Erdnussallergie"],
+        ),
+        (
+            "Pho Bo und zweimal die 23 ohne Koriander",
+            ["Pho Bo", "zweimal die 23 ohne Koriander"],
+        ),
         ("die 23 und zweimal die 13", ["die 23", "zweimal die 13"]),
         (
             "die 23 und zwei Portionen Pho Bo ohne Koriander",
@@ -142,6 +157,11 @@ def test_jede_position_findet_ihr_gericht(session, tenant_id, gesagt, nummern): 
         ("die 23, zweimal ohne Koriander", ["die 23, zweimal ohne Koriander"]),
         ("Pho Bo, dazu extra scharf", ["Pho Bo, dazu extra scharf"]),
         ("die 23 und Pho Bo", ["die 23", "Pho Bo"]),
+        (
+            "die 23 ohne Karotten und die 13 mit Allergie",
+            ["die 23 ohne Karotten", "die 13 mit Allergie"],
+        ),
+        ("die 23, 2 x ohne Koriander", ["die 23, 2 x ohne Koriander"]),
         # The menu check sees the paused number whole as well (Codex PR #147).
         ("die drei und äh zwanzig", ["die drei und äh zwanzig"]),
         # A comma on either side of the "und" is the same pause (#328).

@@ -213,7 +213,7 @@ def _opens_position(part: str) -> bool:
     if not any(_opens(w) for w in words[:prefix]):
         return False
     if rest:
-        return rest[0] not in _MODIFIERS
+        return rest[0] not in _MODIFIERS or _names_card_number(words[:prefix])
     return any(_is_number(w) for w in words)
 
 
@@ -221,8 +221,23 @@ def _modifies(part: str) -> bool:
     """Ein Hinweis zur Position davor: nach Artikel und Menge steht vorn "mit",
     "ohne", "extra" oder "aber" ("mit Reis", "2 x ohne Koriander")."""
     words = _full_words(part)
-    rest = words[next((i for i, w in enumerate(words) if not _is_prefix_word(w)), 0) :]
-    return bool(rest) and rest[0] in _MODIFIERS
+    start = next((i for i, w in enumerate(words) if not _is_prefix_word(w)), 0)
+    rest = words[start:]
+    return (
+        bool(rest) and rest[0] in _MODIFIERS and not _names_card_number(words[:start])
+    )
+
+
+def _names_card_number(prefix: list[str]) -> bool:
+    """Does the prefix name a card number with its own word ("die 13", "Nummer
+    13", "zweimal die 13")? Then the wish behind it is that dish's own: "die 23
+    ohne Karotten und die 13 mit Allergie" is two positions, each with its own
+    wish, while "2 x ohne Koriander" still belongs to the position before
+    (docs/24, own test PR #139)."""
+    return any(
+        word in _DETERMINERS | _NUMBER_MARKERS and _is_number(after)
+        for word, after in zip(prefix, prefix[1:])
+    )
 
 
 def _is_prefix_word(word: str) -> bool:

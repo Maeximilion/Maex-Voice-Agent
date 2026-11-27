@@ -518,8 +518,7 @@ def _takes_a_number_back(
     ("Ente" between two numbers is a dish to ask about), filler or a quantity
     alone ("zweimal", "also"), nor a piece with a quantity, a price or a time of
     its own ("zwei Cola", "für 8,50", "um 19 Uhr"): a correction carries none."""
-    said = [sole_item_number(piece, card) for piece in pieces]
-    card_numbers = [ref is not None or more for ref, more in said]
+    card_numbers = [_leads_with_card_number(piece, card) for piece in pieces]
     # Read once from each end instead of again for each piece (docs/24): is
     # there a card number in a piece after this one, and a number before it.
     after = [False] * len(pieces)
@@ -543,6 +542,19 @@ def _takes_a_number_back(
         except Ambiguous:
             continue
     return False
+
+
+def _leads_with_card_number(piece: str, card: CardFormat) -> bool:
+    """Is the piece a card number, alone ("die 24") or with a wish of its own
+    behind it ("die 24 mit Reis")? The second is a position of its own since
+    docs/24 (own test PR #139), so "die 23, quatsch, die 24 mit Reis" still
+    takes the 23 back and asks."""
+    ref, more = sole_item_number(piece, card)
+    if ref is not None or more:
+        return True
+    # Only the first cut: the dish in front of the earliest wish word.
+    candidates = wish_candidates(piece)
+    return bool(candidates) and sole_item_number(candidates[0][0], card)[0] is not None
 
 
 # What stands in front of a card number said with its own word: "die 24",

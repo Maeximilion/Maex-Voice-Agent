@@ -1522,7 +1522,11 @@ def test_nee_is_a_correction():
 
 def _clear_parts(session, tid, said: str) -> list[str]:
     clear = []
-    for part in position_parts(session, tid, said, now=NOW):
+    try:
+        parts = position_parts(session, tid, said, now=NOW)
+    except Ambiguous:
+        return clear  # the whole sentence asks back
+    for part in parts:
         try:
             found = suche(session, tid, part)
         except (Ambiguous, NotFound):
@@ -1544,6 +1548,12 @@ def _clear_parts(session, tid, said: str) -> list[str]:
         ("die 23 ohne Zwiebeln, quatsch, die 24", "23"),
         ("zwei Pho Bo, quatsch, die 24", "Pho Bo"),
         ("die 24, ich habe ja Zöliakie, also die 13", "24"),
+        # A number with a wish is a position of its own now (docs/24); the
+        # correction in front of it still takes the first back.
+        ("die 23, quatsch, die 24 mit Reis", "23"),
+        ("die 23, ne, die 24 ohne Zwiebeln", "23"),
+        ("die 23 ohne Zwiebeln, sorry, die 24 ohne Zwiebeln", "23"),
+        ("die 23, Moment, die 13 mit Allergie", "23"),
     ],
 )
 def test_a_spoken_correction_never_books_both(session, sushi, said, taken_back):
