@@ -2744,3 +2744,20 @@ Replaced lines of `.claude/chain/brief-common.md`:
 > "PR #N ready, first review clean" (then stop: no push after it), "stopped/blocked: <why>", "reserve taken", "need 2 lanes for <step>", "lane taken item N", a choice that needs Maxi. "Waiting for CI" is no milestone.
 >
 > If your item stops without a PR: post why on its issue and take the reserve item your brief names in this same session; if its route differs, ask the coordinator to switch your model and effort.
+
+## Chain command (archive, super slow break and clear at merge, 27.11.2026)
+
+Replaced by chain round 4 item 20 (#1066). Maxi, 27.11.2026: "Yes, add the break in super slow after every step it takes. Like 30 Minutes.", corrected minutes later: "Sorry do it like the slow mode with its 45 minute sleep"; "what about clearing the old lanes? Shouldn't be done after the PR is gone so the context is free again?"; "At the moment are 4/3 Builds active. Fix that"; "Why did you stop?" (two lanes stayed empty for over an hour after the mode had left super slow).
+
+Replaced lines of `.claude/commands/chain.md`:
+
+> 5. **A lane frees** when its item's PR is handed to the ship lane (step 4), or its item stops without a PR (27.11: refilled "by a message from the side session", not by Maxi's input). It goes, in this order (25.11): (a) a planned item that changes the chain itself (this command, the brief file, the dashboard, chain memories); (b) a heavy step a running item waits for: send "go heavy"; (c) a paused session (section 3), else the next planned item, or the reserve item (one that runs after another only once that one is merged). A paused session gets it by the baton: `item N` into `next-lane.txt` and "go on item N" (a message wakes it at once from any turn; super slow: section 3); on "lane taken item N" write `none` back.
+>    **A new item goes into a free lane session** in this order (27.11: "first the rename then the item goes in there"; works in any turn): (1) tell it to call `unbind_pr` for its PR once (none: skip), stop every background task and agent, leave the worktree clean and answer "lane free"; (2) `set_session_title` to the new item's title; (3) `clear_session`; (4) `set_session_model` and `set_session_effort` to the item's route; (5) `SendMessage` the full brief (section 2). `clear_session` is refused for a session that is pinned, open on Maxi's screen, serving Remote Control, or holding a queued message or live work: then the brief goes without the clear, say so once, and clear at the next hand-over. More lanes than sessions (turbo, or a session lost): a new session only in Maxi's next turn; one push to tell him.
+> 6. **On "merged #N":** mark it done on the dashboard at once, rewrite the state memory, re-read the mode, fill a lane that is still free (step 5).
+> 7. **While children run:** one background `sleep 3000`, re-armed on every wake (keeps the cache warm; no `CronCreate`).
+> | Super slow | over +15 (also straight from normal) | +5 or below, to slow | 1 | waits for slow or normal | every other build session sleeps 50 min, renewed |
+
+Replaced lines of `.claude/chain/brief-common.md`:
+
+> - Slow mode: a 45-minute sleep after each finished part.
+> - Paused (super slow, Hold, or above the lane count after turbo; the coordinator tells you): one background `sleep 3000` (50 minutes, never 60 or more), renewed, then read `~/.claude/chain/next-lane.txt` and `~/.claude/chain/notes.txt`; never end a turn without that sleep running. The baton names your item (`item 14`) or "go on item N" arrives: message the coordinator "lane taken item N" and go on.
