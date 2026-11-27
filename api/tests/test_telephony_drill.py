@@ -36,6 +36,8 @@ class Stage(drill.Drill):
         # What a command prints, by a piece of it; "" for every other. An
         # exception is raised, as a command that fails does.
         self.prints: dict[str, str | Exception] = {}
+        # What the router lists as its channels (`core show channels concise`).
+        self.channels = ""
 
     def compose(self, *args: str) -> str:
         return self.docker(*args)
@@ -54,6 +56,8 @@ class Stage(drill.Drill):
             n = int(command.split("/")[1].split("@")[0])
             for name, lines in self.script[n].items():
                 self.logs[name] += lines
+        if command == "core show channels concise":
+            return self.channels
         return "0 active channels"
 
     def sql(self, statement: str) -> str:
@@ -1168,6 +1172,169 @@ def test_with_voice_down_the_caller_still_hears_to_call_again(tmp_path):
         tmp_path, 113, card="", told="missed_later", row=f"callback|1|{CALLER_111}"
     )
     assert not all(ok for _, ok, _ in drill.drill_team_missed_voice_down(written))
+
+
+def caller_channels(*ns: int) -> str:
+    """The router's channels while callers `ns` ring the team, both sides of
+    each Local channel and the team leg."""
+    return "\n".join(
+        line
+        for n in ns
+        for line in (
+            f"Local/{n}@dialout-0000000{n % 10};2!dialout!{n}!4!Up!Dial!PJSIP/ai",
+            f"Local/{n}@dialout-0000000{n % 10};1!caller!{n}!1!Up!Wait!60",
+            "PJSIP/ai-00000012!from-ai!+4972215550900!3!Ringing!Wait!45",
+        )
+    )
+
+
+def left_stage(
+    tmp_path,
+    late: tuple[str, str] = ("8.123", "noted"),
+    early: tuple[str, str] = ("2.410", "none"),
+    *,
+    rows: tuple[str, str] = (f"callback|1|{drill.NUMBER_PREFIX}134", "transferred|0|"),
+    missed: bool = False,
+) -> Stage:
+    """134 leaves after the ring threshold, 135 before it, with what `h`
+    measured and `voice` answered for each, and each call's row."""
+
+    def call(n: int, sid: str, waited: str, card: str) -> dict[str, list[str]]:
+        asterisk = [
+            f"call {sid}: voice leg ANSWER ending [transfer] recorded [no]",
+            f"call {sid}: to the team",
+            f"call {sid}: caller left before the team answered after {waited} s, "
+            f"card [{card}]",
+        ]
+        if missed:
+            asterisk.append(f"call {sid}: nobody at the team, card [noted]")
+        return {
+            "router": [*router(n, "dials", "answered"), TEAM_RINGS],
+            "asterisk": asterisk,
+        }
+
+    stage = Stage(
+        tmp_path,
+        {134: call(134, "1.1", *late), 135: call(135, "1.2", *early)},
+    )
+    stage.channels = caller_channels(134, 135)
+    stage.prints["external_session_id = '1.1'"] = rows[0]
+    stage.prints["external_session_id = '1.2'"] = rows[1]
+    return stage
+
+
+@pytest.fixture
+def sleeps(monkeypatch) -> list[float]:
+    """The drill's waits, recorded instead of slept."""
+    slept: list[float] = []
+    monkeypatch.setattr("api.telephony.drill.time.sleep", slept.append)
+    monkeypatch.setattr(drill, "LEFT_REPORT_SECONDS", 0.0)
+    return slept
+
+
+def test_a_caller_who_leaves_while_the_team_rings_passes_on_both_sides(
+    tmp_path, sleeps
+):
+    stage = left_stage(tmp_path)
+
+    checks = drill.drill_caller_left(stage)
+
+    assert len(checks) == 2 and all(ok for _, ok, _ in checks), checks
+    hangups = [c[2] for c in stage.commands if c[:2] == ("cli", "router")]
+    assert [c for c in hangups if c.startswith("channel request hangup")] == [
+        "channel request hangup Local/134@dialout-00000004;1",
+        "channel request hangup Local/135@dialout-00000005;1",
+    ]
+    # Hung up after the ring threshold and three seconds, then after one.
+    held = [s for s in sleeps if s > drill.POLL_SECONDS]
+    assert held[0] == pytest.approx(drill.LEFT_MIN_RING_SECONDS + 3, abs=0.5)
+    assert held[1] == pytest.approx(1.0, abs=0.5)
+    assert "TEAM_AWAY ring" in " ".join(c[2] for c in stage.commands if c[0] == "cli")
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"late": ("8.123", "none")},  # no card after the threshold
+        {"late": ("4.990", "noted")},  # the drill hung up too early
+        {"late": ("", "noted")},  # no time measured
+        {"early": ("2.410", "noted")},  # a card below the threshold
+        {"early": ("5.000", "none")},  # the drill hung up too late
+        {"rows": ("transferred|1|+4972215550134", "transferred|0|")},
+        {"rows": ("callback|1|+4972215550999", "transferred|0|")},
+        {"rows": (f"callback|1|{drill.NUMBER_PREFIX}134", "callback|1|x")},
+        {"missed": True},  # reported twice
+    ],
+)
+def test_a_caller_who_left_fails_on_any_wrong_answer(tmp_path, sleeps, changes):
+    stage = left_stage(tmp_path, **changes)
+
+    assert not all(ok for _, ok, _ in drill.drill_caller_left(stage))
+
+
+def test_a_caller_who_left_without_a_report_fails(tmp_path, sleeps):
+    stage = left_stage(tmp_path)
+    for script in stage.script.values():
+        script["asterisk"] = script["asterisk"][:2]
+
+    checks = drill.drill_caller_left(stage)
+
+    assert [ok for _, ok, _ in checks] == [False, False]
+    assert "voice answered [] after nan s, 0 report(s)" in checks[0][2]
+
+
+def test_the_caller_is_hung_up_on_its_own_side_only(tmp_path):
+    stage = Stage(tmp_path, {})
+    stage.channels = caller_channels(133, 134)
+
+    stage.hang_up_caller(134)
+
+    assert stage.commands[-1] == (
+        "cli",
+        "router",
+        "channel request hangup Local/134@dialout-00000004;1",
+    )
+    stage.channels = caller_channels(133)
+    with pytest.raises(drill.DrillError, match="call 134: no caller channel"):
+        stage.hang_up_caller(134)
+
+
+def test_the_router_is_set_back_when_the_caller_cannot_be_hung_up(tmp_path, sleeps):
+    stage = left_stage(tmp_path)
+    stage.channels = ""
+
+    with pytest.raises(drill.DrillError):
+        drill.drill_caller_left(stage)
+
+    clis = [c for c in stage.commands if "TEAM_AWAY" in " ".join(c)]
+    assert "TEAM_AWAY answer" in " ".join(clis[-1])
+    assert [c[1] for c in stage.commands if c[0] == "sql"][-1] == (
+        drill.SET_THE_DAY_BACK
+    )
+
+
+def test_the_drill_threshold_is_the_default_of_voice():
+    from api.config import Settings
+
+    field = Settings.model_fields["voice_left_min_ring_seconds"]
+    assert field.default == drill.LEFT_MIN_RING_SECONDS
+
+
+def test_the_callers_who_leave_press_keys_and_are_in_the_run():
+    lines = (drill.CONFIG_DIR / "drill" / "extensions.conf").read_text().splitlines()
+    assert ' same => n,GotoIf($["${EXTEN}" = "134" | "${EXTEN}" = "135"]?keys)' in lines
+    names = [title for title, _ in drill.SCENARIOS]
+    assert "the caller leaves while the team rings (134, 135)" in names
+    compose = (drill.CONFIG_DIR / "docker-compose.drill.yml").read_text()
+    assert "VOICE_LEFT_MIN_RING_SECONDS" not in compose  # runs on the default
+
+
+@pytest.mark.parametrize("n", [134, 135])
+def test_the_callers_who_leave_count_for_the_logs(tmp_path, n):
+    stage = Stage(tmp_path, {})
+    stage.logs["voice"].append(f"caller={drill.NUMBER_PREFIX}{n}")
+    _, ok, detail = stage.no_caller_in_the_logs()
+    assert not ok and detail == "found in voice"
 
 
 def test_the_announcements_asterisk_plays_are_the_sentences_of_the_code(tmp_path):
