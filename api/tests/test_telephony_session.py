@@ -893,7 +893,79 @@ def test_a_key_pressed_before_the_answer_does_not_stop_it(call):
     call.s.drain()
     assert call.line.played() == ["Nummer 23."] and "flush" not in call.line.kinds()
     call.wait(GAP + 0.1)
-    assert call.core.calls[-1] == ("dtmf", "4")
+    # Typed before the answer began to play: the core learns that before the
+    # keys, as for speech (deep review of the #888 round 3 `last_say` PR).
+    assert call.core.calls[-2:] == [("unheard", "Nummer 23."), ("dtmf", "4")]
+
+
+def _answer_after_a_slow_turn(call, *sentences: str, keys: str = "") -> float:
+    """The guest said "Die 23", typed `keys` half a second later, and the core
+    took two seconds to answer with `sentences`, all of them interruptible.
+    Returns when the answer began to play."""
+    call.core.replies["Die 23"] = [("say", text, True) for text in sentences]
+    call.start(GREETING)
+    call.played()
+    call.clock.now += 1.0
+    call.ear.hear(Heard("Die 23", ended_at=call.clock.now))
+    call.clock.now += 0.5
+    for digit in keys:
+        call.s.key(digit)
+    call.clock.now += 1.5  # the core took its time
+    call.s.drain()
+    return call.clock.now
+
+
+def test_keys_typed_before_the_answer_and_handed_over_after_it_played_count_unheard(
+    call,
+):
+    """The gap ends after the answer was played to its end. The keys were
+    still typed before the guest heard a word of it."""
+    _answer_after_a_slow_turn(call, "Nummer 23.", keys="4")
+    assert "flush" not in call.line.kinds() and call.core.count("dtmf") == 0
+    call.played(after=1.0)
+    call.wait(GAP)
+    assert call.core.calls[-2:] == [("unheard", "Nummer 23."), ("dtmf", "4")]
+
+
+def test_keys_typed_after_the_answer_was_played_are_no_cut(call):
+    _answer_after_a_slow_turn(call, "Nummer 23.")
+    call.played(after=1.0)
+    call.clock.now += 1.0
+    call.key("42#")
+    assert call.core.calls[-1] == ("dtmf", "42") and call.core.count("unheard") == 0
+
+
+def test_a_final_reported_after_the_answer_was_played_is_still_older_than_it(call):
+    """The ear reports the end of an utterance late, after the whole answer
+    was played. The guest finished speaking before it began: they answer
+    nothing of it (deep review of the #888 round 3 `last_say` PR)."""
+    began = _answer_after_a_slow_turn(call, "Nummer 23.")
+    call.played(after=1.0)
+    call.ear.hear(Heard("Und die 13", ended_at=began - 0.5))
+    call.s.drain()
+    assert call.core.calls[-2:] == [("unheard", "Nummer 23."), ("turn", "Und die 13")]
+
+
+def test_a_late_final_misses_only_the_sentences_played_after_it_ended(call):
+    began = _answer_after_a_slow_turn(call, "Gern.", "Für wie viele Personen?")
+    call.clock.now += 1.0
+    call.s.played(call.line.mark - 1)  # "Gern." heard to its end
+    call.played(after=1.0)
+    call.ear.hear(Heard("Zu viert", ended_at=began + 1.5))
+    call.s.drain()
+    assert call.core.calls[-2:] == [
+        ("unheard", "Für wie viele Personen?"),
+        ("turn", "Zu viert"),
+    ]
+
+
+def test_a_late_final_said_after_the_answer_was_played_is_no_cut(call):
+    _answer_after_a_slow_turn(call, "Nummer 23.")
+    call.played(after=1.0)
+    call.ear.hear(Heard("Und die 13", ended_at=call.clock.now + 0.5))
+    call.clock.now += 1.0
+    call.s.drain()
+    assert call.core.turns()[-1] == "Und die 13" and call.core.count("unheard") == 0
 
 
 def test_nothing_is_interrupted_once_a_transfer_or_hangup_waits(call):
