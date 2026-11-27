@@ -2834,3 +2834,10 @@ Fixed by chain round 4 item 30 (#1066): when one sentence brings two or more dis
 | Point | Why still open | When due |
 |---|---|---|
 | The question for an allergy without its ingredient does not name the dish (`api/agent/guards.py` `SAY_ASK_ALLERGY`) | Deep review of chain round 4 item 14 (27.11.2026), older than it: with two such allergies ("Die 23 mit Allergie und die 13 mit Allergie.") the guest hears "Worauf genau soll die Küche achten?" twice; the answers land on the right dishes in order, but the guest is not told which dish each question is for. | with the next wish change |
+## Open Points from Reviews (archive, everything after the first statt fixed 27.11.2026)
+
+Fixed by chain round 4 item 26: a "statt" swaps out the one word after it, what follows stands behind a comma or a card option named with "statt" and is still read, anything else is asked about, and a "statt" inside an option's own name stays part of that name.
+
+| Point | Why still open | When due |
+|---|---|---|
+| Everything after the first „statt" is cut (`api/domain/menu/wishes.py` `_classify`) | Deep review of #1076 (27.11.2026, pre-existing): `wanted` keeps only the words before „statt", so an option named „Nudeln statt Reis" (register format, docs/14; eval card dishes 32, 33, 40 to 42, 49) never matches and „mit Tofu und Nudeln statt Reis" is declined (eval target `abholung_0064`), and „Nudeln statt Reis und Huhn" drops Huhn without a word. | with the next wish change |

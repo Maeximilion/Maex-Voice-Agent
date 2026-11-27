@@ -306,7 +306,6 @@ for _said in (
     "die 47 ohne Zwiebeln, plus Tofu",
     "die 47 ohne Zwiebeln, dazu Tofu",
     "die 47 ohne Zwiebeln, zusätzlich Tofu",
-    "die 47 ohne Zwiebeln, stattdessen Tofu",
     "die 47 ohne Zwiebeln, aber Tofu",
     "die 47 ohne Zwiebeln, Tofu dazu",
     "die 47 mit Nudeln, ohne Zwiebeln, plus Tofu",
@@ -452,6 +451,8 @@ for _said in (
     "die 47 Tofu statt Huhn",
     "die 47 Tofu anstatt Huhn",
     "die 47 Tofu statt Huhn, ohne Zwiebeln",
+    # Chain round 4 item 26: "stattdessen" swaps like "dafür".
+    "die 47 ohne Zwiebeln, stattdessen Tofu",
     "Nummer 47 mit 2x Tofu",
 ):
     CLEAN.append(
