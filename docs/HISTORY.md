@@ -2841,3 +2841,11 @@ Fixed by chain round 4 item 26: a "statt" swaps out the one word after it, what 
 | Point | Why still open | When due |
 |---|---|---|
 | Everything after the first „statt" is cut (`api/domain/menu/wishes.py` `_classify`) | Deep review of #1076 (27.11.2026, pre-existing): `wanted` keeps only the words before „statt", so an option named „Nudeln statt Reis" (register format, docs/14; eval card dishes 32, 33, 40 to 42, 49) never matches and „mit Tofu und Nudeln statt Reis" is declined (eval target `abholung_0064`), and „Nudeln statt Reis und Huhn" drops Huhn without a word. | with the next wish change |
+
+## Open Points from Reviews (archive, anstatt read as statt 27.11.2026)
+
+Fixed by chain round 4 item 32: an "anstatt" is read as "statt" wherever a wish is matched against card options, so "Nudeln anstatt Reis" matches the option "Nudeln statt Reis" (and the other way round), and what stays unclear with "statt" stays unclear with "anstatt".
+
+| Point | Why still open | When due |
+|---|---|---|
+| „anstatt" does not match a card option named with „statt" (`api/domain/menu/wishes.py` `_without_swapped`, `_names`) | Deep review of chain round 4 item 26 (27.11.2026), as on main: „Nudeln anstatt Reis" is asked about on a card with „Nudeln statt Reis" (the safe direction). | when a call log shows it |
