@@ -2701,6 +2701,14 @@ Shortened by item 10 of chain round 4 (#1066): the log entry after a tool waits 
 |---|---|---|
 | Waits around a tool that the turn's deadline does not bound (`api/db.py` `bounded_by`, `api/agent/dispatch.py` `_log_call`, `api/agent/loop.py` `_too_slow`) | Deep review of the #888 round 3 lock-wait PR, 25.11.2026, all three older than that PR: the tool's log entry after a tool that finished in time, the core's handover writes after a cut and a pool checkout or reconnect before a statement keep the line's 2 s bound, so a lock on the call's row or a database restart can still keep the guest up to 2 s past the deadline per statement. Rare on one thread per call; the handover writes are the rule-5 path and must not be cut. | Before the first test call with real guests (T-10.7) |
 
+## Open Points from Reviews (archive, unheard timing row fixed 27.11.2026)
+
+Fixed by item 23 of chain round 4 (#1066): the session keeps when the line reported each sentence of the last answer as played and when the last key of an entry was pressed, and reports to the core what the caller had not heard to its end by the time of their words or keys (`api/telephony/session.py` `_not_heard_at`), also when the ear's final or the keypad gap comes after the answer was played.
+
+| Point | Why still open | When due |
+|---|---|---|
+| Words said before the caller heard an answer can still run against it in two timing cases (`telephony/session.py` `_on_heard`, `_on_key`) | Deep review of the #888 round 3 `last_say` PR (25.11.2026): keys typed before an interruptible answer began to play are handed over after the keypad gap, when the answer may have been heard, so no `on_unheard` is sent for them; and a final the ear reports only after the whole answer was played is taken as said after it. Then `last_say` names a sentence the caller had not heard when they spoke. Read-backs and every sentence the core counts as heard are never interruptible, so no yes books anything (rule 3). | When the call log shows either case, or with the next change to the keypad or the ear's lag handling |
+
 ## Chain command (archive, one session per item replaced 27.11.2026)
 
 Replaced by chain round 4 item 13 (#1066). The app refused `start_session` in every turn Maxi's own message did not begin, so the night round of 27.11.2026 stopped after its first lanes. Maxi, 27.11.2026, popup "Lane refill": "Lane sessions"; items are refilled "nicht durch meine Eingaben sondern durch ein Mechanismus, der Triggert durch eine Nachricht, die von der Side Session zurück und dich (Coordinator) geht"; "you should also rename the Sessions correctly when a new item gets the new item but it should be done before the item gets started so first the rename then the item goes in there. When Clear works great and everything so the context don't rise than it is perfect. Auch sollten dann aber die PRs die gemerged sind nicht mehr zu sehen sein in der Lane Session weil es sonst unübersichtlich ist."

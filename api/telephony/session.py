@@ -158,6 +158,12 @@ class CallSession:
         # heard to its end when they spoke (`on_unheard`).
         self._queued: list[tuple[int, str]] = []
         self._heard_mark = 0
+        # When the line reported each of them as played, and the sentences of
+        # the last answer played to its end with that time: words the ear
+        # reports late, or keys handed over after the gap, can still be older
+        # than what the caller heard (`_not_heard_at`).
+        self._played_at: dict[int, float] = {}
+        self._last_answer: list[tuple[str, float]] = []
         self._playing_since: float | None = None
         # When what is queued ends, by the length of its audio.
         self._playing_until: float | None = None
@@ -168,6 +174,8 @@ class CallSession:
         self._ending: tuple[str, str | None] | None = None
         self._digits = ""
         self._digits_due: float | None = None
+        # When the last key of the entry was pressed.
+        self._keyed_at = -math.inf
         self._silence_due: float | None = None
         # The silence deadline an utterance put aside: line noise is no sign
         # of the caller and must not move it (#675).
@@ -427,14 +435,12 @@ class CallSession:
             # Everything still playing may be interrupted, or the line above
             # had dropped the utterance.
             self._barge_in()
-        elif self._playing_since is not None:
+        else:
             # Said before the answer began to play, while the core was
-            # working: the next turn, and it does not stop the answer, but it
-            # answers nothing of it.
-            # shortcut: a final the ear reports only after the whole answer
-            # was played is taken as said after it; and keys typed before the
-            # answer began are handed over later, when it may have been heard.
-            self._tell(self._not_heard(everything=True))
+            # working, or before the last one was played to its end and
+            # reported late by the ear: the next turn, and it stops nothing,
+            # but it answers nothing the caller had not heard.
+            self._tell(self._not_heard_at(heard.ended_at))
         self._turn(lambda: self._events.on_user_turn(self.session_id, heard.text))
 
     def _on_key(self, at: float, digit: str) -> None:
@@ -451,6 +457,7 @@ class CallSession:
                 self._wait_for_the_caller(at)
             return
         self._silence_due = None
+        self._keyed_at = at
         if digit == END_KEY:
             self._hand_over_digits()
         else:
@@ -463,10 +470,17 @@ class CallSession:
     def _on_played(self, at: float, mark: int) -> None:
         # Every sentence up to `mark` was heard to its end, also one with
         # another still playing behind it.
+        for queued, _ in self._queued:
+            if self._heard_mark < queued <= mark:
+                self._played_at[queued] = at
         self._heard_mark = max(self._heard_mark, mark)
         if mark != self._mark or not self._outstanding:
             return  # an older sentence, or one that was dropped by a flush
         protected = not all(self._outstanding)
+        self._last_answer = [
+            (text, self._played_at.get(queued, at)) for queued, text in self._queued
+        ]
+        self._played_at = {}
         self._outstanding = []
         self._queued = []
         self._playing_since = self._playing_until = None
@@ -511,6 +525,7 @@ class CallSession:
         now = self._clock()
         if not self._outstanding:
             self._playing_since = now
+            self._last_answer = []
         self._playing_until = max(self._playing_until or now, now) + len(audio) / (
             2 * self._sample_rate
         )
@@ -629,6 +644,15 @@ class CallSession:
             text for mark, text in self._queued if everything or mark > self._heard_mark
         )
 
+    def _not_heard_at(self, at: float) -> str:
+        """What the caller had not heard to its end at `at`: all of the
+        answer on the line if it began to play after that, or the sentences
+        of the last answer the line reported as played after it. `at` at the
+        end of a sentence is inside it, as for a read-back (`_on_played`)."""
+        if self._playing_since is not None:
+            return self._not_heard(everything=at < self._playing_since)
+        return " ".join(text for text, until in self._last_answer if at <= until)
+
     def _tell(self, unheard: str) -> None:
         """The core learns what the caller had not heard to its end when they
         spoke, before their words: they answer only what they heard (Codex PR
@@ -640,6 +664,7 @@ class CallSession:
     def _stop_playback(self) -> None:
         self._outstanding = []
         self._queued = []
+        self._played_at = {}
         self._playing_since = self._playing_until = None
         self._line.flush()
         if self._tape is not None:
@@ -746,6 +771,9 @@ class CallSession:
     def _hand_over_digits(self) -> None:
         digits, self._digits, self._digits_due = self._digits, "", None
         if digits:
+            # Typed before the caller heard the answer to its end, as for
+            # speech: the gap may have let them hear it since.
+            self._tell(self._not_heard_at(self._keyed_at))
             self._turn(lambda: self._events.on_dtmf(self.session_id, digits))
 
     def _wait_for_the_caller(self, at: float, due: float | None = None) -> None:
