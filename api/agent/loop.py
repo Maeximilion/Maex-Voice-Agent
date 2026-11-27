@@ -1605,6 +1605,8 @@ class ConversationLoop:
             # A draft the guest dropped is never replayed (#952).
             pending_order=state.order_id,
             seconds_left=seconds_left,
+            # An allergy with one dish while the order holds another (#1084).
+            in_cart=[str(line["menu_item_id"]) for line in state.cart],
         )
 
     def _table_to_team(
