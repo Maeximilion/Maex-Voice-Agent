@@ -7,8 +7,9 @@ import json
 import re
 import threading
 import uuid
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
@@ -2219,27 +2220,81 @@ def test_an_account_without_a_passkey_pushes_its_code_once_a_day(
 ):
     """#990 (Maxi, 24.11.2026): an account without a passkey signs in and
     steps up with its code every day, so the push of the code goes once a day
-    and no longer on each of them. Measured from the last push of the code."""
+    and no longer on each of them. The day is the calendar day in Berlin
+    (#1063, Maxi 26.11.2026), and a step-up shares it with the sign-in."""
     _signed_in(client, factors, clock)  # a new browser: its push is its own
     sent: list[str] = []
     monkeypatch.setattr(push, "queue", lambda db, text, at: sent.append(text))
-    clock.at += timedelta(seconds=30)
+    clock.at += timedelta(seconds=30)  # 10:00 in Berlin
     _signed_in(client, factors, clock)
     assert sent == [f"maxi: signed in {web.BY_CODE}"]
     clock.at += timedelta(hours=2)
     _signed_in(client, factors, clock)
     clock.at += timedelta(seconds=30)
     assert _step_up_with_code(client, factors, clock).status_code == 303
-    clock.at += timedelta(hours=21, minutes=49)
+    clock.at = _berlin("2026-11-10 23:58")
     _signed_in(client, factors, clock)
     assert len(sent) == 1
-    # A day after the push, not after the last use of the code.
-    clock.at += timedelta(minutes=15)
+    # The next day in Berlin, two minutes on and not 24 hours after the push.
+    clock.at = _berlin("2026-11-11 00:00")
     assert _step_up_with_code(client, factors, clock).status_code == 303
     assert sent[1:] == [f"maxi: stepped up {web.BY_CODE}"]
     clock.at += timedelta(seconds=30)
     _signed_in(client, factors, clock)
     assert len(sent) == 2
+
+
+def _berlin(local: str) -> datetime:
+    """A wall-clock time in Berlin, as the UTC instant the code stores."""
+    at = datetime.fromisoformat(local).replace(tzinfo=ZoneInfo("Europe/Berlin"))
+    return at.astimezone(UTC)
+
+
+def _code_pushes(client, factors, clock, monkeypatch, *times: str) -> list[bool]:
+    """Signs in with the code from a known browser at each Berlin time and
+    tells for each whether its code was pushed."""
+    clock.at = _berlin(times[0]) - timedelta(minutes=1)
+    _signed_in(client, factors, clock)  # a new browser: its push is its own
+    sent: list[str] = []
+    monkeypatch.setattr(push, "queue", lambda db, text, at: sent.append(text))
+    pushed = []
+    for local in times:
+        clock.at = _berlin(local)
+        before = len(sent)
+        _signed_in(client, factors, clock)
+        pushed.append(len(sent) > before)
+    return pushed
+
+
+@pytest.mark.parametrize(
+    ("times", "pushed"),
+    [
+        # Just before midnight: the push covers only the minutes left of its day.
+        (("2026-11-10 23:50", "2026-11-11 00:10"), [True, True]),
+        # Just after midnight: the push covers the whole day to its end.
+        (
+            ("2026-11-11 00:10", "2026-11-11 23:50", "2026-11-12 00:10"),
+            [True, False, True],
+        ),
+        # Spring forward, a day of 23 hours: the next day starts 23 hours on.
+        (
+            ("2027-03-28 00:05", "2027-03-28 23:55", "2027-03-29 00:05"),
+            [True, False, True],
+        ),
+        # Fall back, a day of 25 hours: still one push, though 24 hours passed.
+        (
+            ("2027-10-31 00:05", "2027-10-31 23:55", "2027-11-01 00:05"),
+            [True, False, True],
+        ),
+    ],
+    ids=["before-midnight", "after-midnight", "spring-forward", "fall-back"],
+)
+def test_the_code_push_day_is_the_calendar_day_in_berlin(
+    client, factors, clock, monkeypatch, times, pushed
+):
+    """#1063 (Maxi, 26.11.2026): once a day means once per calendar day in
+    Berlin, not 24 hours from the last push, across a change of the clocks."""
+    assert _code_pushes(client, factors, clock, monkeypatch, *times) == pushed
 
 
 def test_an_account_with_a_passkey_pushes_each_code_sign_in(

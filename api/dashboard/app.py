@@ -208,7 +208,8 @@ COPY = "a passkey answered with an old counter, a copy?"
 NEW_BROWSER = "signed in from a new browser"
 # #888 A1 (Maxi, 23.11.2026): the passkey is the way in; a TOTP code is the
 # way back in, so each sign-in and step-up with one is pushed, as a recovery
-# code is; on an account without a passkey once a day (#990).
+# code is; on an account without a passkey once per Berlin calendar day
+# (#990, #1063).
 BY_CODE = "with a TOTP code, not a passkey"
 PASSKEY_ONLY = "This account confirms with its passkey."
 # #888 A2: the password is known, or a session guesses codes.
