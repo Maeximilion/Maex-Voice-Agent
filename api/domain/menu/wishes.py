@@ -44,7 +44,7 @@ _REMOVE = frozenset({"ohne", "kein", "keine", "keinen", "keinem"})
 _ADD = frozenset({"mit", "extra"})
 _INSTEAD = frozenset({"statt", "anstatt"})
 # After a removal, what follows these is wished instead: "ohne Huhn, dafür Tofu".
-_SWAP = frozenset({"dafuer", "sondern", "lieber"})
+_SWAP = frozenset({"dafuer", "sondern", "lieber", "stattdessen"})
 _LEAD_FILLER = frozenset({"bitte", "aber", "und", "dann", "dafuer"})
 # Verbindet Teile eines Wunsches, ohne selbst etwas zu wuenschen.
 _GLUE = frozenset({"gern", "gerne", "dazu", "noch", "als", "die", "der", "das", "den"})
@@ -1953,15 +1953,14 @@ def _classify(text: str, groups: list[OptionGroup]) -> Wish:
     words = _words(text)
     lead = next((w for w in words if w not in _LEAD_FILLER), None)
     if lead in _REMOVE:
-        left_out, added = _split_addition(text)
+        split = _split_addition(text)
+        if isinstance(split, str):
+            # Not understood, and never a free note; the plain removals in
+            # front still reach the kitchen.
+            return Wish(text=text, kind="unknown", note=split or None)
+        left_out, added = split
         if added is None:
             return Wish(text=text, kind="note")
-        if not _REMOVE & set(_words(left_out)):
-            # "ohne statt Reis": the word in front of "statt" is the removal
-            # word itself, so nothing left out is named and the addition would
-            # be the same text again (endless recursion). Not understood, and
-            # never a free note.
-            return Wish(text=text, kind="unknown")
         wish = _classify(_clean(added), groups)
         # A removal behind the addition stays next to the one before it
         # ("ohne Huhn, dafür Tofu, ohne Zwiebeln", Codex PR #720).
@@ -1989,9 +1988,9 @@ def _classify(text: str, groups: list[OptionGroup]) -> Wish:
             # Zwiebeln, dafuer mit Pommes" (Review PR #139).
             return Wish(text=addition, kind="unknown", note=removal)
         return wish.model_copy(update={"text": text, "note": removal})
-    # Bei "Nudeln statt Reis" gilt, was vor "statt" steht.
-    cut = next((i for i, w in enumerate(words) if w in _INSTEAD), len(words))
-    head = words[:cut]
+    head = _without_swapped(text, groups)
+    if head is None:
+        return Wish(text=text, kind="unknown")
     matches = [
         (group, option, used)
         for group in groups
@@ -2013,7 +2012,12 @@ def _classify(text: str, groups: list[OptionGroup]) -> Wish:
     # where it names a group ("mit Huhn und extra Fleisch" stays unknown), and
     # the check comes before an option in two groups is asked about ("mit
     # Reis und Pommes", deep review of #1076).
-    if outside - set().union(*(used for _, _, used in matches)) - _FILL:
+    # Counted by place, not by word: the Reis of "Nudeln statt Reis" explains
+    # no second "extra Reis" (Codex PR #1095).
+    covered = in_phrase.union(
+        *(_spots(option.name, group.group, head) for group, option, _ in matches)
+    )
+    if any(i not in covered and w not in _FILL for i, w in enumerate(head)):
         return Wish(text=text, kind="unknown")
     named = _named_groups(head, phrases, in_phrase, matches)
     by_name: dict[str, list[tuple[OptionGroup, OptionOut, set[str]]]] = {}
@@ -2049,7 +2053,7 @@ def _classify(text: str, groups: list[OptionGroup]) -> Wish:
         return Wish(text=text, kind="unknown")
     if len(chosen) > 1:
         # Read back in the order the guest said them, not the card's.
-        chosen.sort(key=lambda match: min(words.index(word) for word in match[2]))
+        chosen.sort(key=lambda match: min(head.index(word) for word in match[2]))
         return Wish(
             text=text,
             kind="option",
@@ -2076,6 +2080,48 @@ def _classify(text: str, groups: list[OptionGroup]) -> Wish:
 
 
 _Match = tuple[OptionGroup, OptionOut, set[str]]
+
+# What may stand between "statt" and the word it swaps out: "statt mit Reis",
+# "statt dem Reis".
+_SWAP_LEAD = _ADD | _ARTICLES | {"der", "die", "das", "den", "dem", "des"}
+
+
+def _without_swapped(text: str, groups: list[OptionGroup]) -> list[str] | None:
+    """The wished words of `text` without what each "statt" swaps out, or None
+    when that is not clear. A "statt" swaps out the one word after it, and
+    what follows that word stands apart behind a comma or an option named with
+    "statt": "Nudeln statt Reis, Huhn" -> nudeln, huhn. Anything else is asked
+    about, never read one way: "Tofu statt Huhn und Spiegelei" may swap out
+    both, and "statt gebratenem Reis" or "statt Reis Nudeln" may hide a wished
+    word (deep review of chain round 4 item 26). A "statt" inside an option's
+    own name stays, so "Nudeln statt Reis" on the card is matched whole."""
+    _, said = _tokens(text)
+    named: set[int] = set()
+    if _INSTEAD & set(said):
+        for group in groups:
+            for option in group.options:
+                name = _words(option.name)
+                if _INSTEAD & set(name):
+                    for i in range(len(said) - len(name) + 1):
+                        if said[i : i + len(name)] == name:
+                            named.update(range(i, i + len(name)))
+    kept = []
+    i = 0
+    while i < len(said):
+        if said[i] not in _INSTEAD or i in named:
+            if said[i] != ",":
+                kept.append(said[i])
+            i += 1
+            continue
+        i += 1
+        while i < len(said) and said[i] in _SWAP_LEAD and i not in named:
+            i += 1
+        if i == len(said) or said[i] == "," or i in named:
+            return None
+        i += 1
+        if i < len(said) and said[i] != "," and i not in named:
+            return None
+    return kept
 
 
 def _group_phrases(
@@ -2156,8 +2202,11 @@ def _read_back(options: list[OptionOut]) -> str:
     return f"{', '.join(parts[:-1])}{', und ' if priced else ' und '}{parts[-1]}"
 
 
-def _split_addition(text: str) -> tuple[str, str | None]:
-    """ "ohne Zwiebeln, dafür mit Nudeln" -> ("ohne Zwiebeln", "mit Nudeln")."""
+def _split_addition(text: str) -> tuple[str, str | None] | str:
+    """ "ohne Zwiebeln, dafür mit Nudeln" -> ("ohne Zwiebeln", "mit Nudeln").
+    When the addition in front of a "statt" has no clear start, only the plain
+    removals before it: "ohne Zwiebeln, Tofu und Nudeln statt Reis" -> "ohne
+    Zwiebeln"."""
     tokens, words = _tokens(text)
     at = next(
         (
@@ -2172,8 +2221,56 @@ def _split_addition(text: str) -> tuple[str, str | None]:
     begin = at + 1 if words[at] in _SWAP else at
     if words[at] in _INSTEAD:
         at = begin = at - 1
+        # A removal word right in front turns the swap down: "keine Nudeln
+        # statt Reis".
+        end = at - 1 if at and words[at - 1] in _REMOVE else at
+        spans = _comma_parts(words[:end])
+        # Without a comma the removal runs into the swap, and its removal word
+        # may turn the swap down: "keine zusätzlichen Nudeln statt Reis"
+        # (Codex PR #1095). That part is asked about whole, never a note.
+        runs_in = 0 < at == end and words[at - 1] not in {",", *_LISTING}
+        if (
+            end < at
+            or not spans
+            or runs_in
+            or words[at - 1] in _LISTING
+            or not _removes(words[spans[-1][0] : spans[-1][1] + 1])
+        ):
+            return ", ".join(
+                _without_glue(text[tokens[i].start() : tokens[j].end()])
+                for i, j in (spans[:-1] if runs_in else spans)
+                if _removes(words[i : j + 1])
+            )
     removal = _without_glue(text[: tokens[at].start()])
     return removal, text[tokens[begin].start() :].strip(" ,.;")
+
+
+# The addition in front of a "statt" is taken to begin one word before it, so
+# what stands before that word must be plain removals: "ohne Zwiebeln, Nudeln
+# statt Reis". Not when it names nothing to leave out ("ohne statt Reis"), when
+# a removal word turns the swap down ("ohne Zwiebeln, keine Nudeln statt
+# Reis"), when a list runs into that word ("ohne Zwiebeln, Tofu und Nudeln
+# statt Reis") or when its last part has no removal word ("ohne Zwiebeln,
+# Tofu, Nudeln statt Reis"); deep review of chain round 4 item 26.
+_LISTING = frozenset({"und", "oder", "sowie"})
+
+
+def _comma_parts(words: list[str]) -> list[tuple[int, int]]:
+    """First and last index of each part between commas, empty ones left out."""
+    parts = []
+    start = 0
+    for i, word in enumerate([*words, ","]):
+        if word == ",":
+            if i > start:
+                parts.append((start, i - 1))
+            start = i + 1
+    return parts
+
+
+def _removes(part: list[str]) -> bool:
+    """A part that leaves something out: a removal word and a word it names."""
+    said = set(part)
+    return bool(_REMOVE & said and said - _REMOVE - _LEAD_FILLER - _LISTING)
 
 
 # What may stand at either end of such a part besides whitespace.
@@ -2226,6 +2323,20 @@ def _names(option: str, group: str, said: list[str]) -> set[str]:
         return set(words)
     compound = words[0] + "".join(_words(group)) if len(words) == 1 else None
     return {compound} if compound in said else set()
+
+
+def _spots(option: str, group: str, said: list[str]) -> set[int]:
+    """Where in `said` the option is named, as `_names` finds it: every run of
+    its words, else every compound with the group name."""
+    words = _words(option)
+    n = len(words)
+    runs = {
+        j for i in range(len(said)) if said[i : i + n] == words for j in range(i, i + n)
+    }
+    if runs or n != 1:
+        return runs
+    compound = words[0] + "".join(_words(group))
+    return {i for i, word in enumerate(said) if word == compound}
 
 
 def open_wish(text: str) -> Wish | None:
