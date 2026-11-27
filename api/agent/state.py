@@ -692,25 +692,25 @@ def _note_search(state: ConversationState, data: dict[str, Any]) -> None:
     """Remembers which dishes a search delivered and how sure it was. A sentence
     with several positions carries one result per part (`agent/dispatch.py`)."""
     parts = data.get("positions") if data.get("match_type") == "positions" else [data]
-    unread = [
+    allergic = [
         part
         for part in parts or []
-        if (wish := part.get("wish"))
-        and wish.get("kind") == "allergy"
-        and not wish.get("ingredient")
+        if (wish := part.get("wish")) and wish.get("kind") == "allergy"
     ]
-    if unread:
+    # A new sentence with an allergy replaces the dishes of the one before,
+    # also one whose allergy waits for its dishes (`data["allergy"]`, #1084)
+    # (`guards.ask_for_the_dish`).
+    if allergic or data.get("allergy"):
         # A dish that is out is no dish of the order (`dispatch._search_menu`);
         # the same dish twice is named once.
         waiting = dict.fromkeys(
             f"Nummer {spoken_card(str(hit['number']))} {hit['name']}"
-            for part in unread
-            if part.get("match_type") in CLEAR_MATCHES
+            for part in allergic
+            if not part["wish"].get("ingredient")
+            and part.get("match_type") in CLEAR_MATCHES
             and (hit := (part.get("results") or [None])[0])
             and not hit.get("sold_out")
         )
-        # A new sentence with such an allergy replaces the dishes of the one
-        # before (`guards.ask_for_the_dish`).
         state.allergy_dishes = list(waiting) if len(waiting) > 1 else []
     for part in parts or []:
         hits = part.get("results") or []

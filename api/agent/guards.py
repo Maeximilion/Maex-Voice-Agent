@@ -727,7 +727,8 @@ HINT_ALLERGY_TURN = (
     "Kern. Ist es ein Wunsch zu einem Gericht: schreib ihn als `note` der "
     "Position in den `cart`. Nennt er seine Allergie: notiere sie als "
     "WICHTIG-Hinweis und sag nur „" + SAY_ALLERGY_NOTED + "“ Ist unklar, worauf "
-    "die Küche achten soll, sag nur „" + SAY_ASK_ALLERGY + "“ Sind dazu "
+    "die Küche achten soll, sag nur „" + SAY_ASK_ALLERGY + "“, die Gerichte "
+    "davor nennt der Kern. Sind dazu "
     "mehrere Gerichte im Spiel, im Satz oder im `cart`: notiere sie noch nicht "
     "und frag nur „" + SAY_ALLERGY_SCOPE + "“"
 )
@@ -1751,7 +1752,8 @@ def ask_for_the_dish(state: ConversationState, say: str) -> str:
     if SAY_ASK_ALLERGY not in say:
         state.allergy_dishes = []
     named = named_allergy_question(state)
-    if named is None or named in say:
+    # In any case, as `_without_core` takes a copy of it ("35A" for "35a").
+    if named is None or named.casefold() in say.casefold():
         return say
     return say.replace(SAY_ASK_ALLERGY, named, 1)
 

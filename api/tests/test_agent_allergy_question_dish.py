@@ -11,6 +11,7 @@ core parses German.
 """
 
 from datetime import UTC, datetime
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import create_engine, update
@@ -18,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from api.agent.guards import SAY_ALLERGY_NOTED, SAY_ASK_ALLERGY
 from api.agent.llm import LLMTurn, ToolCall
+from api.agent.state import ConversationState, _note_search
 from api.domain.menu.importer import apply, parse
 from api.models import MenuItem
 from api.tests.test_agent_allergens_beyond import CALLER, run, state_for
@@ -119,3 +121,41 @@ def test_a_sentence_without_the_question_ends_the_wait(session, state):
     later, _ = run(session, state, "Ich habe noch eine Allergie.", ask())
 
     assert later.say == [SAY_ASK_ALLERGY]
+
+
+def test_a_later_allergy_with_its_ingredient_ends_the_old_dishes(session, state):
+    run(session, state, TWO, searched(TWO), ask())
+    said = "Die 47 mit Erdnussallergie."
+    later, _ = run(session, state, said, searched(said), ask())
+
+    assert later.say == [SAY_ASK_ALLERGY]
+
+
+def test_an_allergy_that_waits_for_its_dishes_ends_the_old_dishes():
+    """#1084: an allergy said with one dish while the order holds another
+    leaves the position without a wish; it is a new allergy all the same
+    (sweep of the review of item 30)."""
+    state = ConversationState(
+        call_id=uuid4(),
+        tenant_id=uuid4(),
+        allergy_dishes=["Nummer 23 Frühlingsrollen", "Nummer 13 Pho Bo"],
+    )
+    hit = {"menu_item_id": str(uuid4()), "number": "47", "name": "Ente"}
+    position = {"match_type": "exact_number", "results": [hit], "wish": None}
+    data = {
+        "match_type": "positions",
+        "positions": [position],
+        "allergy": {"text": "mit Allergie", "kind": "allergy"},
+    }
+
+    _note_search(state, data)
+
+    assert state.allergy_dishes == []
+
+
+def test_a_copy_in_another_case_is_not_named_twice(session, state):
+    run(session, state, TWO, searched(TWO), ask())
+    copy = "zur" + BOTH.removeprefix("Zur")
+    again, _ = run(session, state, "Wie bitte?", LLMTurn(say=copy))
+
+    assert again.say == [copy]
