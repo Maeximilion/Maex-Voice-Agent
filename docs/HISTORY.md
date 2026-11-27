@@ -2844,7 +2844,7 @@ Fixed by chain round 4 item 26: a "statt" swaps out the one word after it, what 
 
 ## Open Points from Reviews (archive, spoken corrections that booked both numbers, fixed 27.11.2026)
 
-Fixed by chain round 4 item 31: `_takes_a_number_back` counts any position in front, a dish too; a pause ("also", a hesitation) takes back as a word does; a number piece reads its words behind the number as well; a piece that hits dishes only by sound, with no word of their names, is no dish there; and a correction to a dish name searches the words in front of its article. Each only makes the sentence ask. Left open in docs/24: a second number the number reading refuses ("doch 24").
+Fixed by chain round 4 item 31: between two card numbers `_takes_a_number_back` takes back on "also" and on the forms of "meinen" read as words (in front of the number, behind it, and next to a "Chow Mein" the search would find), and a card number behind words counts as a number after the piece. The deep review (`/code-review max`, six angles) dropped a broader first version: it took back behind any piece, a greeting too, and on dish names, pauses and sound-alike hits, and asked on normal orders. The rest stays open in docs/24.
 
 | Point | Why still open | When due |
 |---|---|---|

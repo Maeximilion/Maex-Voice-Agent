@@ -27,7 +27,6 @@ few hundred rows the difference is small; as the menu grows, the index carries
 the search.
 """
 
-import re
 import uuid
 import zlib
 from collections.abc import Callable
@@ -49,7 +48,6 @@ from api.domain.menu.numberwords import (
     canonical_card,
     could_hold_item_number,
     fold,
-    hesitation,
     sole_item_number,
     spoken_card,
 )
@@ -524,115 +522,84 @@ def _takes_a_number_back(
     habe Zöliakie.", "die 13, zwei Cola") the piece takes nothing back, and the
     cut stays as before. Neither does a piece that hits a dish unclearly
     ("Ente" between two numbers is a dish to ask about), filler or a quantity
-    alone ("zweimal", "also"), nor a piece with a quantity, a price or a time of
-    its own ("zwei Cola", "für 8,50", "um 19 Uhr"): a correction carries none.
+    alone ("zweimal", "bitte"), nor a piece with a quantity, a price or a time
+    of its own ("zwei Cola", "für 8,50", "um 19 Uhr"): a correction carries
+    none.
 
-    Item 31 (docs/24): whatever stands in front counts, a dish too ("Pho Bo,
-    ich meine die 24"); a pause takes back as a word does ("die 23, also die
-    24", "die 23, äh die 24"); a number piece reads its words behind the
-    number as well ("die 24 meine ich"); and a piece that hits dishes only by
-    sound, with no word of their names, is no dish here ("sorry" next to
-    "Mango Sorbet"). Each only makes the sentence ask, never books."""
+    Chain round 4 item 31 (docs/24), each only between two card numbers, so
+    the sentence kept whole holds both and asks for the number: "also" takes
+    back though it is filler ("die 23, also die 24", "die 23, also, die 24");
+    a form of "meinen" takes back as a word, not by the search, which finds
+    "Chow Mein" in "ich mein" ("die 23, ich mein die 24"), and also behind the
+    number ("die 23, die 24 meine ich"); and a card number behind words of
+    its own counts as one after the piece ("die 23, sorry, Pho Bo die 13")."""
     leads = [_leads_with_card_number(piece, card) for piece in pieces]
     heads = [_words_before_card_number(piece, card) for piece in pieces]
-    # Read once from the end instead of again for each piece (docs/24): is
-    # there a card number in a piece after this one, alone or behind words of
-    # its own ("sorry, Pho Bo die 13").
+    # Read once from each end instead of again for each piece (docs/24): is
+    # there a card number in a piece after this one, and a number before it.
     after = [False] * len(pieces)
     for k in range(len(pieces) - 2, -1, -1):
         after[k] = after[k + 1] or leads[k + 1] or heads[k + 1] is not None
-    number_before = False
-    for k, piece in enumerate(pieces[1:], start=1):
-        number_before = number_before or leads[k - 1] or has_number(pieces[k - 1])
-        # "Pho Bo, ich habe eine Erdnussallergie und die 23": behind a dish
-        # alone an allergy goes with it (`_keep_allergy_clauses`) and takes
-        # nothing back; behind a number it asks, as before item 31.
-        if not number_before and opens_with_allergy(piece):
+    before = False
+    for k, piece in enumerate(pieces):
+        number_before = before
+        before = before or leads[k] or has_number(piece)
+        if not number_before:
             continue
-        # "die 24 meine ich": the number reading lets "meine", "genau" and a
-        # pause through behind the number as well; besides order filler
-        # ("bitte", "danke") each may take the number before back.
-        if sole_item_number(piece, card)[0] is not None:
-            tail = _words_behind_number(piece)
-            if normalize_query(tail) or _pauses(tail):
-                return True
-        # "doch die 47", "ich meine die Sommerrollen": only the words in front
-        # of the number or the dish are searched.
+        # "die 24 meine ich": the number reading lets "meine" through behind
+        # the number, where only filler may stand.
+        if sole_item_number(piece, card)[0] is not None and _MEANT.intersection(
+            _words_behind_number(piece)
+        ):
+            return True
+        # "ich meine die 47": the number reading skips the words in front and
+        # the piece hits the 47, so only those words are searched: hitting no
+        # dish, they may take the number before them back (docs/24).
         head = heads[k]
-        if head is None and not leads[k]:
-            head = _words_before_a_dish(search, piece)
-            if head is not None and has_number(head):
-                continue
         if head is None and (leads[k] or not after[k]):
             continue
         text = piece if head is None else head
+        words = _folded_words(text)
+        if _MEANT.intersection(words):
+            return True
         # A quantity in front goes with the number ("doch zweimal die 24"), so
-        # a head of filler alone takes nothing back unless it is a pause.
+        # a head of filler alone takes nothing back ("zweimal", "bitte"),
+        # unless it says "also".
         if not normalize_query(text):
-            if _pauses(text):
+            if "also" in words:
                 return True
             continue
         if head is None and has_number(text):
             continue
         try:
-            found = search(text)
+            search(text)
         except NotFound:
             return True
         except Ambiguous:
             continue
-        if not _names_a_word_of(text, found):
-            return True
     return False
 
 
-_ARTICLES = frozenset({"die", "der", "das", "den"})
+# The forms of "meinen" that make a number a correction, after fold() ("ich
+# meine die 24", "ich meinte die 24", the clipped "ich mein die 24", "die 24
+# meine ich"). Read as words: the menu search would find "Chow Mein" in them
+# and take the words for a dish (docs/24, item 31).
+_MEANT = frozenset({"mein", "meine", "meinte"})
 
 
-def _words_before_a_dish(
-    search: Callable[[str], SearchResult], piece: str
-) -> str | None:
-    """ "ich meine die Sommerrollen" -> "ich meine": the words in front of the
-    first article, when the rest from it on clearly hits a dish; None
-    otherwise."""
-    words = piece.split()
-    at = next((i for i, w in enumerate(words) if i and fold(w) in _ARTICLES), None)
-    if at is None:
-        return None
-    try:
-        found = search(" ".join(words[at:]))
-    except (NotFound, Ambiguous):
-        return None
-    return " ".join(words[:at]) if found.match_type in CLEAR_MATCHES else None
+def _folded_words(text: str) -> list[str]:
+    return [fold(word).strip(".,;:!?") for word in text.split()]
 
 
-def _words_behind_number(piece: str) -> str:
-    """ "die 24 meine ich" -> "meine ich": the words behind the last word that
-    may hold a number."""
-    words = piece.split()
+def _words_behind_number(piece: str) -> list[str]:
+    """ "die 24 meine ich" -> ["meine", "ich"]: the words behind the last word
+    that may hold a number, folded."""
+    words = _folded_words(piece)
     last = max(
-        (i for i, w in enumerate(words) if could_hold_item_number(w)), default=-1
+        (i for i, word in enumerate(words) if could_hold_item_number(word)),
+        default=-1,
     )
-    return " ".join(words[last + 1 :])
-
-
-def _pauses(text: str) -> bool:
-    """A hesitation or "also" between two positions: a correction as often as
-    not, so the sentence asks (docs/24)."""
-    return any(
-        word == "also" or hesitation(word) for word in re.findall(r"\w+", fold(text))
-    )
-
-
-def _names_a_word_of(text: str, found: SearchResult) -> bool:
-    """Does the text say a word of a dish it hit? "Ente" names its dishes;
-    "sorry" hits "Mango Sorbet" by its sound alone (docs/24)."""
-    if found.match_type not in ("fuzzy_single", "ambiguous"):
-        return True
-    said = set(re.findall(r"\w+", normalize_query(text)))
-    return any(
-        said.intersection(re.findall(r"\w+", normalize_query(hit.name)))
-        for hit in found.results
-    )
+    return words[last + 1 :]
 
 
 def _leads_with_card_number(piece: str, card: CardFormat) -> bool:
