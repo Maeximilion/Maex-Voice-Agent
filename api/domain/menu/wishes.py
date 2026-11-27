@@ -2030,6 +2030,8 @@ def _classify(text: str, groups: list[OptionGroup]) -> Wish:
     groups_said = set().union(*(_words(group.group) for group, _, _ in chosen))
     if wanted - said - groups_said - _ADD - _LEAD_FILLER - _GLUE:
         return Wish(text=text, kind="unknown")
+    if not _groups_fit(words[:cut], chosen, said):
+        return Wish(text=text, kind="unknown")
     if len(chosen) > 1:
         # Read back in the order the guest said them, not the card's.
         chosen.sort(key=lambda match: min(words.index(word) for word in match[2]))
@@ -2058,6 +2060,33 @@ def _classify(text: str, groups: list[OptionGroup]) -> Wish:
         price_delta_cents=option.price_delta_cents,
         reason=option.reason,
     )
+
+
+def _groups_fit(
+    words: list[str],
+    chosen: list[tuple[OptionGroup, OptionOut, set[str]]],
+    said: set[str],
+) -> bool:
+    """Each group word belongs to the option it stands with: the nearest
+    option before it, else the one after it. "mit Huhn als Beilage und
+    Nudeln als Fleisch" names each option with the other's group and is not
+    definite (Codex PR #1076)."""
+    at = [
+        (i, group)
+        for i, word in enumerate(words)
+        for group, _, used in chosen
+        if word in used
+    ]
+    for i, word in enumerate(words):
+        if word in said or word in _ADD | _LEAD_FILLER | _GLUE:
+            continue
+        if not any(word in _words(group.group) for group, _, _ in chosen):
+            continue
+        before = [group for j, group in at if j < i]
+        owner = before[-1] if before else next(group for j, group in at if j > i)
+        if word not in _words(owner.group):
+            return False
+    return True
 
 
 def _split_addition(text: str) -> tuple[str, str | None]:

@@ -692,6 +692,28 @@ def test_two_options_from_different_groups():
     )
 
 
+@pytest.mark.parametrize(
+    ("said", "groups"),
+    [
+        # Codex PR #1076: each option named with the other's group.
+        ("mit Huhn als Beilage und Nudeln als Fleisch", BEILAGE),
+        ("mit Nudeln als Fleisch und Huhn", BEILAGE),
+        # The group settles Reis only when it stands with Reis.
+        ("mit Huhn als Beilage und Reis", REIS_IN_ZWEI),
+    ],
+)
+def test_a_group_named_with_another_option_is_not_understood(said, groups):
+    assert wish_of(said, groups).kind == "unknown"
+
+
+def test_two_options_each_with_its_own_group():
+    wish = wish_of("mit Huhn als Fleisch und Reis als Extra", REIS_IN_ZWEI)
+    assert [(o.group, o.option) for o in wish.options or []] == [
+        ("Fleisch", "Huhn"),
+        ("Extra", "Reis"),
+    ]
+
+
 def test_two_options_keep_a_removal_next_to_them():
     wish = wish_of("mit Huhn und Nudeln, aber ohne Zwiebeln", BEILAGE)
     assert (wish.kind, wish.note) == ("option", "ohne Zwiebeln")
