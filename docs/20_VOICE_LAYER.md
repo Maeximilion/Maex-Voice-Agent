@@ -217,7 +217,7 @@ capture endpoint against Asterisk 22.10.1 and again 22.11.0 (frames, recorded on
 | A crash in the middle of a call, or a transfer asked for by the core | the dialplan asks `voice` after the leg ends; only an explicit "done" hangs up. A crash leaves the call log open: the dispatcher closes it as `error` once the call is `max_call_seconds` plus 10 minutes old (#545) | the dialplan dials the team number |
 | Model, database, a tool | the existing paths in `agent/loop.py` and `telephony/handler.py` | `TelephonyPort.transfer`, to the team number of the day once the routing was read (#674). The key terms for the ear are best effort: their failure changes nothing the caller hears. A caller id longer than 40 characters counts as withheld, not as a reason to refuse the call |
 | A Docker network between `voice` and Asterisk or the database is cut | the dialplan, Asterisk's pings, or the timeouts of the phone line's database sessions (§6) | the dialplan dials the team number |
-| The team does not pick up | the dial status | the team number next, then `TEAM_PHONE`, each number once (T-10.13, #835, below); at both: callback card for the team, and a caller the AI answered hears that the restaurant calls back, or to call again when no card could be written (T-10.8); a caller who hangs up before a leg answers: the card too (`h`, #888 round 3) |
+| The team does not pick up | the dial status | the team number next, then `TEAM_PHONE`, each number once (T-10.13, #835, below); at both: callback card for the team, and a caller the AI answered hears that the restaurant calls back, or to call again when no card could be written (T-10.8); a caller who hangs up before a leg answers: the card too once the team rang 5 s (`h`, #888 round 3, #1062) |
 | The recording: the question, its log, the row or the file | `agent/recording.py`, the session | nothing has to: the call goes on without a recording, and in mode `shadow` the team rings as on a no (§4, T-11.3) |
 | The caller hangs up in mode `shadow` with the recording question, or on the sentence before a transfer of the AI, or on the outage sentence of a failed turn, before the line has the transfer | the session (`closed`), the handler | nothing can: a callback card under the caller id instead, with the card the core wrote for the handover, none for a withheld number; the call is logged `callback` or `abandoned`, never `transferred` (§4, #252 no. 9, #674); the outage sentence's call stays `error` and gets its card too (#741), which names the bookings of the call that stand, from the database, as every card does (#743 follow-up, #764). Only on a call we answered: a leg closed before our first sentence is the row below or a caller who gave up while it rang (#652) |
 | `voice` takes the call and says nothing for 10 s (a slow start of the call, a mouth that hangs) | the dialplan: its `Dial` to `voice` gives up, our leg is closed | the dialplan dials the team number. The call log shows `abandoned`: `voice` cannot tell this from a caller who gave up while it rang (#652) |
@@ -413,24 +413,37 @@ is rung (Maxi, 20.10.2026). The outage paths (paused, shadow, `voice` down, a fa
   the first of the call (the database down at the start, a call the process does not know), the
   outage sentence with the AI notice before it (`SAY_OUTAGE_FIRST`, docs/05 §6).
 - A caller who hangs up after the call was handed to the team and before a leg answered (#888
-  round 3, rule 5; Claude's choice, awaiting Maxi, #1032): while a leg rings, between two legs, or
-  before the first one rang. Asterisk runs the extension `h` of `[ai]` once the dialplan ends; it
-  sends the same report with `left=1`, and the team gets the card, whose telephone shows only a
-  missed call from our registration (T-10.2). The card reads "Ans Team weitergeleitet, der Gast
+  round 3, rule 5): while a leg rings, between two legs, or before the first one rang. Asterisk
+  runs the extension `h` of `[ai]` once the dialplan ends; it sends the same report with `left=1`
+  and `waited`, the seconds since the first team leg's `Dial` started (`RINGFROM`, set once right
+  before it, wall clock to the millisecond; 0 when no leg started, empty when one started and left
+  no stamp). `voice` writes the card only when `waited` is at least `VOICE_LEFT_MIN_RING_SECONDS`
+  (Maxi, 26.11.2026 on #1046 and #1032: 5 s, #1062): the team's only notice then, since its
+  telephone shows only a missed call from our registration (T-10.2). A caller gone sooner (a wrong
+  number, a one-ring call) leaves no card and ends as before #1046. The time
+  is measured in the dialplan, the only place that knows when a leg started, also for a call
+  `voice` never answered, and from the start of the `Dial`, a little before the leg rings, so it
+  errs toward a card; only a wall clock stepped back during the ringing shortens it. A `waited` that is missing, not a number,
+  negative or not finite counts as rung (rule 5). The card reads "Ans Team weitergeleitet, der Gast
   hat aufgelegt, bevor jemand abnahm." instead of that nobody answered. `HANDED` is set where every
   path leads to the team (right behind the AI's own hangup, and in `unreached`), and there the AI
   leg's `DIALSTATUS` is cleared, so its `ANSWER` never reads as an answered team leg; `missed`
   marks it reported. So `h` reports once, never after an answered leg (`ANSWER` stays), and never
   for a call not handed to the team: the AI's own hangup, a caller gone in the AI's leg (where
-  `voice` decides on a card itself, #252 no. 9), the loop guard. Nothing is played. Only a caller
-  gone while the dialplan asks `voice` for the ending (milliseconds, at most 2 s) leaves no card.
-  Such calls end as `callback` (or `abandoned` without a number) instead of `transferred`, so the
-  operations figures count them as missed. Run with the dialplan harness on 22.11.0 and on the
+  `voice` decides on a card itself, #252 no. 9), the loop guard. Nothing is played. A caller gone
+  while the dialplan asks `voice` for the ending (milliseconds, at most 2 s) leaves no card either.
+  Calls with a card end as `callback` (or `abandoned` without a number) instead of `transferred`,
+  so the operations figures count them as missed; one gone sooner than the threshold stays
+  `transferred`, as before #1046. Run with the dialplan harness on 22.11.0 and on the
   own 22.12.0 image (25.11.2026), through the real path from the AI leg on with a stand-in
   `voice`: a caller gone while the team rang, and one gone during a slow `/team` question before
   any leg, one report each with `left=1`; an answered leg and the AI's hangup, none; a busy leg,
-  then one that rang out, `missed` reports once without `left`. Not yet in the workbench drill
-  (#1045).
+  then one that rang out, `missed` reports once without `left`. The threshold ran on 22.11.0
+  (27.11.2026, #1062) with the branch's own router behind it and a leg that rings and never
+  answers: gone after 1.5 s and 4.5 s of ringing, and during a slow `/team` question before any
+  leg (`waited=0`), no card; after 6.5 s, and 2.5 s into the second leg after the first rang out
+  (`waited` 32.5, counted from the first leg), the card; with the stamp removed from the
+  dialplan, an empty `waited` and the card. Not yet in the workbench drill (#1045).
 
 | Drill | Result |
 |---|---|
@@ -613,7 +626,7 @@ Built with T-1.11: the tenant is `TENANT_NAME` (exactly one of that name in the 
 `VOICE_MEDIA_TOKEN` (at least 32 characters outside dev and test); `VOICE_NUMBER`, the AI
 telephone's own number; `VOICE_EAR` and `VOICE_MOUTH` (`whisper` and `piper`, the engines of T-10.5, or `fake`, the drill
 pair, refused outside dev and test); `VOICE_EAR_DEVICE` (`cuda` or `cpu`); `VOICE_MOUTH_VOICE`
-(the voice's file, D4; empty for the adapter's own, `thorsten` medium); `VOICE_SILENCE_SECONDS` (8, an assumption). `voice` does not
+(the voice's file, D4; empty for the adapter's own, `thorsten` medium); `VOICE_SILENCE_SECONDS` (8, an assumption); `VOICE_LEFT_MIN_RING_SECONDS` (5, 0 to 30, Maxi's decision, #1062: the ringing a caller who left before a team leg answered needs for a card). `voice` does not
 start without any of them, without a model (`LLM_*`), or with the team on its own number. The
 prices came with T-10.6 (28.10.2026): `VOICE_EAR_CENTS_PER_HOUR` (audio fed to the ear),
 `VOICE_MOUTH_CENTS_PER_MCHAR` (characters given to the mouth) and `VOICE_OUTBOUND_CENTS_PER_HOUR`
@@ -1238,8 +1251,8 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
   prompt), else the leg counts as not answered. Maxi's call; it needs a recorded prompt.
 - **From T-10.8, a team that does not pick up (built 20.10.2026, §5):** open around it:
   - A caller who hangs up after the handover and before a team leg answers: the extension `h`
-    reports it, and the card is written (#888 round 3, above). Claude's choice for rule 5,
-    awaiting Maxi (#1032); the workbench drill for it is #1045.
+    reports it, and the card is written once the team rang 5 s (#888 round 3, above; Maxi's
+    decision of 26.11.2026, #1062); the workbench drill for it is #1045.
   - The card carries the reason of the transfer and what happened, not the guest's words: the
     conversation's state is gone when the report comes. Kept in the line's memory with the number
     the guest named, if the team asks for it.

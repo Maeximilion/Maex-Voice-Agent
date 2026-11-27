@@ -32,7 +32,7 @@ from api.telephony import watchdog as voice_watchdog
 from api.telephony.adapters import speech_engines, tts_piper
 from api.telephony.adapters.fake_speech import FakeEar, FakeMouth
 from api.telephony.app import Voice, create_app, voice_from_settings
-from api.telephony.handler import ANNOUNCEMENTS, GREETING
+from api.telephony.handler import ANNOUNCEMENTS, GREETING, CallHandler
 from api.telephony.router import _write
 from api.telephony.session import Lines
 from api.tests.test_compose_ports import _load
@@ -132,6 +132,10 @@ class Core:
     team_phone = TEAM
 
 
+# The threshold of Maxi's decision (#1062); the tests name it, not `.env`.
+LEFT_MIN_RING_SECONDS = 5.0
+
+
 @pytest.fixture
 def phone():
     lines = Lines()
@@ -144,6 +148,7 @@ def phone():
         mouth=FakeMouth,
         silence_seconds=60.0,
         team_phone=lambda: core.team_phone,
+        left_min_ring_seconds=LEFT_MIN_RING_SECONDS,
     )
     with TestClient(create_app(voice)) as client:
         yield client, core
@@ -448,6 +453,7 @@ def test_without_a_token_nothing_is_let_in():
         mouth=FakeMouth,
         silence_seconds=60.0,
         team_phone=lambda: TEAM,
+        left_min_ring_seconds=LEFT_MIN_RING_SECONDS,
     )
     assert not voice.authorized(basic("")["authorization"])
 
@@ -702,6 +708,56 @@ def test_the_missed_door_passes_on_a_caller_who_left(phone):
     assert core.left is True
 
 
+@pytest.mark.parametrize(
+    ("waited", "card"),
+    [("4.999", False), ("0", False), ("5", True), ("5.000", True), ("5.001", True)],
+)
+def test_a_caller_who_left_gets_a_card_only_after_the_team_rang_long_enough(
+    phone, waited, card
+):
+    """#1062, Maxi's decision on #1046: a caller who hangs up before a team leg
+    answers leaves a card only when the team rang at least
+    `voice_left_min_ring_seconds` (5). `waited` is what the dialplan measured
+    from the start of the first team leg; under the threshold it counts as
+    before #1046: no card, and the handler is not asked."""
+    client, core = phone
+
+    response = client.post(
+        f"/calls/{CALL}/missed?left=1&waited={waited}", headers=basic(TOKEN)
+    )
+
+    assert (response.status_code, response.text) == (
+        200,
+        "noted" if card else "none",
+    )
+    assert (("missed", CALL) in core.seen) is card
+
+
+@pytest.mark.parametrize("waited", ["", "abc", "-1", "nan", "inf", "1e400"])
+def test_a_ring_time_that_cannot_be_read_keeps_the_card(phone, waited):
+    """Rule 5: a measure that is missing, garbled or impossible (a clock that
+    stepped back) never costs a real caller the card; it counts as rung."""
+    client, core = phone
+
+    response = client.post(
+        f"/calls/{CALL}/missed?left=1&waited={waited}", headers=basic(TOKEN)
+    )
+
+    assert (response.status_code, response.text) == (200, "noted")
+    assert ("missed", CALL) in core.seen
+
+
+def test_a_ring_time_does_not_touch_the_card_of_legs_nobody_answered(phone):
+    """`missed` after the legs rang out writes its card however it is called:
+    the threshold is only for a caller who left."""
+    client, core = phone
+
+    response = client.post(f"/calls/{CALL}/missed?waited=1", headers=basic(TOKEN))
+
+    assert (response.status_code, response.text) == (200, "noted")
+    assert core.left is False
+
+
 def test_the_stop_door_wants_the_token(phone):
     client, core = phone
     assert client.post(f"/calls/{CALL}/recording/stop").status_code == 401
@@ -951,11 +1007,21 @@ def test_a_caller_who_leaves_before_the_team_answers_gets_a_card():
     assert gone[0] == (
         'exten => h,1,GotoIf($["${HANDED}" != "yes" | "${DIALSTATUS}" = "ANSWER"]?end)'
     )
+    # The time since the first team leg started (#1062), 0 when none did, and
+    # empty (the card) when one did and left no stamp.
+    assert gone[1:4] == [
+        'same => n,Set(WAITED=${IF($["${TRIED}" = ""]?0:)})',
+        'same => n,GotoIf($["${RINGFROM}" = ""]?report)',
+        "same => n,Set(WAITED=$[${STRFTIME(,,%s.%3q)} - ${RINGFROM}])",
+    ]
     # The same credentials, timeouts, POST and filter as `missed`.
     report = next(i for i, s in enumerate(gone) if "/missed" in s)
     reported = next(i for i, s in enumerate(missed) if "/missed" in s)
-    assert gone[1:report] == missed[1:reported]
-    assert gone[report] == missed[reported].replace("/missed,", "/missed?left=1,")
+    assert gone[4] == missed[1].replace("same => n,", "same => n(report),")
+    assert gone[5:report] == missed[2:reported]
+    assert gone[report] == missed[reported].replace(
+        "/missed,", "/missed?left=1&waited=${WAITED},"
+    )
     assert (
         gone[report + 1]
         == missed[reported + 1]
@@ -965,6 +1031,20 @@ def test_a_caller_who_leaves_before_the_team_answers_gets_a_card():
     for line in gone:
         if "Log(" in line:
             assert "CALLERID" not in line and "TARGET" not in line, line
+
+
+def test_the_ring_time_starts_once_right_before_the_first_team_leg():
+    """#1062: RINGFROM is set right before the team Dial and only by the first
+    leg, so a caller who leaves in the second leg counts the first one's
+    ringing too. Nothing else sets it."""
+    team = _extension("team")
+    dial = next(i for i, s in enumerate(team) if "Dial(PJSIP/" in s)
+    assert team[dial - 1] == (
+        "same => n(dial),Set(RINGFROM="
+        '${IF($["${RINGFROM}" = ""]?${STRFTIME(,,%s.%3q)}:${RINGFROM})})'
+    )
+    setters = [s for s in _steps() if "Set(RINGFROM=" in s]
+    assert setters == [f" {team[dial - 1]}"]
 
 
 # -- with the real call handler and a database ----------------------------------------
@@ -981,6 +1061,7 @@ def voice_for(session, tenant) -> Voice:  # noqa: F811 - fixtures
         mouth=FakeMouth,
         silence_seconds=60.0,
         team_phone=handler.team_phone,
+        left_min_ring_seconds=LEFT_MIN_RING_SECONDS,
     )
 
 
@@ -1156,6 +1237,19 @@ def its_database(startable, migrated_db_url, bounded_db, tenant):  # noqa: F811
 def test_the_service_starts_for_its_tenant(its_database):
     voice = voice_from_settings()
     assert voice.authorized(basic(TOKEN)["authorization"])
+
+
+def test_the_service_takes_the_ring_threshold_from_its_settings(its_database):
+    """#1062: the threshold is `voice_left_min_ring_seconds`, not a number of
+    the code; here 8 s instead of the default 5."""
+    its_database.setattr(settings, "voice_left_min_ring_seconds", 8.0)
+    its_database.setattr(
+        CallHandler, "on_team_missed", lambda self, sid, left=False: True
+    )
+    voice = voice_from_settings()
+
+    assert voice.missed(CALL, left=True, waited="7.999") is False
+    assert voice.missed(CALL, left=True, waited="8") is True
 
 
 @pytest.mark.parametrize("team", ["database", "settings"])
