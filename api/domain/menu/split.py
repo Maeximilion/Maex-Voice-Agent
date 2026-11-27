@@ -74,15 +74,18 @@ _EMPTY_WORDS = frozenset(
 )
 
 
-def split_positions(text: str) -> list[str]:
-    """Teile je Position, in der gesprochenen Reihenfolge. Nicht sicher trennbar → [text]."""
+def split_positions(text: str, *, inner: bool = False) -> list[str]:
+    """Teile je Position, in der gesprochenen Reihenfolge. Nicht sicher trennbar → [text].
+    `inner`: the text is a part the whole sentence was already split into; its
+    numbered wishes were decided there, with what was said before the part, so
+    they are not cut again (Codex PR #1082)."""
     stripped = text.strip()
     if not _separable(stripped):
         return [stripped] if stripped else []
-    return [_strip(p) for p in _split(stripped)]
+    return [_strip(p) for p in _split(stripped, inner=inner)]
 
 
-def raw_pieces(text: str) -> list[str]:
+def raw_pieces(text: str, *, inner: bool = False) -> list[str]:
     """Nur an den Trennern geschnitten, ohne die Pruefung, ob ein Teil eine
     Position eroeffnet. Fuer den Gegencheck mit der Karte (search.position_parts):
     ob "die 23 und Pho Bo" zwei Gerichte sind, entscheidet nicht der Satz,
@@ -93,7 +96,7 @@ def raw_pieces(text: str) -> list[str]:
     stripped = text.strip()
     if not _separable(stripped):
         return [stripped] if stripped else []
-    return [_strip(p) for p in _split(stripped, by_position=False)]
+    return [_strip(p) for p in _split(stripped, by_position=False, inner=inner)]
 
 
 def _strip(part: str) -> str:
@@ -120,7 +123,7 @@ def _separable(text: str) -> bool:
     return all(_content(p) for p in _SEPARATOR.split(text))
 
 
-def _split(text: str, *, by_position: bool = True) -> list[str]:
+def _split(text: str, *, by_position: bool = True, inner: bool = False) -> list[str]:
     """Am Trenner zerlegen. Ein Teil, der keine eigene Position eröffnet, hängt
     wieder an dem davor: "eine Ente süß und sauer" bleibt ein Name, die Grenze
     vor "die 23" bleibt trotzdem stehen (Codex PR #124).
@@ -140,7 +143,8 @@ def _split(text: str, *, by_position: bool = True) -> list[str]:
     # joined part are the words of its pieces and separators in a row.
     parts = [[pieces[0]]]
     left = _WORD.findall(fold(pieces[0]))
-    before = _read(_nothing_said(), _full_words(pieces[0]))
+    # Inside a part a numbered wish never opens a position: as if a name was said.
+    before = _read(_Said(set(), 0, inner), _full_words(pieces[0]))
     for sep, piece in zip(separators, pieces[1:], strict=True):
         right = _WORD.findall(fold(piece))
         # A pause at the "und" ("drei und äh zwanzig", "drei äh und zwanzig")

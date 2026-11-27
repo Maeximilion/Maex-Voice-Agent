@@ -1565,6 +1565,18 @@ def test_a_spoken_correction_never_books_both(session, sushi, said, taken_back):
     assert not any(taken_back in part for part in clear), clear
 
 
+def test_a_number_said_again_is_not_split_off_in_a_part(session, tenant_id):
+    """Codex PR #1082: the top split keeps "die 23 mit Erdnussallergie" with
+    the part before, since the 23 was said already; the split of that part
+    alone forgot the first 23 and cut it off as a third position, with the
+    allergy away from the 23 ordered first."""
+    said = "die 23 und zweimal die 13, die 23 mit Erdnussallergie"
+    assert position_parts(session, tenant_id, said, now=NOW) == [
+        "die 23",
+        "zweimal die 13, die 23 mit Erdnussallergie",
+    ]
+
+
 @pytest.mark.parametrize(
     ("said", "first"),
     [

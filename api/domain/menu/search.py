@@ -330,6 +330,8 @@ def _position_parts(
     high: float | None,
     low: float | None,
     card: CardFormat | None = None,
+    *,
+    inner: bool = False,
 ) -> list[str]:
     """The positions of a sentence: first by the sentence (`split_positions`),
     then with the menu.
@@ -354,7 +356,7 @@ def _position_parts(
     numbers; with a name there ("zweimal die 24 und Pho Bo") the part answered
     that it takes the dishes in turn, and took neither (eval abholung_0081).
     """
-    pieces = raw_pieces(query)
+    pieces = raw_pieces(query, inner=inner)
     if len(pieces) > 1:
         # Read the menu once for all parts, pieces and spans (review PR #155).
         card = card if card is not None else card_format(session, tenant_id)
@@ -362,13 +364,15 @@ def _position_parts(
             _piece_search(session, tenant_id, now, high, low, card), pieces, card
         ):
             return [query]
-    parts = split_positions(query)
+    parts = split_positions(query, inner=inner)
     if len(parts) > 1:
         card = card if card is not None else card_format(session, tenant_id)
         cut: list[str] = []
         for part in parts:
             try:
-                cut += _position_parts(session, tenant_id, part, now, high, low, card)
+                cut += _position_parts(
+                    session, tenant_id, part, now, high, low, card, inner=True
+                )
             except Ambiguous:
                 # "die 13 und die 24, und 30": only this part asks for its
                 # number, the 13 is still taken (Codex PR #147). A part that
