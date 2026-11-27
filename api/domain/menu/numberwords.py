@@ -1657,6 +1657,17 @@ def sole_item_number(
     return None, False
 
 
+def holds_number(text: str) -> bool:
+    """Is there a token `sole_item_number` could read a number from: digits, a
+    number word or a word above the card range? Without one it reads no number
+    and no named number: `_scan`, `_marker_target`, `_glued_card` and
+    `_prefixed_too_large` all start at such a token."""
+    return any(
+        t.isdigit() or _too_large(t) or _word_value(t) is not None
+        for t in _tokens(text)
+    )
+
+
 def has_item_number_marker(text: str) -> bool:
     """Is there an explicit "Nummer"/"Nr." in the sentence?
 
