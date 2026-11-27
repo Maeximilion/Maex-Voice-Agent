@@ -39,6 +39,8 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from pydantic import ValidationError
+
 from api.config import Settings
 from api.domain.menu.numberwords import ARTICLES, fold, parse_cardinal
 
@@ -960,8 +962,16 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         days = _retention_days(args.retention_days)
-    except ValueError:
-        print("CALL_LOG_RETENTION_DAYS is not a whole number.", file=sys.stderr)
+    except ValidationError as exc:
+        # Any invalid line fails the settings, not only this one; the values
+        # stay out (hide_input_in_errors), only the names and the rule.
+        print("Settings in the environment or .env are not valid:", file=sys.stderr)
+        for problem in exc.errors():
+            name = "_".join(str(part) for part in problem["loc"]).upper()
+            print(
+                f"  {name}: {problem['msg']}" if name else f"  {problem['msg']}",
+                file=sys.stderr,
+            )
         return 2
     if days is not None and days < 1:
         print("The period must be at least 1 day.", file=sys.stderr)

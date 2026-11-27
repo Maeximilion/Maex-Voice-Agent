@@ -2784,3 +2784,11 @@ Replaced lines of `.claude/chain/brief-common.md`:
 
 > - Slow mode: a 45-minute sleep after each finished part.
 > - Paused (super slow, Hold, or above the lane count after turbo; the coordinator tells you): one background `sleep 3000` (50 minutes, never 60 or more), renewed, then read `~/.claude/chain/next-lane.txt` and `~/.claude/chain/notes.txt`; never end a turn without that sleep running. The baton names your item (`item 14`) or "go on item N" arrives: message the coordinator "lane taken item N" and go on.
+
+## Open Points from Reviews (archive, call log points 1 and 5 fixed 27.11.2026)
+
+Fixed by item 24 of chain round 4: `api/config.py` builds the shared `settings` on first use instead of on import, and `api/domain/menu/__init__.py` loads its names on first use, so `scripts/call_log.py` imports neither the settings object nor SQLAlchemy. An invalid `.env` now ends the script with exit 2 and the names of the invalid settings; a `--retention-days` on the command line needs no valid `.env`. Every `from api.config import settings` still builds it at that import, so the API stops on an invalid `.env` at start as before. Point (2) stays open in docs/24.
+
+| Point | Why still open | When due |
+|---|---|---|
+| Call log `scripts/call_log.py`: follow-ups of the own review of PR #135 (#983) | Points 3 (a reviewed case told by its file name) and 4 (an orphaned case reported twice) are fixed since #983. Open: (1) an invalid `.env` (for example an empty `CALL_LOG_RETENTION_DAYS=`) stops the script at import with a pydantic message instead of exit 2, since `api/config.py` builds `settings` on import; it holds for every component that loads the settings; (2) the message about a changed row behind a reviewed case comes once, because the run stores the new fingerprint; repeating it needs a way to mark it as seen; (5) `numberwords` pulls in SQLAlchemy through `api/domain/menu/__init__.py`, so the script needs the API dependencies (it runs in the project image). 1 and 5 need lazy imports in shared API packages, not in the script. | after the first two weeks of real logs, or when one of them gets in the way |

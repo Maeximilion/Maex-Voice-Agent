@@ -233,3 +233,12 @@ def test_the_ring_threshold_of_a_caller_who_left_is_five_seconds():
     for wrong in (-1, 31, float("inf"), float("nan")):
         with pytest.raises(ValidationError):
             _settings(voice_left_min_ring_seconds=wrong)
+
+
+def test_the_shared_settings_are_built_once():
+    """Built on first use, not on import (#983 point 1), then one object."""
+    import api.config
+    from api.config import settings
+
+    assert isinstance(settings, Settings)
+    assert api.config.settings is settings
