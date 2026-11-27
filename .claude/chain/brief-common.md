@@ -19,8 +19,8 @@ Weekly stop: the value in `round.txt` and your brief; 90 percent, and 100 only f
 - Fable: the same with +15 and +30, sleeps of 50 minutes.
 - Sonnet: no new fix round at 85 percent of the 5-hour window; at 90: commit, push, sleep to the reset.
 - 3 points left in the window: commit, push, background sleep to two minutes after the reset, go on.
-- Slow mode: a 45-minute sleep after each finished part.
-- Paused (super slow, Hold, or above the lane count after turbo; the coordinator tells you): one background `sleep 3000` (50 minutes, never 60 or more), renewed, then read `~/.claude/chain/next-lane.txt` and `~/.claude/chain/notes.txt`; never end a turn without that sleep running. The baton names your item (`item 14`) or "go on item N" arrives: message the coordinator "lane taken item N" and go on.
+- Slow and super slow mode: the working lane takes a 45-minute background sleep after each finished part (27.11.2026: "do it like the slow mode with its 45 minute sleep"); a wait for tests, CI or Codex counts toward it; none from 45 minutes before the reset.
+- Paused (every other lane in super slow, Hold, or above the lane count after turbo; the coordinator tells you): one background `sleep 3000` (50 minutes, never 60 or more), renewed, then read `~/.claude/chain/next-lane.txt` and `~/.claude/chain/notes.txt`; never end a turn without that sleep running. The baton names your item (`item 14`) or "go on item N" arrives: message the coordinator "lane taken item N" and go on.
 
 ## Messages to the coordinator (SendMessage to its id), nothing in between
 "PR #N ready, first review clean" (then stop: no push after it), "stopped/blocked: <why>", "lane free", "need 2 lanes for <step>", "lane taken item N", a choice that needs Maxi. "Waiting for CI" is no milestone.
