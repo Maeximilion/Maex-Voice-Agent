@@ -39,7 +39,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from api.agent.consent import answers_the_read_back, is_yes, read_out
-from api.agent.dispatch import ToolResult, validation_hint
+from api.agent.dispatch import SAY_ALLERGY_SCOPE, ToolResult, validation_hint
 from api.agent.escalation import (
     SENTENCE,
     _not_denied,
@@ -713,6 +713,7 @@ FIXED_ALLERGY_SAYS = (
     SAY_ALLERGY_NOTED,
     SAY_ASK_ALLERGY,
     SAY_ASK_ALLERGY_DISH,
+    SAY_ALLERGY_SCOPE,
     SAY_ALLERGENS_OFFER,
 )
 HINT_ALLERGY_TURN = (
@@ -722,7 +723,8 @@ HINT_ALLERGY_TURN = (
     "Kern. Ist es ein Wunsch zu einem Gericht: schreib ihn als `note` der "
     "Position in den `cart`. Nennt er seine Allergie: notiere sie als "
     "WICHTIG-Hinweis und sag nur „" + SAY_ALLERGY_NOTED + "“ Ist unklar, worauf "
-    "die Küche achten soll, sag nur „" + SAY_ASK_ALLERGY + "“"
+    "die Küche achten soll, sag nur „" + SAY_ASK_ALLERGY + "“ Nennt er sie "
+    "zu mehreren Gerichten, frag nur „" + SAY_ALLERGY_SCOPE + "“"
 )
 # The model never speaks a denial ("ohne Erdnüsse", #1022, Maxi 27.11.2026):
 # the hints say so, so a wish goes into the `cart`, whose line the core says.

@@ -13,6 +13,7 @@ import pytest
 from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session
 
+from api.agent.dispatch import SAY_ALLERGY_SCOPE
 from api.agent.guards import SAY_ALLERGENS_OFFER, SAY_ALLERGY_NOTED, SAY_ASK_ALLERGY
 from api.agent.loop import SAY_ESCALATION
 from api.domain.menu.importer import MENU_FILE, OPTIONS_FILE, apply, parse
@@ -910,20 +911,39 @@ def test_hinweis_landet_in_der_bestellung(session, tenant):
     assert _notes(session, order) == ["ohne Karotten"]
 
 
-def test_two_numbers_with_their_own_wishes_reach_the_order(session, tenant):
+def test_an_allergy_with_two_numbers_is_asked_for_its_dish(session, tenant):
     """docs/24, own test PR #139: "Die 23 ohne Karotten und die 13 mit
     Allergie" ended in "nicht gefunden, Nummer?". Now both dishes are taken,
-    the removal stays at the 23, and the allergy is asked for at the 13 and
-    noted there in the guest's words, never at the 23."""
+    the removal stays at the 23, and the allergy goes on no dish by its place:
+    the core asks whether it holds for all or one (Maxi, 27.11.2026), then
+    for the ingredient, and notes it in the guest's words."""
     _, turns = _bestellung(
-        session, tenant, "Die 23 ohne Karotten und die 13 mit Allergie.", "Erdnüsse."
+        session,
+        tenant,
+        "Die 23 ohne Karotten und die 13 mit Allergie.",
+        "Nur für die 13.",
+        "Erdnüsse.",
     )
     assert "nicht gefunden" not in said(turns)
-    assert "Worauf genau" in " ".join(turns[1].say)
+    assert SAY_ALLERGY_SCOPE in " ".join(turns[1].say)
+    assert "Worauf genau" in " ".join(turns[2].say)
     [order] = orders(session)
     assert order.status == "confirmed"
     assert positions(session, order) == [("23", 1, []), ("13", 1, [])]
     assert _notes(session, order) == ["ohne Karotten", "WICHTIG !!! Allergie: Erdnüsse"]
+
+
+def test_an_allergy_for_every_dish_goes_on_each(session, tenant):
+    _, turns = _bestellung(
+        session,
+        tenant,
+        "Die 23 und die 13, ich habe eine Erdnussallergie.",
+        "Für beide.",
+    )
+    assert SAY_ALLERGY_SCOPE in " ".join(turns[1].say)
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnuss"] * 2
 
 
 @pytest.mark.parametrize(

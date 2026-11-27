@@ -265,12 +265,20 @@ class PositionResult(BaseModel):
     say: str | None = None
 
 
+# An allergy said in a sentence with several dishes belongs to none of them
+# by its place in the sentence; the guest is asked (Maxi, 27.11.2026, #1067).
+SAY_ALLERGY_SCOPE = "Gilt dies für alle Speisen oder für eine einzelne?"
+
+
 class PositionsResult(BaseModel):
     match_type: str = "positions"
     positions: list[PositionResult]
     # Repeats at once what was clearly understood (Maxi, PR #127). Open parts
     # keep their own say; the agent asks about them one after the other.
     say: str | None = None
+    # The allergy of the sentence when it named several dishes: on no
+    # position, `say` asks SAY_ALLERGY_SCOPE, the answer decides its dishes.
+    allergy: dict[str, Any] | None = None
 
 
 def _search_menu(
@@ -313,16 +321,30 @@ def _search_menu(
     # about the allergy belong in the answer's sentence, otherwise they would
     # be lost in a list (Codex PR #139, P1).
     notices: list[str] = []
+    founds: list[SearchResult | AppError] = []
     for part in parts:
         try:
-            found = search_menu(
-                session, tenant_id, part, req.max_results, now=now, card=card
+            founds.append(
+                search_menu(
+                    session, tenant_id, part, req.max_results, now=now, card=card
+                )
             )
         except AppError as exc:
+            founds.append(exc)
+    scope = _allergy_to_place(founds)
+    allergy = None
+    if scope is not None:
+        unplaced = founds[scope]
+        assert isinstance(unplaced, SearchResult)
+        allergy = unplaced.wish
+        founds[scope] = unplaced.model_copy(update={"wish": None, "say": None})
+    for part, got in zip(parts, founds, strict=True):
+        if isinstance(got, AppError):
             positions.append(
-                PositionResult(query=part, ok=False, error_code=exc.code, say=exc.say)
+                PositionResult(query=part, ok=False, error_code=got.code, say=got.say)
             )
             continue
+        found = got
         if _repeats(found):
             understood.append((found.match_type, found.results[0], found.wish))
         # Sold out has its own sentence in the part; here only the sentences
@@ -350,8 +372,29 @@ def _search_menu(
         )
     return PositionsResult(
         positions=positions,
-        say=_join(say_understood(understood, req.query), *notices),
+        say=_join(
+            say_understood(understood, req.query),
+            *notices,
+            SAY_ALLERGY_SCOPE if allergy else None,
+        ),
+        allergy=allergy.model_dump() if allergy else None,
     )
+
+
+def _allergy_to_place(founds: list[SearchResult | AppError]) -> int | None:
+    """The part whose allergy must not stay on its dish: the only allergy of a
+    sentence that clearly named several dishes ("die 23 und die 13 mit
+    Erdnussallergie", "Pho Bo und die 23, ich habe eine Erdnussallergie").
+    Where it stands says nothing about whose dishes it is for."""
+    clear = {
+        i: f
+        for i, f in enumerate(founds)
+        if isinstance(f, SearchResult) and f.match_type in CLEAR_MATCHES and f.results
+    }
+    allergic = [
+        i for i, f in clear.items() if f.wish is not None and f.wish.kind == "allergy"
+    ]
+    return allergic[0] if len(clear) > 1 and len(allergic) == 1 else None
 
 
 def _repeats(found: SearchResult) -> bool:
