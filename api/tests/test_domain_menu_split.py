@@ -153,6 +153,11 @@ from api.tests.test_domain_menu_search import (  # noqa: F401
             "zweimal die dreizehn, die 13 mit Erdnussallergie",
             ["zweimal die dreizehn, die 13 mit Erdnussallergie"],
         ),
+        # A number of several words is one number (Codex PR #1082).
+        (
+            "zweimal die vierzig sieben, die 47 mit Erdnussallergie",
+            ["zweimal die vierzig sieben, die 47 mit Erdnussallergie"],
+        ),
         # A count joined across "und" is one number (Codex PR #1082).
         (
             "drei und zwanzig Portionen die 13, die 23 mit Erdnussallergie",
@@ -247,6 +252,11 @@ def test_jede_position_findet_ihr_gericht(session, tenant_id, gesagt, nummern): 
         (
             "zweimal die dreizehn, die 13 mit Erdnussallergie",
             ["zweimal die dreizehn, die 13 mit Erdnussallergie"],
+        ),
+        # A number of several words is one number (Codex PR #1082).
+        (
+            "zweimal die vierzig sieben, die 47 mit Erdnussallergie",
+            ["zweimal die vierzig sieben, die 47 mit Erdnussallergie"],
         ),
         # A count joined across "und" is one number (Codex PR #1082).
         (

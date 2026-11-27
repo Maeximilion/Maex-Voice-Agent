@@ -225,16 +225,29 @@ def _read(before: _Said, words: list[str]) -> _Said:
     """`before` with the words of the next piece read. The set of numbers grows
     in place, one per sentence, so a long sentence is still read once."""
     most = before.most
-    for i, word in enumerate(words):
-        said = find_quantity(word)  # "zweimal" said as one word
-        value = _value(word) if said is None else None
-        if value is not None:
-            before.numbers.add(value)
-            if not (i and _is_lead(words[i - 1])):
-                # Without "die" or "Nummer" in front a number is a count ("zwei
-                # Pho Bo", "2 x"); with it, a card number.
-                said = value
-        most = max(most, said or 0)
+
+    def note(number: int | None, at: int) -> None:
+        """A number that starts at word `at`. Without "die" or "Nummer" in
+        front it is a count ("zwei Pho Bo", "2 x"); with it, a card number."""
+        nonlocal most
+        if number is not None:
+            before.numbers.add(number)
+            if not (at and _is_lead(words[at - 1])):
+                most = max(most, number)
+
+    run_from = 0  # where the current run of number words began
+    for i, word in enumerate([*words, ""]):
+        said = find_quantity(word) if word else None  # "zweimal" as one word
+        value = _value(word) if word and said is None else None
+        if value is None:
+            # Several number words in a row are one number as well ("vierzig
+            # sieben" is 47, Codex PR #1082), read once when the run ends.
+            if i - run_from > 1:
+                note(parse_cardinal(" ".join(words[run_from:i])), run_from)
+            run_from = i + 1
+            most = max(most, said or 0)
+        else:
+            note(value, i)
     start = next((i for i, w in enumerate(words) if not _is_prefix_word(w)), None)
     # A name behind a card number is that dish's own ("die 23 Frühlingsrollen").
     name = (
