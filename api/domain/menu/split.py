@@ -193,6 +193,8 @@ def _split(text: str, *, by_position: bool = True) -> list[str]:
             else _modifies(piece, before)
         )
         before = _read(before, _full_words(piece))
+        if number_joined and a > 0:
+            before = _joined(before, left, a, right[b])
         if number_joined or attached:
             parts[-1] += (sep, piece)
             left += _WORD.findall(fold(sep))
@@ -239,6 +241,18 @@ def _read(before: _Said, words: list[str]) -> _Said:
         )
     )
     return _Said(before.numbers, most, before.name or name)
+
+
+def _joined(before: _Said, left: list[str], a: int, tens: str) -> _Said:
+    """ "drei und zwanzig" across the cut is one number, 23, not a 3 and a 20
+    (Codex PR #1082); `_read` saw the two halves apart."""
+    value = parse_cardinal(f"{left[a - 1]} und {tens.removesuffix('mal')}")
+    if value is None:
+        return before
+    before.numbers.add(value)
+    if a > 1 and _is_lead(left[a - 2]):
+        return before
+    return before._replace(most=max(before.most, value))
 
 
 def _value(word: str) -> int | None:
