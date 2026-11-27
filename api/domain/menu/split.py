@@ -144,7 +144,7 @@ def _split(text: str, *, by_position: bool = True, inner: bool = False) -> list[
     parts = [[pieces[0]]]
     left = _WORD.findall(fold(pieces[0]))
     # Inside a part a numbered wish never opens a position: as if a name was said.
-    before = _read(_Said(set(), 0, inner), _full_words(pieces[0]))
+    before = _read(_Said(set(), not inner), _full_words(pieces[0]))
     for sep, piece in zip(separators, pieces[1:], strict=True):
         right = _WORD.findall(fold(piece))
         # A pause at the "und" ("drei und äh zwanzig", "drei äh und zwanzig")
@@ -197,8 +197,6 @@ def _split(text: str, *, by_position: bool = True, inner: bool = False) -> list[
             else _modifies(piece, before)
         )
         before = _read(before, _full_words(piece))
-        if number_joined and a > 0:
-            before = _joined(before, left, a, right[b])
         if number_joined or attached:
             parts[-1] += (sep, piece)
             left += _WORD.findall(fold(sep))
@@ -212,68 +210,41 @@ def _split(text: str, *, by_position: bool = True, inner: bool = False) -> list[
 class _Said(NamedTuple):
     """What the sentence said before a piece, for `_names_card_number`."""
 
-    numbers: set[int]  # by value: "dreizehn" and "13" are the same
-    most: int  # the largest quantity said
-    name: bool  # a dish named by its name, not by its number
+    numbers: set[int]  # the card numbers said, by value
+    plain: bool  # every piece so far named one card number in digits, nothing else
 
 
 def _nothing_said() -> _Said:
-    return _Said(set(), 0, False)
+    return _Said(set(), True)
 
 
 def _read(before: _Said, words: list[str]) -> _Said:
-    """`before` with the words of the next piece read. The set of numbers grows
-    in place, one per sentence, so a long sentence is still read once."""
-    most = before.most
-
-    def note(number: int | None, at: int) -> None:
-        """A number that starts at word `at`. Without "die" or "Nummer" in
-        front it is a count ("zwei Pho Bo", "2 x"); with it, a card number."""
-        nonlocal most
-        if number is not None:
-            before.numbers.add(number)
-            if not (at and _is_lead(words[at - 1])):
-                most = max(most, number)
-
-    run_from = 0  # where the current run of number words began
-    for i, word in enumerate([*words, ""]):
-        said = find_quantity(word) if word else None  # "zweimal" as one word
-        value = _value(word) if word and said is None else None
-        if value is None:
-            # Several number words in a row are one number as well ("vierzig
-            # sieben" is 47, Codex PR #1082), read once when the run ends.
-            if i - run_from > 1:
-                note(parse_cardinal(" ".join(words[run_from:i])), run_from)
-            run_from = i + 1
-            most = max(most, said or 0)
-        else:
-            note(value, i)
-    start = next((i for i, w in enumerate(words) if not _is_prefix_word(w)), None)
-    # A name behind a card number is that dish's own ("die 23 Frühlingsrollen").
-    name = (
-        start is not None
-        and words[start] not in _MODIFIERS
-        and not (
-            start > 1 and _is_lead(words[start - 2]) and _is_number(words[start - 1])
-        )
+    """`before` with the words of the next piece read. A plain piece is one card
+    number in digits behind its own word ("die 23", "die Nummer 23"), maybe with
+    its dish's name and a wish ("die 23 Frühlingsrollen ohne Karotten"). Any
+    other number, a quantity or a name without a number makes the sentence
+    unplain for good: there, a later number may point back at what was said.
+    Codex PR #1082 found one spoken form after the other (a number word, "drei
+    und zwanzig", "vierzig sieben", a quantity behind it); reading their
+    values here would copy `numberwords`. The set of numbers grows in place,
+    one per sentence, so a long sentence is still read once."""
+    if not before.plain:
+        return before
+    prefix = next(
+        (i for i, w in enumerate(words) if not _is_prefix_word(w)), len(words)
     )
-    return _Said(before.numbers, most, before.name or name)
-
-
-def _joined(before: _Said, left: list[str], a: int, tens: str) -> _Said:
-    """ "drei und zwanzig" across the cut is one number, 23, not a 3 and a 20
-    (Codex PR #1082); `_read` saw the two halves apart."""
-    value = parse_cardinal(f"{left[a - 1]} und {tens.removesuffix('mal')}")
-    if value is None:
-        return before
-    before.numbers.add(value)
-    if a > 1 and _is_lead(left[a - 2]):
-        return before
-    return before._replace(most=max(before.most, value))
-
-
-def _value(word: str) -> int | None:
-    return int(word) if word.isdigit() else parse_cardinal(word)
+    numbered = [
+        i for i, w in enumerate(words) if _is_number(w) or find_quantity(w) is not None
+    ]
+    plain = (
+        prefix > 1
+        and words[prefix - 1].isdigit()
+        and all(_is_lead(w) for w in words[: prefix - 1])
+        and numbered == [prefix - 1]
+    )
+    if plain:
+        before.numbers.add(int(words[prefix - 1]))
+    return _Said(before.numbers, plain)
 
 
 def _is_lead(word: str) -> bool:
@@ -325,30 +296,27 @@ def _names_card_number(prefix: list[str], before: _Said | None) -> bool:
 
     The same words also point back at portions just named: "zweimal die 13,
     die eine mit Erdnussallergie", "zwei Pho Bo, die zwei ohne Koriander". Such
-    a word is an article, a number word or a small number, so behind die/der/
-    das/den only digits of two or more count; a single digit or a number word
-    counts behind "Nummer" alone. Everything else keeps the old rule and stays
+    a word is an article, a number word or a small number, so only digits
+    count, behind die/der/das/den only two or more; a single digit counts
+    behind "Nummer" alone. Everything else keeps the old rule and stays
     with the position before, as does a quantity ("die 2 x ohne Koriander").
 
     The number may point back as well, at what the sentence said before it: a
     dish named by its name ("zwei Pho Bo, die 13 ohne Koriander"), the same
-    number ("zweimal die 13, die 13 mit Erdnussallergie") or a count that
-    reaches it ("zwanzig Pho Bo, die 12 ohne Koriander"). Then too the part
-    stays with the position before, and the sentence asks as it did."""
+    number ("zweimal die 13, die 13 mit Erdnussallergie") or a count ("zwanzig
+    Pho Bo, die 12 ohne Koriander"). So only a sentence that said nothing but
+    plain card numbers before (`_read`) opens a position here, and only for a
+    number not said yet; anywhere else the part stays with the position
+    before, and the sentence asks as it did."""
     if len(prefix) < 2:
         return False
     lead, number = prefix[-2], prefix[-1]
     before = before or _nothing_said()
-    if before.name or _value(number) in before.numbers:
+    if not before.plain:
         return False
-    if lead in _NUMBER_MARKERS:
-        return number not in _ARTICLES and _is_number(number)
-    return (
-        lead in _DETERMINERS
-        and number.isdigit()
-        and len(number) > 1
-        and int(number) > before.most
-    )
+    if not number.isdigit() or int(number) in before.numbers:
+        return False
+    return lead in _NUMBER_MARKERS or (lead in _DETERMINERS and len(number) > 1)
 
 
 def _is_prefix_word(word: str) -> bool:

@@ -112,7 +112,7 @@ from api.tests.test_domain_menu_search import (  # noqa: F401
             ["Pho Bo und zweimal die 23 ohne Koriander"],
         ),
         ("die 23 und Nummer 5 ohne Zwiebeln", ["die 23", "Nummer 5 ohne Zwiebeln"]),
-        ("die 23 und Nummer zwei mit Reis", ["die 23", "Nummer zwei mit Reis"]),
+        ("die 23 und Nummer zwei mit Reis", ["die 23 und Nummer zwei mit Reis"]),
         # The same words pointing back at portions just named, a single digit
         # and a quantity keep the old rule: the wish stays with the position
         # before (deep review of item 14).
@@ -155,6 +155,10 @@ from api.tests.test_domain_menu_search import (  # noqa: F401
         ),
         # A number of several words is one number (Codex PR #1082).
         (
+            "die vierzig sieben zwei Portionen, die 47 mit Erdnussallergie",
+            ["die vierzig sieben zwei Portionen, die 47 mit Erdnussallergie"],
+        ),
+        (
             "zweimal die vierzig sieben, die 47 mit Erdnussallergie",
             ["zweimal die vierzig sieben, die 47 mit Erdnussallergie"],
         ),
@@ -172,12 +176,17 @@ from api.tests.test_domain_menu_search import (  # noqa: F401
             ["zwölfmal die 23, die 12 ohne Koriander"],
         ),
         ("die 23, quatsch, die 24 mit Reis", ["die 23, quatsch, die 24 mit Reis"]),
-        # A count below the number and a name behind a card number point at
-        # nothing the number could mean.
+        # Any count before keeps the old rule, even one below the number
+        # (Codex PR #1082 found one spoken number form after the other).
         (
             "zweimal die 23 und die 13 ohne Zwiebeln",
-            ["zweimal die 23", "die 13 ohne Zwiebeln"],
+            ["zweimal die 23 und die 13 ohne Zwiebeln"],
         ),
+        (
+            "die 23 und Nummer dreiundzwanzig mit Reis",
+            ["die 23 und Nummer dreiundzwanzig mit Reis"],
+        ),
+        # A name behind a card number is that dish's own.
         (
             "die 23 Frühlingsrollen ohne Karotten und die 13 mit Allergie",
             ["die 23 Frühlingsrollen ohne Karotten", "die 13 mit Allergie"],
@@ -254,6 +263,10 @@ def test_jede_position_findet_ihr_gericht(session, tenant_id, gesagt, nummern): 
             ["zweimal die dreizehn, die 13 mit Erdnussallergie"],
         ),
         # A number of several words is one number (Codex PR #1082).
+        (
+            "die vierzig sieben zwei Portionen, die 47 mit Erdnussallergie",
+            ["die vierzig sieben zwei Portionen, die 47 mit Erdnussallergie"],
+        ),
         (
             "zweimal die vierzig sieben, die 47 mit Erdnussallergie",
             ["zweimal die vierzig sieben, die 47 mit Erdnussallergie"],
