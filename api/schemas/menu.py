@@ -50,6 +50,16 @@ class MenuHit(BaseModel):
     option_groups: list[OptionGroup] = Field(default_factory=list)
 
 
+class WishOption(_WithoutEmpty):
+    """One option of a wish that names two from different groups, each from
+    `item_options` ("mit Huhn und Nudeln", Codex PR #139)."""
+
+    group: str
+    option: str
+    price_delta_cents: int
+    reason: str | None = None
+
+
 class Wish(_WithoutEmpty):
     """Ein Wunsch zur Position (T-4.10, domain/menu/wishes.py). `kind`: `note`
     (Weglassen), `option` (steht auf der Karte, mit Aufpreis und Grund),
@@ -73,6 +83,10 @@ class Wish(_WithoutEmpty):
     # Bei `open` nach einem Gericht: die Gruppen, in denen die Option steht
     # (Reis als Beilage und als Extra) - der Agent fragt, welche.
     groups: list[str] | None = None
+    # Two or more options from different groups: each one here, while
+    # `option` and `price_delta_cents` read them back as one ("Huhn und
+    # Nudeln", the sum of the card's deltas) and `group` stays empty.
+    options: list[WishOption] | None = None
 
 
 class SearchResult(BaseModel):

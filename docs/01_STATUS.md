@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.105
+> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.106
 
 ---
 
@@ -130,7 +130,7 @@ Settled assumptions: `docs/HISTORY.md` sections "Made Assumptions (archive)" and
 
 ## Open Points from Reviews
 
-80 recorded review findings, each with its trigger, live in `docs/24_OPEN_REVIEW_POINTS.md` (moved there 19.11.2026). `/task` reads the rows that name its task or files.
+78 recorded review findings, each with its trigger, live in `docs/24_OPEN_REVIEW_POINTS.md` (moved there 19.11.2026). `/task` reads the rows that name its task or files.
 
 ## Blockers
 
@@ -179,6 +179,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.106 · 27.11.2026:** docs/24 (Codex PR #139): a wish with two options from different groups ("mit Huhn und Nudeln") reaches the model with each option, and a named group settles an option in two groups ("mit Reis als Beilage"); not definite stays unknown (#1066 item 7)
 - **v2.69.105 · 27.11.2026:** #1060: n8n 2.49.7, the newest stable release; the export imports and publishes against it, and a test holds the pin to a release named in a Checked line of n8n/README.md
 - **v2.69.104 · 27.11.2026:** #1063 (Maxi, 26.11.2026, on #1054): the once-a-day push of an operator's TOTP code counts the calendar day in `Europe/Berlin`, not 24 hours from the last push; a push at 23:50 no longer keeps the next morning quiet, and a clock change day keeps its one push
 - **v2.69.103 · 27.11.2026:** Chain: no queued sessions: only as many item sessions as build lanes plus the ship lane, a freed lane starts the next planned item, merged PRs are hidden on the ship lane, a round left running shuts the PC down when no lane can be filled (#1066 item 11)

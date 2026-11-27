@@ -2676,3 +2676,12 @@ Replaced or removed lines of `.claude/chain/brief-common.md`:
 > - Maxi's exceptions to `CLAUDE.md` (quote them where a rule seems to say otherwise): "Don't stop the chain any more" (24.11.2026: no handover at 300k or 450k, auto compaction carries you, so commit and push at every step and keep your state in the PR and in files); "Don't ever wait for my message to start new sessions ever again" (25.11.2026).
 >
 > - Slow mode: a 45-minute sleep after each finished part. Super slow or Hold: the coordinator tells you; sleep 50 minutes, renewed, and read the baton on every wake.
+
+## Open Points from Reviews (archive, two wish rows fixed 27.11.2026)
+
+Fixed in one PR of chain round 4 (item 7, #1066): `classify_wish` takes two or more options from different groups when each is definite (each in `Wish.options`, read back together with the sum of the card's deltas), and a group the guest names settles an option that stands in two groups. Two options of one group, an option the card does not have, one in two groups next to another option, and options that share a word stay `unknown`.
+
+| Point | Why still open | When due |
+|---|---|---|
+| Two options in one wish (`classify_wish`) | Codex PR #139 (P2, rule A): "mit Huhn und Nudeln" is declined as `unknown` instead of two options from different groups. | with the next wish change |
+| Spoken group for an option in two groups (`classify_wish`) | Codex PR #139 (P2, rule A): "mit Reis als Beilage" still returns `open` and asks "Reis bei Beilage oder bei Extra?" although the group was named. | with the next wish change |

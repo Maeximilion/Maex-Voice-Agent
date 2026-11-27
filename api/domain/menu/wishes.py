@@ -36,7 +36,7 @@ from api.domain.menu.numberwords import (
     parse_cardinal,
     sole_item_number,
 )
-from api.schemas.menu import OptionGroup, Wish
+from api.schemas.menu import OptionGroup, OptionOut, Wish, WishOption
 from api.schemas.orders import NOTE_MAX
 
 # Nach fold() (ä -> ae).
@@ -1996,22 +1996,60 @@ def _classify(text: str, groups: list[OptionGroup]) -> Wish:
     ]
     if not matches:
         return Wish(text=text, kind="unknown")
-    if len({option.name for _, option, _ in matches}) == 1 and len(matches) > 1:
-        # Dieselbe Option in zwei Gruppen (Reis als Beilage und als Extra): nie
-        # selbst waehlen, nachfragen (Review PR #139).
+    named = {group.group for group in groups if set(_words(group.group)) <= wanted}
+    by_name: dict[str, list[tuple[OptionGroup, OptionOut, set[str]]]] = {}
+    for match in matches:
+        by_name.setdefault(match[1].name, []).append(match)
+    chosen = []
+    for found in by_name.values():
+        # The same option in two groups (Reis als Beilage und als Extra) is
+        # never chosen by us: only the one group the guest named settles it
+        # (Review and Codex PR #139).
+        found = [m for m in found if m[0].group in named] or found
+        if len(found) > 1:
+            if len(by_name) > 1:
+                # Asked as a whole, never with half of the wish kept.
+                return Wish(text=text, kind="unknown")
+            return Wish(
+                text=text,
+                kind="open",
+                option=found[0][1].name,
+                groups=[group.group for group, _, _ in found],
+            )
+        chosen.append(found[0])
+    said = set().union(*(used for _, _, used in chosen))
+    if len({group.group for group, _, _ in chosen}) < len(chosen) or sum(
+        len(used) for _, _, used in chosen
+    ) > len(said):
+        # Two options of one group ("mit Reis und Nudeln"), or two that name
+        # the same words ("gebratener Reis" next to Reis): not definite.
+        return Wish(text=text, kind="unknown")
+    # Was die Option nicht erklaert, darf nicht still wegfallen: "mit Nudeln und
+    # Pommes" ist kein "mit Nudeln" (Codex PR #139). The group of a chosen
+    # option may be named ("als Beilage").
+    groups_said = set().union(*(_words(group.group) for group, _, _ in chosen))
+    if wanted - said - groups_said - _ADD - _LEAD_FILLER - _GLUE:
+        return Wish(text=text, kind="unknown")
+    if len(chosen) > 1:
+        # Read back in the order the guest said them, not the card's.
+        chosen.sort(key=lambda match: min(words.index(word) for word in match[2]))
+        names = [option.name for _, option, _ in chosen]
         return Wish(
             text=text,
-            kind="open",
-            option=matches[0][1].name,
-            groups=[group.group for group, _, _ in matches],
+            kind="option",
+            option=f"{', '.join(names[:-1])} und {names[-1]}",
+            price_delta_cents=sum(option.price_delta_cents for _, option, _ in chosen),
+            options=[
+                WishOption(
+                    group=group.group,
+                    option=option.name,
+                    price_delta_cents=option.price_delta_cents,
+                    reason=option.reason,
+                )
+                for group, option, _ in chosen
+            ],
         )
-    if len(matches) != 1:
-        return Wish(text=text, kind="unknown")
-    group, option, used = matches[0]
-    # Was die Option nicht erklaert, darf nicht still wegfallen: "mit Nudeln und
-    # Pommes" ist kein "mit Nudeln" (Codex PR #139).
-    if wanted - used - _ADD - _LEAD_FILLER - _GLUE:
-        return Wish(text=text, kind="unknown")
+    group, option, _ = chosen[0]
     return Wish(
         text=text,
         kind="option",
