@@ -39,8 +39,9 @@ import re
 import secrets
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from typing import Any, NamedTuple, cast
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import CursorResult, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
@@ -87,8 +88,9 @@ REPEAT_WINDOW = timedelta(minutes=2)
 # with the password cannot flood the operator's phone (#888 A2).
 KNOWN_PASSWORD_ALARM_EVERY = timedelta(hours=1)
 # An account without a passkey uses its code every day: its code is pushed
-# once in this time, not on each use (#990, Maxi 24.11.2026).
-CODE_PUSH_EVERY = timedelta(days=1)
+# once per calendar day here, not on each use (#990, Maxi 24.11.2026) and not
+# 24 hours from the last push (#1063, Maxi 26.11.2026).
+CODE_PUSH_DAY_IN = ZoneInfo("Europe/Berlin")
 # Every this many wrong step-ups in a row on an account are pushed (#888 A2).
 STEP_UP_ALARM_EVERY = 3
 # An IPv6 /64 also counts in its /48, which a home line (/56) or a server
@@ -906,11 +908,14 @@ def _known_password_alarm_due(db: Session, name: str, now: datetime) -> bool:
 def _code_push_due(db: Session, account: OperatorAccount, now: datetime) -> bool:
     """A sign-in or step-up with a TOTP code is pushed (#888 A1). On an account
     with a passkey the code is only the way back in, so each use is; on one
-    without, once in `CODE_PUSH_EVERY` (#990), measured from the last push and
-    not the last use, so daily use cannot keep it quiet for good. Read under
-    the account's row, held by the caller: two at once cannot both miss it."""
+    without, the first use of each calendar day in `CODE_PUSH_DAY_IN` (#990,
+    #1063): a day without a pushed row since its midnight is due, so daily
+    use cannot keep it quiet for good. Read under the account's row, held by
+    the caller: two at once cannot both miss it."""
     if passkeys.count(db, account.id):
         return True
+    today = now.astimezone(CODE_PUSH_DAY_IN).date()
+    midnight = datetime.combine(today, time(), CODE_PUSH_DAY_IN)
     return not db.scalar(
         select(func.count())
         .select_from(OperatorAudit)
@@ -918,7 +923,7 @@ def _code_push_due(db: Session, account: OperatorAccount, now: datetime) -> bool
             OperatorAudit.actor == account.name,
             OperatorAudit.action.in_(("operator.signed_in", "operator.stepped_up")),
             OperatorAudit.detail["pushed"].astext == "true",
-            OperatorAudit.at > now - CODE_PUSH_EVERY,
+            OperatorAudit.at >= midnight,
         )
     )
 
