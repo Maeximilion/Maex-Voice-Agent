@@ -267,6 +267,11 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    und sauer" ergibt zwei Positionen. Nach „hundert" hängt „und" nur eine Zahl
    an („hundert und eins"), keine neue Position („die hundert und eine Cola").
    Einleitende Wörter („dazu", „außerdem") vor einer Position stören nicht.
+   A card number named with its own word („die 13", „Nummer 13", „zweimal die
+   13") opens a position even with a wish behind it: „die 23 ohne Karotten und
+   die 13 mit Allergie" is two positions, each with its own wish, and a
+   correction in front of it („die 23, quatsch, die 24 mit Reis") still keeps
+   the sentence whole.
 2. Alias-Tabelle, exakt → `match_type: "alias"`
 3. Unscharfe Suche über Name und Alias (Trigram) → nur Treffer über Schwelle
    - genau ein Treffer über der hohen Schwelle → `match_type: "fuzzy_single"`

@@ -1521,7 +1521,7 @@ def test_nee_is_a_correction():
 
 
 def _clear_parts(session, tid, said: str) -> list[str]:
-    clear = []
+    clear: list[str] = []
     try:
         parts = position_parts(session, tid, said, now=NOW)
     except Ambiguous:
