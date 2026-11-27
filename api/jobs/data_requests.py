@@ -8,6 +8,7 @@ Call, from the stack's folder:
     python -m api.jobs.data_requests object dsr_2026_001 --name "..." --on 2026-10-12
     python -m api.jobs.data_requests answer dsr_2026_001 --outcome done
     python -m api.jobs.data_requests extend dsr_2026_001
+    python -m api.jobs.data_requests replay --since 20261127T030000Z < ledger.csv
 
 The verified person comes from `--name` with `--on` (repeatable) or with
 `--street`, `--house-number` and `--postal-code`, never from a number. A detail
@@ -24,6 +25,10 @@ written and flushed before the commit: a line too many is erased again by a
 replay, a line missing would bring a row back after a restore. Everything else
 goes to stderr.
 
+`replay` reads that ledger file on stdin after a restore and does every line
+again from the day of the dump on (`--since`, the UTC time of the dump as its file
+name holds it), with `api`, `dispatcher` and `voice` stopped (U7, #1085).
+
 Exit code: 0 done, 1 refused (nothing changed), 2 tenant not found.
 """
 
@@ -33,7 +38,7 @@ import json
 import sys
 import uuid
 from collections.abc import Callable
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -53,7 +58,9 @@ from api.domain.customers.requests import (
     get_request,
     log_request,
     open_requests,
+    read_ledger,
     record_objection,
+    replay_ledger,
     verify,
 )
 from api.models import Tenant
@@ -164,6 +171,21 @@ def _finish(
     print(json.dumps(report), file=sys.stderr)
 
 
+def _replay(session: Session, tenant: Tenant, args: argparse.Namespace) -> None:
+    since = to_local(args.since, tenant.timezone).date()
+    entries = read_ledger(sys.stdin, since)
+    changed = replay_ledger(session, tenant.id, entries, since)
+    session.commit()
+    report = {"since": since.isoformat(), "ledger_lines": len(entries), **changed}
+    print(json.dumps(report), file=sys.stderr)
+
+
+def _utc_time(text: str) -> datetime:
+    """`20261127T030000Z` as in the dump's file name; without a zone, UTC."""
+    moment = datetime.fromisoformat(text)
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     tenant = argparse.ArgumentParser(add_help=False)
@@ -202,6 +224,9 @@ def _parser() -> argparse.ArgumentParser:
     commands.add_parser("object", parents=[tenant, reference, person]).set_defaults(
         run=_object
     )
+    replay = commands.add_parser("replay", parents=[tenant])
+    replay.add_argument("--since", required=True, type=_utc_time)
+    replay.set_defaults(run=_replay)
     return parser
 
 

@@ -6,6 +6,7 @@ import uuid
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from sqlalchemy import create_engine, func, select, update
@@ -15,6 +16,7 @@ from api.core.errors import Ambiguous, Conflict, FieldErrors, InvalidInput, NotF
 from api.domain.confirm import confirm
 from api.domain.customers import find_customer
 from api.domain.customers.contact import note_contact
+from api.domain.customers.personal import thin_payload
 from api.domain.customers.phone import number_or_none
 from api.domain.customers.requests import (
     NOTE_MAX,
@@ -35,6 +37,7 @@ from api.domain.customers.requests import (
     look,
     open_requests,
     record_objection,
+    replay_ledger,
     verify,
 )
 from api.domain.ordering.board import cancel_order, version_of
@@ -1591,6 +1594,94 @@ def test_the_ledger_names_every_row_without_a_name_or_a_number(session, tenant_i
     assert PHONE not in text
 
 
+STORES: tuple[type[Any], ...] = (
+    Address,
+    Call,
+    Callback,
+    Customer,
+    Order,
+    OrderItem,
+    OutboxEvent,
+    Recording,
+    Reservation,
+    RecognitionObjection,
+)
+
+
+def _stores(session) -> dict[str, set[tuple[str, ...]]]:
+    """Every row of the stores, without the times of the write itself."""
+    session.expire_all()
+    return {
+        model.__tablename__: {
+            tuple(
+                repr(getattr(row, column.key))
+                for column in model.__table__.columns
+                if column.key != "updated_at"
+            )
+            for row in session.scalars(select(model))
+        }
+        for model in STORES
+    }
+
+
+def test_a_replay_after_a_restore_is_the_erasure_again(session, tenant_id):
+    """U7 (#1085): a savepoint stands in for the dump. Every store of `erase`,
+    the recording too, ends exactly as the erasure left it, and a second replay
+    changes nothing."""
+    call, *_ = _everything(session, tenant_id)
+    _recording(session, tenant_id, call)
+    request = _request(session, tenant_id)
+    session.commit()
+    dump = session.begin_nested()
+    ledger = erase(session, request, verify(session, tenant_id, MUELLER, ZONE, NOW))
+    erased = _stores(session)
+    dump.rollback()
+    assert _stores(session) != erased
+
+    replay_ledger(session, tenant_id, ledger, date(2026, 11, 1))
+    assert _stores(session) == erased
+    replay_ledger(session, tenant_id, ledger, date(2026, 11, 1))
+    assert _stores(session) == erased
+
+
+def test_a_row_stripped_after_the_dump_is_still_named_in_the_ledger(session, tenant_id):
+    """Codex on #1088: the deletion job strips a row between the dump and the
+    erasure. The erasure must still name it, or the replay leaves the dump's
+    copy, an allergy note say, in place."""
+    call, _, _, _, _, callback, events, _ = _everything(session, tenant_id)
+    recorded = _recording(session, tenant_id, call)
+    request = _request(session, tenant_id)
+    session.commit()
+    dump = session.begin_nested()
+    session.execute(update(OrderItem).values(note=None))
+    session.execute(update(Callback).values(phone="", summary=""))
+    session.execute(update(Call).values(caller_id=None))
+    session.execute(update(Recording).values(withdrawn_at=PAST))
+    session.execute(
+        update(OutboxEvent)
+        .where(OutboxEvent.id == events[0].id)
+        .values(payload=thin_payload())
+    )
+    ledger = erase(session, request, verify(session, tenant_id, MUELLER, ZONE, NOW))
+    erased = _stores(session)
+    dump.rollback()
+
+    named = {(entry.table, entry.row_id) for entry in ledger}
+    assert {("calls", call.id), ("callbacks", callback.id)} <= named
+    assert ("recordings", recorded.id) in named
+    assert ("outbox", events[0].id) in named
+    assert any(table == "order_items" for table, _ in named)
+    replay_ledger(session, tenant_id, ledger, date(2026, 11, 1))
+    restored = _stores(session)
+    # The withdrawal time is the job's, not the erasure's: only that may differ.
+    for store in ("recordings",):
+        restored.pop(store)
+        erased.pop(store)
+    assert restored == erased
+    session.expire_all()
+    assert session.get(Recording, recorded.id).withdrawn_at is not None
+
+
 def test_the_erasure_writes_the_audit_log_with_counts_only(session, tenant_id):
     _everything(session, tenant_id)
     _erase(session, tenant_id)
@@ -1644,7 +1735,11 @@ def test_an_objection_switches_recognition_off_for_the_persons_number(
     ledger = record_objection(session, request, person)
     assert not find_customer(session, tenant_id, PHONE).found
     assert _fresh(session, call).caller_id is None
-    assert [(entry.table, entry.action) for entry in ledger] == [("calls", "cleared")]
+    assert [(entry.table, entry.action) for entry in ledger] == [
+        ("customers", "objected"),
+        ("orders", "objected"),
+        ("calls", "cleared"),
+    ]
     # The customer stays: an objection is no erasure.
     assert _fresh(session, customer).name == "Müller"
 

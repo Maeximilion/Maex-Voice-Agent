@@ -19,10 +19,12 @@ from api.domain.customers.requests import log_request
 from api.jobs import data_requests
 from api.jobs.data_requests import main
 from api.models import (
+    AuditLog,
     Call,
     Customer,
     DataSubjectRequest,
     Order,
+    OrderItem,
     RecognitionObjection,
     Reservation,
 )
@@ -248,10 +250,15 @@ def test_object_records_the_number_and_prints_the_ledger(session, tenant_id, cap
     order = _order(session, tenant_id)
     reference = _logged(session, tenant_id, kind="objection")
     assert main(["object", reference, *DETAILS]) == 0
-    rows = list(csv.reader(io.StringIO(capsys.readouterr().out)))
+    out = capsys.readouterr().out
+    rows = list(csv.reader(io.StringIO(out)))
+    # The rows that hold the number, so that a replay finds it again (#1085).
     assert [(row[1], row[2], row[3]) for row in rows] == [
-        ("calls", str(order.call_id), "cleared")
+        ("customers", str(customer.id), "objected"),
+        ("orders", str(order.id), "objected"),
+        ("calls", str(order.call_id), "cleared"),
     ]
+    assert PHONE not in out
     objections = session.scalars(select(RecognitionObjection.phone)).all()
     assert objections == [PHONE]
 
@@ -284,3 +291,118 @@ def test_an_unknown_reference_ends_with_exit_1(session, tenant_id, capsys):
         == 1
     )
     assert "dsr_2026_999" in capsys.readouterr().err
+
+
+DUMPED = "20261101T020000Z"
+
+
+def _replay(monkeypatch, *lines: str, since: str = DUMPED) -> int:
+    monkeypatch.setattr(
+        "sys.stdin", io.StringIO("".join(f"{line}\n" for line in lines))
+    )
+    return main(["replay", "--since", since, "--tenant-name", TENANT])
+
+
+def test_replay_erases_again_what_a_restore_brought_back(
+    session, tenant_id, monkeypatch, capsys
+):
+    """U7 (#1085): a restore brings back what the ledger says was erased."""
+    customer = Customer(tenant_id=tenant_id, phone=PHONE, name="Müller")
+    session.add(customer)
+    session.flush()
+    order = _order(session, tenant_id, customer=customer, item_note="ohne Zwiebeln")
+    table = _reservation(session, tenant_id)
+    session.commit()
+    item = session.scalar(select(OrderItem).where(OrderItem.order_id == order.id))
+    ids = (table.id, item.id, order.id, order.call_id, customer.id)
+    table_id, item_id, order_id, call_id, customer_id = ids
+    day = "2026-11-02"
+    ledger = [
+        f"{day},reservations,{table_id},deleted",
+        f"{day},order_items,{item_id},cleared",
+        f"{day},orders,{order_id},cleared",
+        f"{day},calls,{call_id},cleared",
+        f"{day},customers,{customer_id},deleted",
+    ]
+
+    assert _replay(monkeypatch, *ledger) == 0
+    session.expire_all()
+    stripped = session.get(Order, order_id)
+    assert (stripped.customer_name, stripped.phone, stripped.customer_id) == (
+        "",
+        "",
+        None,
+    )
+    assert session.get(OrderItem, item_id).note is None
+    assert session.get(Reservation, table_id) is None
+    assert session.get(Call, call_id).caller_id is None
+    assert session.get(Customer, customer_id) is None
+    report = json.loads(capsys.readouterr().err)
+    assert report["ledger_lines"] == 5
+    replayed = session.scalar(
+        select(AuditLog).where(AuditLog.action == "data_subject.ledger_replayed")
+    )
+    assert replayed.payload["since"] == "2026-11-01"
+    assert "Müller" not in json.dumps(replayed.payload)
+
+    # Idempotent: a second run over the same ledger changes nothing and succeeds.
+    assert _replay(monkeypatch, *ledger) == 0
+    session.expire_all()
+    assert session.get(Order, order_id).customer_name == ""
+
+
+def test_replay_records_an_objection_again_from_the_row_that_holds_the_number(
+    session, tenant_id, monkeypatch
+):
+    order = _order(session, tenant_id)
+    stripped = _order(session, tenant_id, phone="")
+    session.commit()
+    lines = [
+        f"2026-11-02,orders,{order.id},objected",
+        f"2026-11-02,orders,{stripped.id},objected",
+        f"2026-11-02,calls,{order.call_id},cleared",
+    ]
+    assert _replay(monkeypatch, *lines) == 0
+    assert _replay(monkeypatch, *lines) == 0
+    session.expire_all()
+    assert session.scalars(select(RecognitionObjection.phone)).all() == [PHONE]
+    assert session.get(Call, order.call_id).caller_id is None
+
+
+def test_replay_leaves_lines_older_than_the_dump_alone(session, tenant_id, monkeypatch):
+    """Older lines are in the dump already; an objection withdrawn since must
+    not come back."""
+    order = _order(session, tenant_id)
+    session.commit()
+    assert _replay(monkeypatch, f"2026-10-31,orders,{order.id},objected") == 0
+    assert session.scalars(select(RecognitionObjection.phone)).all() == []
+    # The day of the dump itself is replayed: the ledger names days, not times.
+    assert _replay(monkeypatch, f"2026-11-01,orders,{order.id},objected") == 0
+    assert session.scalars(select(RecognitionObjection.phone)).all() == [PHONE]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "2026-11-02,orders,{id},forgotten",
+        "2026-11-02,menu_items,{id},deleted",
+        "2026-11-02,orders,not-an-id,cleared",
+        "yesterday,orders,{id},cleared",
+        "2026-11-02,orders,{id}",
+    ],
+)
+def test_replay_refuses_a_ledger_it_cannot_read_and_changes_nothing(
+    session, tenant_id, monkeypatch, capsys, bad
+):
+    order = _order(session, tenant_id)
+    session.commit()
+    good = f"2026-11-02,orders,{order.id},cleared"
+    assert _replay(monkeypatch, good, "", bad.format(id=order.id)) == 1
+    assert "line 3" in capsys.readouterr().err
+    session.expire_all()
+    assert session.get(Order, order.id).customer_name == "Müller"
+
+
+def test_replay_wants_the_time_of_the_dump(session, tenant_id, monkeypatch):
+    with pytest.raises(SystemExit):
+        main(["replay", "--tenant-name", TENANT])

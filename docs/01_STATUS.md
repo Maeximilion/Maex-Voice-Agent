@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.119
+> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.120
 
 ---
 
@@ -182,7 +182,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.119 · 27.11.2026:** Chain round 4 item 22 (#1084): an allergy said with one dish while the order already holds another goes on no dish by its place either; the core asks "Gilt dies für alle Speisen oder für eine einzelne?" and the answer decides which dishes get the note
+- **v2.69.120 · 27.11.2026:** Chain round 4 item 22 (#1084): an allergy said with one dish while the order already holds another goes on no dish by its place either; the core asks "Gilt dies für alle Speisen oder für eine einzelne?" and the answer decides which dishes get the note
+- **v2.69.119 · 27.11.2026:** Chain round 4 item 21: #1085 the erasure ledger is replayed after a restore (dsr replay --since, printed by restore.sh --replace), objections come back from the rows that held the number; restore test against a real dump
 - **v2.69.118 · 27.11.2026:** Chain round 4 item 10 (docs/24): the log entry after a tool waits only what is left of the turn, and the phone line's pool gives up after the line's 2 s instead of 30 s; the handover writes after a cut keep the line's bound (rule 5)
 - **v2.69.117 · 27.11.2026:** Chain round 4 item 15: T-9.3 (#73) done: backup and restore rehearsed again in the production layout, all 39 tables identical, failure cases change nothing; off-site copy stays #321, ledger replay is #1085
 - **v2.69.116 · 27.11.2026:** Chain round 4 item 14 (docs/24, own test PR #139): a card number with a wish of its own is its own position ("die 23 ohne Karotten und die 13 mit Allergie" takes both dishes), unless the sentence before it said more than plain card numbers; an allergy said with several dishes goes on none of them by its place, the core asks "Gilt dies für alle Speisen oder für eine einzelne?" (Maxi, #1067)
