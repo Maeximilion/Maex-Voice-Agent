@@ -1092,3 +1092,90 @@ def test_an_allergy_with_the_only_dish_of_the_order_stays_on_it(
     assert SAY_ALLERGY_SCOPE not in " ".join(found.say)
     search = tool_result(model.inputs[1])
     assert search["data"]["wish"]["text"] == ERDNUSS
+
+
+def asks_the_scope_again(state, said):
+    """The guest says the allergy again after the scope question, and the
+    model asks it again."""
+    if said == "Ich habe eine Erdnussallergie.":
+        return LLMTurn(say=SAY_ALLERGY_SCOPE, cart=state["cart"])
+    return allergy_after_another_dish(state, said)
+
+
+def test_the_scope_question_asked_twice_keeps_the_order(session, tenant_id, state):
+    """Review of #1084: the scope question left the peanut unexplained for the
+    next turn, so asking it again handed the call to the team with the order
+    not placed. It asks the guest about the allergy, like "Worauf genau soll
+    die Küche achten?"."""
+    loop = ConversationLoop(
+        session, StatelessModel(asks_the_scope_again), "system", now=NOW
+    )
+    loop.run_turn(state, "Die 23.")
+    loop.run_turn(state, "Die 13, ich habe eine Erdnussallergie.")
+    assert state.allergen_question_codes == []
+    again = loop.run_turn(state, "Ich habe eine Erdnussallergie.")
+    assert not again.ended
+    assert again.say == [SAY_ALLERGY_SCOPE]
+    loop.run_turn(state, "Nur für die 13.")
+    loop.run_turn(state, "Müller")
+    loop.run_turn(state, "Ja, passt so.")
+    assert session.scalars(select(Order)).one().status == "confirmed"
+
+
+def paraphrases_the_scope(state, said):
+    """A model that says the scope question in its own words, then follows
+    the hint of the refusal: a hint without the cart case notes the allergy
+    on the dish the guest named, as the guest's words read."""
+    result = tool_result(said)
+    if result and result["tool"] == "search_menu":
+        data = result["data"]
+        found = data.get("positions") or [data]
+        cart = [
+            *state.get("cart", []),
+            *(line(part["results"][0]["menu_item_id"]) for part in found),
+        ]
+        return LLMTurn(say="Gern, die 13. Gilt das für alle Gerichte?", cart=cart)
+    if result and result["tool"] == "say":
+        if "im `cart`" in result["hint"]:
+            return LLMTurn(say=SAY_ALLERGY_SCOPE, cart=state["cart"])
+        cart = [
+            {**entry, "note": ERDNUSS} if entry["number"] == "13" else entry
+            for entry in state["cart"]
+        ]
+        return LLMTurn(say=SAY_ALLERGY_NOTED, cart=cart)
+    return allergy_after_another_dish(state, said)
+
+
+def test_a_refused_scope_question_is_asked_on_the_retry(session, tenant_id, state):
+    """Review of #1084: the retry of a refused sentence sees the state and the
+    hint, not the search. The hint asked the scope question only for a
+    sentence of several dishes, so the retry noted the allergy on the one
+    dish named. It names the cart case too."""
+    loop = ConversationLoop(
+        session, StatelessModel(paraphrases_the_scope), "system", now=NOW
+    )
+    loop.run_turn(state, "Die 23.")
+    asked = loop.run_turn(state, "Die 13, ich habe eine Erdnussallergie.")
+    assert asked.say == [SAY_ALLERGY_SCOPE]
+    assert [entry.get("note") for entry in state.cart] == [None, None]
+
+
+def test_the_answer_to_the_scope_question_is_not_asked_again(session, tenant_id, state):
+    """Review of #1084: the guest answers the scope question with the dish
+    and the allergy again ("Die 13, wegen der Erdnussallergie."). Searched
+    with the order, that sentence asked the same question again; it is the
+    answer and its allergy goes on the dish it names."""
+    model = StatelessModel(allergy_after_another_dish)
+    loop = ConversationLoop(session, model, "system", now=NOW)
+    loop.run_turn(state, "Die 23.")
+    loop.run_turn(state, "Die 13, ich habe eine Erdnussallergie.")
+    seen = len(model.inputs)
+    answer = loop.run_turn(state, "Die 13, wegen der Erdnussallergie.")
+    assert SAY_ALLERGY_SCOPE not in " ".join(answer.say)
+    [search] = [
+        result
+        for result in map(tool_result, model.inputs[seen:])
+        if result and result["tool"] == "search_menu"
+    ]
+    assert "allergy" not in search["data"]
+    assert search["data"]["wish"]["text"] == ERDNUSS

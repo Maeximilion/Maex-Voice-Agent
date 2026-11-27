@@ -608,6 +608,54 @@ def test_an_allergy_with_one_dish_stays_with_it(session, tenant_id, call_id):
     assert SAY_ALLERGY_SCOPE not in result.say
 
 
+def search_with_cart(session, tenant_id, call_id, query, *numbers):
+    in_cart = [item_id(session, tenant_id, number) for number in numbers]
+    args = {"query": query}
+    return dispatch(
+        session, call_id, tenant_id, "search_menu", args, now=NOW, in_cart=in_cart
+    )
+
+
+def test_an_allergy_with_one_dish_waits_when_the_order_holds_another(
+    session, tenant_id, call_id
+):
+    """#1084: with another dish in the order the allergy goes on none by its
+    place; the same dish in the order is no other dish."""
+    query = "die 13 mit Erdnussallergie"
+    result = search_with_cart(session, tenant_id, call_id, query, "23")
+    assert result.data["match_type"] == "positions"
+    [position] = result.data["positions"]
+    assert position["wish"] is None
+    assert result.data["allergy"]["text"] == "WICHTIG !!! Allergie: Erdnuss"
+    assert result.data["say"].endswith(SAY_ALLERGY_SCOPE)
+    same = search_with_cart(session, tenant_id, call_id, query, "13")
+    assert same.data["wish"]["kind"] == "allergy"
+    assert SAY_ALLERGY_SCOPE not in same.say
+
+
+def test_a_sold_out_dish_with_an_allergy_is_not_asked_about(
+    session, tenant_id, call_id
+):
+    """Review of #1084: the scope question about a dish that is out hid its
+    sold-out sentence in the position. The guest hears that it is out."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from sqlalchemy import update
+
+    session.execute(
+        update(MenuItem)
+        .where(MenuItem.tenant_id == tenant_id, MenuItem.number == "13")
+        .values(sold_out_until=datetime(2030, 1, 1, tzinfo=ZoneInfo("UTC")))
+    )
+    session.commit()
+    query = "die 13 mit Erdnussallergie"
+    result = search_with_cart(session, tenant_id, call_id, query, "23")
+    assert result.data["match_type"] != "positions"
+    assert "heute leider aus" in result.say
+    assert SAY_ALLERGY_SCOPE not in result.say
+
+
 def test_wiederholung_mit_leeren_vorgaben_ist_derselbe_entwurf(
     session, tenant_id, call_id
 ):

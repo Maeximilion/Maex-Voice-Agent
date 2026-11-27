@@ -35,7 +35,13 @@ from api.agent.consent import (
     recording_answer,
     stops_recording,
 )
-from api.agent.dispatch import ToolResult, dispatch, in_local_time, log_refused
+from api.agent.dispatch import (
+    SAY_ALLERGY_SCOPE,
+    ToolResult,
+    dispatch,
+    in_local_time,
+    log_refused,
+)
 from api.agent.guest_details import name_said
 from api.agent.ladder import (
     FAILURES_BEFORE_LEVEL_UP,
@@ -1606,7 +1612,10 @@ class ConversationLoop:
             pending_order=state.order_id,
             seconds_left=seconds_left,
             # An allergy with one dish while the order holds another (#1084).
-            in_cart=[str(line["menu_item_id"]) for line in state.cart],
+            # The answer to that question names its dish: not asked again.
+            in_cart=()
+            if SAY_ALLERGY_SCOPE in (state.last_say or "")
+            else [str(line["menu_item_id"]) for line in state.cart],
         )
 
     def _table_to_team(

@@ -723,8 +723,9 @@ HINT_ALLERGY_TURN = (
     "Kern. Ist es ein Wunsch zu einem Gericht: schreib ihn als `note` der "
     "Position in den `cart`. Nennt er seine Allergie: notiere sie als "
     "WICHTIG-Hinweis und sag nur „" + SAY_ALLERGY_NOTED + "“ Ist unklar, worauf "
-    "die Küche achten soll, sag nur „" + SAY_ASK_ALLERGY + "“ Nennt er sie "
-    "zu mehreren Gerichten, frag nur „" + SAY_ALLERGY_SCOPE + "“"
+    "die Küche achten soll, sag nur „" + SAY_ASK_ALLERGY + "“ Sind dazu "
+    "mehrere Gerichte im Spiel, im Satz oder im `cart`: notiere sie noch nicht "
+    "und frag nur „" + SAY_ALLERGY_SCOPE + "“"
 )
 # The model never speaks a denial ("ohne Erdnüsse", #1022, Maxi 27.11.2026):
 # the hints say so, so a wish goes into the `cart`, whose line the core says.
@@ -1618,8 +1619,13 @@ def codes_left(turn: AllergenTurn, state: ConversationState, say: str) -> list[s
     """The letters this open turn leaves unexplained, kept for the next turn
     (`ConversationState.allergen_question_codes`). None when the turn ends
     by asking the guest about the allergy: their next words answer it
-    ("Worauf genau soll die Küche achten?" - "Sesam.")."""
-    if SAY_ASK_ALLERGY in say or not leaves_a_question(turn, state):
+    ("Worauf genau soll die Küche achten?" - "Sesam.", "Gilt dies für alle
+    Speisen oder für eine einzelne?" - "Nur für die 13.", #1084 review)."""
+    if (
+        SAY_ASK_ALLERGY in say
+        or SAY_ALLERGY_SCOPE in say
+        or not leaves_a_question(turn, state)
+    ):
         return []
     return sorted(unexplained_codes(turn, state))
 

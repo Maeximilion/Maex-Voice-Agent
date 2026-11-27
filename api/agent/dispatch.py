@@ -313,7 +313,10 @@ def _search_menu(
             split_check=False,
             card=card,
         )
-        if _allergy_to_place([found], in_cart) is None:
+        # A dish that is out takes no scope question: the guest hears that it
+        # is out and what is left, as before (#1084 review).
+        out = bool(found.results) and found.results[0].sold_out
+        if out or _allergy_to_place([found], in_cart) is None:
             if _repeats(found):
                 echo = say_understood(
                     [(found.match_type, found.results[0], found.wish)], req.query
