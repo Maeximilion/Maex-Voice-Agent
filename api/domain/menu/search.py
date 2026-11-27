@@ -32,6 +32,7 @@ import zlib
 from collections.abc import Callable
 from datetime import datetime
 from functools import partial
+from itertools import pairwise
 
 from sqlalchemy import ColumnElement, func, literal, or_, select
 from sqlalchemy.orm import InstrumentedAttribute, Session
@@ -526,13 +527,14 @@ def _takes_a_number_back(
     of its own ("zwei Cola", "für 8,50", "um 19 Uhr"): a correction carries
     none.
 
-    Chain round 4 item 31 (docs/24), each only between two card numbers, so
-    the sentence kept whole holds both and asks for the number: "also" takes
-    back though it is filler ("die 23, also die 24", "die 23, also, die 24");
-    a form of "meinen" takes back as a word, not by the search, which finds
-    "Chow Mein" in "ich mein" ("die 23, ich mein die 24"), and also behind the
-    number ("die 23, die 24 meine ich"); and a card number behind words of
-    its own counts as one after the piece ("die 23, sorry, Pho Bo die 13")."""
+    Chain round 4 item 31 (docs/24), each only behind a number: "ich meine"
+    or "meine ich" takes back wherever it stands in the piece, read as words,
+    not by the search, which finds "Chow Mein" in "ich mein" ("die 23, ich
+    mein die 24", "die 23, die 24 meine ich", "die 23, die 24, meine ich");
+    "also" alone takes back right before a bare card number though it is
+    filler ("die 23, also die 24", "die 23, also, die 24"), not as "so, then"
+    ("die 13, also dann noch die 24"); and a card number behind words of its
+    own counts as one after the piece ("die 23, sorry, Pho Bo die 13")."""
     leads = [_leads_with_card_number(piece, card) for piece in pieces]
     heads = [_words_before_card_number(piece, card) for piece in pieces]
     # Read once from each end instead of again for each piece (docs/24): is
@@ -546,11 +548,7 @@ def _takes_a_number_back(
         before = before or leads[k] or has_number(piece)
         if not number_before:
             continue
-        # "die 24 meine ich": the number reading lets "meine" through behind
-        # the number, where only filler may stand.
-        if sole_item_number(piece, card)[0] is not None and _MEANT.intersection(
-            _words_behind_number(piece)
-        ):
+        if _says_i_mean(_folded_words(piece)):
             return True
         # "ich meine die 47": the number reading skips the words in front and
         # the piece hits the 47, so only those words are searched: hitting no
@@ -559,14 +557,13 @@ def _takes_a_number_back(
         if head is None and (leads[k] or not after[k]):
             continue
         text = piece if head is None else head
-        words = _folded_words(text)
-        if _MEANT.intersection(words):
-            return True
         # A quantity in front goes with the number ("doch zweimal die 24"), so
         # a head of filler alone takes nothing back ("zweimal", "bitte"),
-        # unless it says "also".
+        # unless it is "also" alone right before a bare card number.
         if not normalize_query(text):
-            if "also" in words:
+            if _folded_words(text) == ["also"] and (
+                head is not None or _bare_card_number(k + 1, leads, heads)
+            ):
                 return True
             continue
         if head is None and has_number(text):
@@ -580,10 +577,10 @@ def _takes_a_number_back(
     return False
 
 
-# The forms of "meinen" that make a number a correction, after fold() ("ich
-# meine die 24", "ich meinte die 24", the clipped "ich mein die 24", "die 24
-# meine ich"). Read as words: the menu search would find "Chow Mein" in them
-# and take the words for a dish (docs/24, item 31).
+# The forms of "meinen" that make a number a correction next to "ich", after
+# fold() ("ich meine", "ich meinte", the clipped "ich mein", "meine ich").
+# Read as words: the menu search would find "Chow Mein" in them and take them
+# for a dish; without the "ich" they are a possessive ("für meine Frau").
 _MEANT = frozenset({"mein", "meine", "meinte"})
 
 
@@ -591,15 +588,19 @@ def _folded_words(text: str) -> list[str]:
     return [fold(word).strip(".,;:!?") for word in text.split()]
 
 
-def _words_behind_number(piece: str) -> list[str]:
-    """ "die 24 meine ich" -> ["meine", "ich"]: the words behind the last word
-    that may hold a number, folded."""
-    words = _folded_words(piece)
-    last = max(
-        (i for i, word in enumerate(words) if could_hold_item_number(word)),
-        default=-1,
+def _says_i_mean(words: list[str]) -> bool:
+    return any(
+        (a == "ich" and b in _MEANT) or (a in _MEANT and b == "ich")
+        for a, b in pairwise(words)
     )
-    return words[last + 1 :]
+
+
+def _bare_card_number(k: int, leads: list[bool], heads: list[str | None]) -> bool:
+    """Is piece k a card number with nothing but its article in front ("die
+    24", "Nummer 24", "24")?"""
+    if k >= len(leads) or not leads[k]:
+        return False
+    return set(_folded_words(heads[k] or "")) <= _CARD_NUMBER_LEADS
 
 
 def _leads_with_card_number(piece: str, card: CardFormat) -> bool:

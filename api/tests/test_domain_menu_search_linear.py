@@ -287,14 +287,14 @@ def test_takes_a_number_back_matches_the_old_version(card: CardFormat) -> None:
 
 
 def _item_31_words(pieces: list[str]) -> bool:
-    """Chain round 4 item 31 (docs/24) reads "also" and the forms of "meinen"
-    as words, on purpose; the old version searched them or skipped them as
-    filler. Only sentences with such a word may differ."""
-    return any(
-        word in {"also", *search._MEANT}
-        for piece in pieces
-        for word in search._folded_words(piece)
-    )
+    """Chain round 4 item 31 (docs/24) reads "ich meine" or "meine ich" and a
+    piece that starts with "also" as words, on purpose; the old version
+    searched them or skipped them as filler. Only such sentences may differ."""
+    for piece in pieces:
+        words = search._folded_words(piece)
+        if search._says_i_mean(words) or words[:1] == ["also"]:
+            return True
+    return False
 
 
 def _numbered_wish(pieces: list[str], card: CardFormat) -> bool:

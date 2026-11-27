@@ -278,11 +278,14 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    13") opens a position even with a wish behind it: „die 23 ohne Karotten und
    die 13 mit Allergie" is two positions, each with its own wish, and a
    correction in front of it („die 23, quatsch, die 24 mit Reis") still keeps
-   the sentence whole. Between two card numbers „also" and the forms of
-   „meinen" take back too („die 23, also die 24", „die 23, ich mein die
-   24", „die 23, die 24 meine ich"), read as words, since the search finds
-   „Chow Mein" in „ich mein"; a card number behind words („die 23, sorry,
-   Pho Bo die 13") counts as a number after the piece. For the number with
+   the sentence whole. Behind a number „ich meine" or „meine ich" takes back
+   wherever it stands in the piece („die 23, ich mein die 24", „die 23, die
+   24 meine ich", „die 23, die 24, meine ich"), read as words, since the
+   search finds „Chow Mein" in „ich mein"; „also" alone takes back right
+   before a bare card number („die 23, also die 24", „die 23, also, die
+   24"), not as „so, then" („die 13, also dann noch die 24"); a card number
+   behind words („die 23, sorry, Pho Bo die 13") counts as a number after
+   the piece. For the number with
    a wish of its own only digits count, behind „die/der/das/den" two or
    more, behind „Nummer" a single digit too; an article, a number word or a
    single digit often points back at portions just named („zweimal die 13,
