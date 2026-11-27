@@ -2829,7 +2829,7 @@ The two rows as they stood before item 25 renamed `_ends_in_card_number` and fix
 
 ## Open Points from Reviews (archive, everything after the first statt fixed 27.11.2026)
 
-Fixed by chain round 4 item 26: the swapped part ends at the next joining word, what follows it is still read, and a "statt" inside an option's own name stays part of that name.
+Fixed by chain round 4 item 26: a "statt" swaps out the one word after it, what follows stands behind a comma or a card option named with "statt" and is still read, anything else is asked about, and a "statt" inside an option's own name stays part of that name.
 
 | Point | Why still open | When due |
 |---|---|---|
