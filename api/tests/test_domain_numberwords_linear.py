@@ -535,8 +535,12 @@ def _sentences() -> list[str]:
 
 
 def _rests(sentence: str) -> list[str]:
-    """What `_ends_in_card_number` reads: the sentence from each word on."""
+    """What `_ends_in_card_number` reads: the sentence from each word on. Only
+    for sentences of up to 12 words: the rests of the long strings of the
+    corpus (docstrings among them) cost time and add no shape of their own."""
     words = sentence.split()
+    if len(words) > 12:
+        return [sentence]
     return [" ".join(words[i:]) for i in range(len(words))]
 
 
