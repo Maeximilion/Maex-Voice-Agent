@@ -2454,6 +2454,15 @@ def test_a_suitability_promise_states_no_price():
         ("Die 47 ohne (Erdnuss)", True, {"E"}),
         ("Die 47 ist frei von Erdnüssen", True, {"E"}),
         ("Erdnüsse sind in der 47 nicht drin", False, {"E"}),
+        # Deep review of #1065: a bare "nicht", "nichts", a reassurance that
+        # is the claim, an abbreviation's full stop, the negation alone.
+        ("Gern, Erdnüsse enthält die 47 nicht", True, {"E"}),
+        ("Nein, Erdnüsse sind nicht in der 47", True, {"E"}),
+        ("Da ist nichts mit Erdnuss drin", True, {"E"}),
+        ("Gern, die 47 ist notiert. Erdnüsse sind da kein Problem", True, {"E"}),
+        ("Keine Sorge wegen der Erdnüsse, die 47 ist notiert", True, {"E"}),
+        ("Gern, Erdnüsse sind in der Nr. 47 nicht drin", True, {"E"}),
+        ("Erdnüsse? Keine", True, {"E"}),
         ("In der 47 ist kein Sesam enthalten", False, {"N"}),
         # Scope-free: a negation anywhere in the sentence holds every
         # allergen of it; no added word undoes it (Codex review of #1065).
@@ -2464,8 +2473,9 @@ def test_a_suitability_promise_states_no_price():
             False,
             {"E"},
         ),
-        # A negation and an allergen in two sentences: each alone holds none.
-        ("Die 47 mit Erdnuss ist notiert. Ohne Koriander", True, set()),
+        # The model's words of the turn are one scope: a negation in one
+        # sentence holds an allergen of another (deep review of #1065).
+        ("Die 47 mit Erdnuss ist notiert. Ohne Koriander", True, {"E"}),
         # A pronoun after a core sentence (docs/24 row of #1022, now held).
         ("Notiert: Nummer 47. Die ist auch ohne Erdnüsse", True, {"E"}),
         # No allergen, or a stock phrase: nothing held.
@@ -2480,6 +2490,8 @@ def test_a_suitability_promise_states_no_price():
         ("Leider haben wir heute keine Garnelen mehr", False, set()),
         ("Leider haben wir heute keine Garnelen mehr", True, {"B"}),
         ("Die 47 hat keine Erdnüsse mehr", False, {"E"}),
+        ("Die 47 ist notiert. Sie hat keine Erdnüsse mehr", False, {"E"}),
+        ("Die siebenundvierzig hat keine Erdnüsse mehr", False, {"E"}),
         ("Die 47 gibt es auch mit Tofu oder ohne Erdnüsse", False, {"E"}),
     ],
 )
