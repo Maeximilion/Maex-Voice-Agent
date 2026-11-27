@@ -963,6 +963,7 @@ class ConversationLoop:
                     called.append(SAY)
                     pending_input = _tool_result_as_input(SAY, refused, zone)
                     continue
+                say = guards.ask_for_the_dish(state, say)
                 # What the guest hears decides which offered dishes count as
                 # put to them (guards.py, rule 2).
                 guards.note_said(state, say)

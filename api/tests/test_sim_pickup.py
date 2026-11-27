@@ -1431,10 +1431,12 @@ def test_zwei_allergien_ohne_zutat_werden_nacheinander_gefragt(session, tenant):
         "Erdnüsse.",
         "Sesam.",
     )
-    # In an allergy turn only the core's fixed question is heard (#798),
-    # never one that names the dish.
+    # In an allergy turn only the core's fixed question is heard (#798); the
+    # core names the waiting dishes in front of it (docs/24, chain round 4
+    # item 30).
     erste, zweite = " ".join(turns[1].say), " ".join(turns[2].say)
-    assert erste == zweite == SAY_ASK_ALLERGY
+    named = "Zur Nummer 13 Pho Bo und Nummer 23 Frühlingsrollen (4 Stück): "
+    assert erste == zweite == named + SAY_ASK_ALLERGY
     [order] = orders(session)
     assert _notes(session, order) == [
         "WICHTIG !!! Allergie: Erdnüsse",

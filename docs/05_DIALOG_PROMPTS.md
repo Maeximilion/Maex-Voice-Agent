@@ -233,7 +233,11 @@ up (`guards.is_open`)
        ("Ihren Hinweis gebe ich an die Küche weiter.", "Worauf genau soll
        die Küche achten?", "Für welches Gericht soll die Küche darauf
        achten?" (#929), "Wenn ich für ein Gericht die Allergene
-       nachsehen soll, nennen Sie mir bitte seine Nummer."). Any other
+       nachsehen soll, nennen Sie mir bitte seine Nummer."). When one
+       sentence brought several dishes with an allergy and no ingredient,
+       the core names all of them in front of the second one ("Zur Nummer
+       23 Frühlingsrollen und Nummer 13 Pho Bo: Worauf genau ..."), and
+       the model writes each answer on its dish (`guards.ask_for_the_dish`). Any other
        sentence of the model goes back once with a hint, a second one
        becomes the offer sentence, or the team when a question was left
        open the turn before (rule 5)

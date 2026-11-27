@@ -705,6 +705,11 @@ SAY_ASK_ALLERGY = "Worauf genau soll die Küche achten?"
 # A later allergy whose dish is unclear ("Meine Frau verträgt keinen Sesam",
 # #929, Maxi 24.11.2026).
 SAY_ASK_ALLERGY_DISH = "Für welches Gericht soll die Küche darauf achten?"
+# The same question when one sentence brought several dishes with an allergy
+# and no ingredient ("Die 23 mit Allergie und die 13 mit Allergie.", docs/24):
+# the core names all of them in front of it (`ask_for_the_dish`).
+SAY_ASK_ALLERGY_FOR = "Zur {dishes}: " + SAY_ASK_ALLERGY
+_ASK_ALLERGY_ANY_CASE = re.compile(re.escape(SAY_ASK_ALLERGY), re.IGNORECASE)
 SAY_ALLERGENS_OFFER = (
     "Wenn ich für ein Gericht die Allergene nachsehen soll, nennen Sie mir bitte "
     "seine Nummer."
@@ -723,7 +728,8 @@ HINT_ALLERGY_TURN = (
     "Kern. Ist es ein Wunsch zu einem Gericht: schreib ihn als `note` der "
     "Position in den `cart`. Nennt er seine Allergie: notiere sie als "
     "WICHTIG-Hinweis und sag nur „" + SAY_ALLERGY_NOTED + "“ Ist unklar, worauf "
-    "die Küche achten soll, sag nur „" + SAY_ASK_ALLERGY + "“ Sind dazu "
+    "die Küche achten soll, sag nur „" + SAY_ASK_ALLERGY + "“, die Gerichte "
+    "davor nennt der Kern. Sind dazu "
     "mehrere Gerichte im Spiel, im Satz oder im `cart`: notiere sie noch nicht "
     "und frag nur „" + SAY_ALLERGY_SCOPE + "“"
 )
@@ -1166,8 +1172,9 @@ def is_open(turn: AllergenTurn, state: ConversationState) -> bool:
 
 def _without_core(turn: AllergenTurn, state: ConversationState, say: str) -> str:
     """`say` without the sentences the core wrote: the read-back, the
-    booking, the tools' sentences of this turn, the fixed sentences, and the
-    table sentence the guest heard last."""
+    booking, the tools' sentences of this turn, the fixed sentences (the
+    question with its dishes before the bare one), and the table sentence the
+    guest heard last."""
     rest = say
     last = state.last_said or ""
     table = last if last.startswith(SAY_ALLERGENS_LEAD) else None
@@ -1176,6 +1183,7 @@ def _without_core(turn: AllergenTurn, state: ConversationState, say: str) -> str
         state.booking_say,
         table,
         *turn.tool_says,
+        named_allergy_question(state),
         *FIXED_ALLERGY_SAYS,
     ):
         if own:
@@ -1721,6 +1729,34 @@ def unnoted_allergy(state: ConversationState, call: ToolCall) -> ToolResult | No
     )
     hint = HINT_UNNOTED_LATER.format(said=quoted) + where
     return ToolResult(ok=False, error_code="invalid_input", hint=hint)
+
+
+def named_allergy_question(state: ConversationState) -> str | None:
+    """`SAY_ASK_ALLERGY` with the dishes of `state.allergy_dishes` in front
+    ("Zur Nummer 23 Frühlingsrollen und Nummer 13 Pho Bo: Worauf genau soll
+    die Küche achten?"), None for fewer than two. All of them, never one: the
+    model writes each answer on its dish, and a core that guessed which dish
+    the model asks about would lead the guest's answer to another one when
+    the two drift (`/code-review max` of chain round 4 item 30)."""
+    dishes = state.allergy_dishes
+    if len(dishes) < 2:
+        return None
+    listed = ", ".join(dishes[:-1]) + " und " + dishes[-1]
+    return SAY_ASK_ALLERGY_FOR.format(dishes=listed)
+
+
+def ask_for_the_dish(state: ConversationState, say: str) -> str:
+    """`say` with the waiting dishes named in front of `SAY_ASK_ALLERGY`
+    (`named_allergy_question`), so the guest hears which dishes the question
+    is for. A sentence without the question ends the wait: a later question
+    may be about another allergy. Read in any case, as `_without_core` takes
+    a copy of either ("worauf genau ...", "35A" for "35a", Codex PR #1096)."""
+    if not _ASK_ALLERGY_ANY_CASE.search(say):
+        state.allergy_dishes = []
+    named = named_allergy_question(state)
+    if named is None or named.casefold() in say.casefold():
+        return say
+    return _ASK_ALLERGY_ANY_CASE.sub(lambda _: named, say, count=1)
 
 
 def _word_in(word: str, text: str) -> bool:
