@@ -274,6 +274,8 @@ DIALPLAN_MODULES = {
     "STAT": "func_env",
     "FIELDNUM": "func_strings",
     "FILTER": "func_strings",
+    # The ring time of a caller who left before the team answered (#1062).
+    "STRFTIME": "func_strings",
     "IF": "func_logic",
 }
 PJSIP_MODULES = {
