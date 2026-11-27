@@ -16,6 +16,7 @@ from api.core.errors import Ambiguous, Conflict, FieldErrors, InvalidInput, NotF
 from api.domain.confirm import confirm
 from api.domain.customers import find_customer
 from api.domain.customers.contact import note_contact
+from api.domain.customers.personal import thin_payload
 from api.domain.customers.phone import number_or_none
 from api.domain.customers.requests import (
     NOTE_MAX,
@@ -1641,6 +1642,44 @@ def test_a_replay_after_a_restore_is_the_erasure_again(session, tenant_id):
     assert _stores(session) == erased
     replay_ledger(session, tenant_id, ledger, date(2026, 11, 1))
     assert _stores(session) == erased
+
+
+def test_a_row_stripped_after_the_dump_is_still_named_in_the_ledger(session, tenant_id):
+    """Codex on #1088: the deletion job strips a row between the dump and the
+    erasure. The erasure must still name it, or the replay leaves the dump's
+    copy, an allergy note say, in place."""
+    call, _, _, _, _, callback, events, _ = _everything(session, tenant_id)
+    recorded = _recording(session, tenant_id, call)
+    request = _request(session, tenant_id)
+    session.commit()
+    dump = session.begin_nested()
+    session.execute(update(OrderItem).values(note=None))
+    session.execute(update(Callback).values(phone="", summary=""))
+    session.execute(update(Call).values(caller_id=None))
+    session.execute(update(Recording).values(withdrawn_at=PAST))
+    session.execute(
+        update(OutboxEvent)
+        .where(OutboxEvent.id == events[0].id)
+        .values(payload=thin_payload())
+    )
+    ledger = erase(session, request, verify(session, tenant_id, MUELLER, ZONE, NOW))
+    erased = _stores(session)
+    dump.rollback()
+
+    named = {(entry.table, entry.row_id) for entry in ledger}
+    assert {("calls", call.id), ("callbacks", callback.id)} <= named
+    assert ("recordings", recorded.id) in named
+    assert ("outbox", events[0].id) in named
+    assert any(table == "order_items" for table, _ in named)
+    replay_ledger(session, tenant_id, ledger, date(2026, 11, 1))
+    restored = _stores(session)
+    # The withdrawal time is the job's, not the erasure's: only that may differ.
+    for store in ("recordings",):
+        restored.pop(store)
+        erased.pop(store)
+    assert restored == erased
+    session.expire_all()
+    assert session.get(Recording, recorded.id).withdrawn_at is not None
 
 
 def test_the_erasure_writes_the_audit_log_with_counts_only(session, tenant_id):

@@ -1081,7 +1081,6 @@ def _clear_calls(
         .where(
             Call.tenant_id == tenant_id,
             Call.id.in_([call.id for call in calls]),
-            Call.caller_id.is_not(None),
         )
         .values(caller_id=None),
         Call,
@@ -1103,7 +1102,9 @@ def erase(
     whose name is already gone; `keep` names the ones the guest chose to keep. An
     order draft becomes `cancelled`: `confirm` takes any draft of its call, also
     of one that ended, and must not send the kitchen one without its notes. A
-    reservation draft is deleted like any finished table."""
+    reservation draft is deleted like any finished table. Every row it reaches
+    is in the ledger, also one the deletion job stripped already: the dump of a
+    restore may hold it whole (#1088)."""
     _require(request, "erasure")
     keepable = {row.row_id for row in person.open_rows if row.table in KEEPABLE}
     if not keepable.issuperset(keep):
@@ -1135,7 +1136,6 @@ def erase(
         .where(
             OutboxEvent.tenant_id == tenant_id,
             _event_of(orders, (), callbacks),
-            OutboxEvent.payload != thin,
         )
         .values(payload=thin),
         OutboxEvent,
@@ -1157,7 +1157,6 @@ def erase(
         .where(
             OrderItem.tenant_id == tenant_id,
             OrderItem.order_id.in_(orders),
-            OrderItem.note.is_not(None),
         )
         .values(note=None),
         OrderItem,
@@ -1182,7 +1181,6 @@ def erase(
         .where(
             Callback.tenant_id == tenant_id,
             Callback.id.in_(callbacks),
-            or_(Callback.phone != "", Callback.summary != ""),
         )
         .values(**CALLBACK_GONE),
         Callback,
@@ -1196,9 +1194,8 @@ def erase(
         .where(
             Recording.tenant_id == tenant_id,
             Recording.call_id.in_([call.id for call in person.calls]),
-            Recording.withdrawn_at.is_(None),
         )
-        .values(withdrawn_at=func.now()),
+        .values(withdrawn_at=func.coalesce(Recording.withdrawn_at, func.now())),
         Recording,
         "withdrawn",
         ledger,
