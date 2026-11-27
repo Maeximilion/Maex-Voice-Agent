@@ -3,7 +3,7 @@
 import pytest
 
 from api.domain.menu.pos_dbf import DbfError, read_table
-from api.tests.dbf_fixture import write_dbf
+from api.tests.dbf_fixture import BLOCK, write_dbf
 
 FIELDS = [
     ("ARTNR", "C", 5, 0),
@@ -183,17 +183,88 @@ def test_dbase_iii_memo_bound_counts_deleted_rows():
         read_table(dbf, damaged)
 
 
-def test_dbase_iii_memo_longer_than_one_block_is_read_whole():
+@pytest.mark.parametrize("memo_iv", [False, True])
+def test_memo_longer_than_one_block_is_read_whole(memo_iv):
     """The bound is the next memo, not the block size: long memos stay whole."""
-    long = " ".join(f"{n:03d}" for n in range(200))  # 799 bytes, two blocks
+    long = " ".join(f"{n:03d}" for n in range(300))  # 1199 bytes, several blocks
     dbf, dbt = write_dbf(
         MEMO_FIELDS,
         [{"ZBEZEICH": "Mango", "WRGSHOW": long}, MEMO_ROWS[1]],
-        memo_iv=False,
+        memo_iv=memo_iv,
     )
 
     rows = read_table(dbf, dbt).rows
     assert rows[0]["WRGSHOW"] == long and rows[1]["WRGSHOW"] == "007"
+
+
+def test_dbase_iii_pointer_padding_does_not_skip_the_bound():
+    """Deep review of #1074: both pointer readers agree on padding, so a pointer
+    padded with 0x1C still bounds the memo before it."""
+    dbf, dbt = write_dbf(MEMO_FIELDS, MEMO_ROWS, memo_iv=False)
+    assert dbt is not None and b"         2" in dbf
+    odd = dbf.replace(b"         2", b"\x1c" * 9 + b"2")
+    damaged = dbt[: 512 + 7] + b"  " + dbt[512 + 9 :]
+
+    assert read_table(odd, dbt).rows[1]["WRGSHOW"] == "007"
+    with pytest.raises(DbfError, match=r"Zeile 1: WRGSHOW: .*next memo"):
+        read_table(odd, damaged)
+
+
+def test_dbase_iv_length_past_the_next_memo_is_refused():
+    """Deep review of #1074: a dBase IV length word that grew by a block would
+    read the next extra's groups; the next memo's block bounds it."""
+    dbf, dbt = write_dbf(MEMO_FIELDS, MEMO_ROWS)
+    assert dbt is not None
+    length = int.from_bytes(dbt[BLOCK + 4 : BLOCK + 8], "little")
+    damaged = (
+        dbt[: BLOCK + 4] + (length + BLOCK).to_bytes(4, "little") + dbt[BLOCK + 8 :]
+    )
+
+    with pytest.raises(DbfError, match=r"Zeile 1: WRGSHOW: .*next memo \(block 2\)"):
+        read_table(dbf, damaged)
+
+
+@pytest.mark.parametrize("memo_iv", [False, True])
+def test_memo_with_a_control_byte_is_refused(memo_iv):
+    """Deep review of #1074: "002\\x00" is no group 002, so a NUL or another
+    control byte in a memo stops the import instead of dropping the extra."""
+    rows = [{"ZBEZEICH": "Mango", "WRGSHOW": "001 002\x00"}, MEMO_ROWS[1]]
+    dbf, dbt = write_dbf(MEMO_FIELDS, rows, memo_iv=memo_iv)
+
+    with pytest.raises(DbfError, match=r"Zeile 1: WRGSHOW: .*control byte 0x00"):
+        read_table(dbf, dbt)
+
+
+def test_dbase_iv_length_one_byte_too_long_is_refused():
+    """Deep review of #1074: a length that reaches into the block's NUL padding
+    leaves "002\\x00", which no product group matches."""
+    dbf, dbt = write_dbf(MEMO_FIELDS, MEMO_ROWS)
+    assert dbt is not None
+    length = int.from_bytes(dbt[BLOCK + 4 : BLOCK + 8], "little")
+    damaged = dbt[: BLOCK + 4] + (length + 1).to_bytes(4, "little") + dbt[BLOCK + 8 :]
+
+    with pytest.raises(DbfError, match="control byte"):
+        read_table(dbf, damaged)
+
+
+def test_cut_dbt_is_reported_as_cut_also_with_a_later_pointer():
+    """Deep review of #1074: a copy cut inside the first memo says "abgeschnitten"
+    (copy again), not "damaged" with a block that is not in the file."""
+    dbf, dbt = write_dbf(MEMO_FIELDS, MEMO_ROWS, memo_iv=False)
+    assert dbt is not None
+
+    with pytest.raises(DbfError, match=r"Zeile 1: WRGSHOW: .*abgeschnitten"):
+        read_table(dbf, dbt[: 512 + 4])
+
+
+def test_dbase_iv_cut_inside_the_block_head_names_row_and_field():
+    """Deep review of #1074: a .DBT cut inside a block's length word is a cut
+    memo of that row, not an anonymous "Datei beschädigt"."""
+    dbf, dbt = write_dbf(MEMO_FIELDS, MEMO_ROWS[:1])
+    assert dbt is not None
+
+    with pytest.raises(DbfError, match=r"Zeile 1: WRGSHOW: .*abgeschnitten"):
+        read_table(dbf, dbt[: BLOCK + 6])
 
 
 def test_kaputte_loeschmarke_ist_dbf_fehler():
