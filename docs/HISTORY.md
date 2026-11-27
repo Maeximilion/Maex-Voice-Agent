@@ -2684,3 +2684,11 @@ Fixed by item 9 of chain round 4 (#1066): the three helpers read each piece once
 | Point | Why still open | When due |
 |---|---|---|
 | Splitting by the card still reads earlier pieces again (`api/domain/menu/search.py` `_takes_a_number_back`, `_ends_in_card_number`, `_keep_allergy_clauses`) | Deep review of #888 round 3 plan item 7 (25.11.2026), older than that change: `_takes_a_number_back` checks every earlier piece again for each piece, `_ends_in_card_number` joins the rest of the words again for each "die", "nummer" or "nr", and `_keep_allergy_clauses` copies the list once for each leading allergy part, so a sentence of many pieces costs quadratic time; the 300-character cap of `query` keeps it to about 150 pieces today. | Before a caller without the 300-character cap goes live |
+## Open Points from Reviews (archive, two wish rows fixed 27.11.2026)
+
+Fixed in one PR of chain round 4 (item 7, #1066): `classify_wish` takes two or more options from different groups when each is definite (each in `Wish.options`, read back together, each with its own delta), and a group the guest names with an option, by its whole name after „als" or right after the option, settles an option that stands in two groups. Two options of one group, an option the card does not have, one in two groups next to another option, options that share a word, a group named with another option, and words nothing explains stay `unknown`.
+
+| Point | Why still open | When due |
+|---|---|---|
+| Two options in one wish (`classify_wish`) | Codex PR #139 (P2, rule A): "mit Huhn und Nudeln" is declined as `unknown` instead of two options from different groups. | with the next wish change |
+| Spoken group for an option in two groups (`classify_wish`) | Codex PR #139 (P2, rule A): "mit Reis als Beilage" still returns `open` and asks "Reis bei Beilage oder bei Extra?" although the group was named. | with the next wish change |

@@ -919,6 +919,24 @@ def test_option_als_wunsch_erspart_die_rueckfrage(session, tenant):
     assert positions(session, order) == [("47", 1, ["Huhn"])]
 
 
+def test_two_options_of_one_wish_reach_the_order(session, tenant):
+    """Codex PR #139 (docs/24): both options of "mit Huhn und Erdnusssauce"
+    land in the order, each read back with its own delta."""
+    _, turns = _bestellung(
+        session, tenant, "Die knusprige Ente mit Huhn und Erdnusssauce."
+    )
+    assert "Welche Auswahl bei Fleisch" not in said(turns)
+    assert (
+        "Ente knusprig mit Huhn, ein Euro günstiger, und Erdnuss, 50 Cent Aufpreis"
+        in said(turns)
+    )
+    assert "Macht 15 Euro" in said(turns)
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    [(number, quantity, options)] = positions(session, order)
+    assert (number, quantity, sorted(options)) == ("47", 1, ["Erdnuss", "Huhn"])
+
+
 def test_wunsch_nach_der_wahl_aus_vorschlaegen(session, tenant):
     """ "Ente ohne Zwiebeln" ist mehrdeutig; nach der Wahl gilt der Hinweis."""
     _bestellung(session, tenant, "Ente ohne Zwiebeln.", "Die 48.")
