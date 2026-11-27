@@ -39,6 +39,7 @@ from api.domain.menu.search import (
     position_parts,
     say_understood,
 )
+from api.domain.menu.wishes import ALLERGY_NOTE
 from api.domain.ordering import draft_order
 from api.domain.reservations import check_slot, create_reservation
 from api.domain.status import get_service_status
@@ -47,7 +48,7 @@ from api.schemas.callbacks import CreateCallbackRequest
 from api.schemas.confirm import ConfirmRequest
 from api.schemas.customers import FindCustomerRequest
 from api.schemas.delivery import CheckDeliveryRequest
-from api.schemas.menu import ItemDetailsRequest, SearchMenuRequest, SearchResult
+from api.schemas.menu import ItemDetailsRequest, SearchMenuRequest, SearchResult, Wish
 from api.schemas.orders import DraftOrderRequest
 from api.schemas.reservations import CheckSlotRequest, CreateReservationRequest
 from api.schemas.transfer import TransferToTeamRequest
@@ -335,9 +336,11 @@ def _search_menu(
     allergy = None
     if scope is not None:
         unplaced = founds[scope]
-        assert isinstance(unplaced, SearchResult)
-        allergy = unplaced.wish
-        founds[scope] = unplaced.model_copy(update={"wish": None, "say": None})
+        assert isinstance(unplaced, SearchResult) and unplaced.wish is not None
+        kept, allergy = _split_allergy(unplaced.wish)
+        # The allergy's sentence about the dish goes, a sold-out one stays.
+        say = unplaced.say if unplaced.results[0].sold_out else None
+        founds[scope] = unplaced.model_copy(update={"wish": kept, "say": say})
     for part, got in zip(parts, founds, strict=True):
         if isinstance(got, AppError):
             positions.append(
@@ -379,6 +382,19 @@ def _search_menu(
         ),
         allergy=allergy.model_dump() if allergy else None,
     )
+
+
+def _split_allergy(wish: Wish) -> tuple[Wish | None, Wish]:
+    """A removal said with the allergy is its dish's own ("die 23 ohne
+    Zwiebeln, ich habe eine Erdnussallergie"): it stays on the position, only
+    the allergy waits for its dishes (Codex PR #1082)."""
+    if wish.ingredient:
+        alone = ALLERGY_NOTE.format(ingredient=wish.ingredient)
+        removal = wish.text.removeprefix(alone).lstrip(". ") or None
+        allergy = wish.model_copy(update={"text": alone, "note": None})
+    else:
+        removal, allergy = wish.note, wish.model_copy(update={"note": None})
+    return (Wish(text=removal, kind="note") if removal else None), allergy
 
 
 def _allergy_to_place(founds: list[SearchResult | AppError]) -> int | None:

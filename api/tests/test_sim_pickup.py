@@ -946,6 +946,22 @@ def test_an_allergy_for_every_dish_goes_on_each(session, tenant):
     assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnuss"] * 2
 
 
+def test_a_scoped_allergy_joins_the_note_a_dish_has(session, tenant):
+    """Codex PR #1082: the answer "Für beide" wrote the allergy over the 23's
+    removal; it goes next to it."""
+    _bestellung(
+        session,
+        tenant,
+        "Die 23 ohne Zwiebeln und die 13 mit Sesamallergie.",
+        "Für beide.",
+    )
+    [order] = orders(session)
+    assert _notes(session, order) == [
+        "WICHTIG !!! Allergie: Sesam. Ohne Zwiebeln",
+        "WICHTIG !!! Allergie: Sesam",
+    ]
+
+
 @pytest.mark.parametrize(
     ("line", "note"),
     [

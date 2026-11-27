@@ -173,6 +173,9 @@ class PickupScript:
         # An allergy said with several dishes and the dishes of that sentence:
         # SAY_ALLERGY_SCOPE is open until the answer names its dishes.
         self._allergy_scope: tuple[dict[str, Any], list[CartItem]] | None = None
+        # The same, while a dish of that sentence is still to be chosen: the
+        # allergy and where the sentence's dishes begin in the cart.
+        self._scope_waiting: tuple[dict[str, Any], int] | None = None
         # If several are open, each question names its dish.
         self._allergy_named = False
         # What is asked after the allergy: never two questions at once,
@@ -511,13 +514,19 @@ class PickupScript:
                     sold_out.append(said)
                 else:
                     unclear = unclear or said
-            if data.get("allergy") and len(self.cart) > before:
+            lead_say = data.get("say")
+            if data.get("allergy") and (unclear or self._later):
+                # A dish of the sentence is still open: its question first, the
+                # scope once every dish of the sentence is known (Codex PR #1082).
+                self._scope_waiting = (data["allergy"], before)
+                lead_say = _join(*(lead_say or "").split(SAY_ALLERGY_SCOPE)) or None
+            elif data.get("allergy") and len(self.cart) > before:
                 self._allergy_scope = (data["allergy"], self.cart[before:])
             if (
                 self._allergy_for or self._group_for or self._allergy_scope
             ) and unclear:
                 self._after_allergy, unclear = unclear, None
-            lead = _join(self.take_carry(), data.get("say"), *sold_out, unclear)
+            lead = _join(self.take_carry(), lead_say, *sold_out, unclear)
             return self._next(slots, {}, lead=lead)
         carried = self._carried_wish(reopen, data)
         if carried is not None:
@@ -793,7 +802,11 @@ class PickupScript:
             )
         self._allergy_scope = None
         for item in chosen:
-            self._apply_wish(item, {}, wish)
+            if wish.get("ingredient"):
+                # Next to what the dish already carries ("ohne Zwiebeln").
+                item.note = kitchen_note(item.note, wish["text"])
+            else:
+                self._apply_wish(item, {}, wish)
         return self._next(slots, patch, lead=self._take_deferred())
 
     def asks_allergy(self) -> bool:
@@ -894,6 +907,10 @@ class PickupScript:
     ) -> LLMTurn:
         """Der naechste Schritt aus dem, was schon feststeht."""
         state_patch = patch or None
+        if self._scope_waiting and not self._later and self.phase != "choose":
+            allergy, start = self._scope_waiting
+            self._scope_waiting = None
+            self._allergy_scope = (allergy, self.cart[start:])
         if self._allergy_scope or self._allergy_for or self._group_for:
             # Only the question about the allergy or the group, no second one
             # next to it. If it is already in the search's sentence, not again.

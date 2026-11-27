@@ -552,6 +552,17 @@ def test_each_number_in_a_list_keeps_its_own_wish(
             [None, None],
             "WICHTIG !!! Allergie: Erdnuss",
         ),
+        # A removal said with the allergy stays on its dish (Codex PR #1082).
+        (
+            "die 23 und Pho Bo ohne Zwiebeln, ich habe eine Erdnussallergie",
+            [None, ("note", "Ohne Zwiebeln")],
+            "WICHTIG !!! Allergie: Erdnuss",
+        ),
+        (
+            "die 23 ohne Erdnüsse, mit Allergie und die 13",
+            [("note", "ohne Erdnüsse"), None],
+            "mit Allergie",
+        ),
     ],
 )
 def test_an_allergy_with_several_dishes_is_asked_about(
@@ -649,6 +660,17 @@ def test_ausverkauft_mit_wunsch_nur_einmal(session, tenant_id, call_id):
     )
     assert "heute leider aus" not in (result.data["say"] or "")
     assert "heute leider aus" in result.data["positions"][0]["say"]
+    # An allergy of the sentence waits for its dishes; the dish's sold-out
+    # sentence stays (Codex PR #1082).
+    allergy = run(
+        session,
+        tenant_id,
+        call_id,
+        "search_menu",
+        {"query": "die 23 mit Erdnussallergie und Pho Bo"},
+    )
+    assert allergy.data["allergy"] is not None
+    assert "heute leider aus" in allergy.data["positions"][0]["say"]
 
 
 def test_eine_position_wird_nur_einmal_zerlegt(
