@@ -20,6 +20,7 @@ import pytest
 
 from api.core.errors import Ambiguous, NotFound
 from api.domain.menu import search
+from api.domain.menu.normalize import normalize_query
 from api.domain.menu.numberwords import (
     NO_PREFIXES,
     CardFormat,
@@ -75,7 +76,7 @@ def _old_takes_a_number_back(
         own = _old_ends_in_card_number(piece, card)
         if not (own or any(card_numbers[k + 1 :])):
             continue
-        if not search.normalize_query(piece) or (has_number(piece) and not own):
+        if not normalize_query(piece) or (has_number(piece) and not own):
             continue
         try:
             search_piece(piece)
@@ -105,6 +106,8 @@ def _test_sentences() -> set[str]:
     files = [
         *sorted((ROOT / "api" / "tests").glob("test_domain_menu*.py")),
         ROOT / "api" / "tests" / "test_agent_dispatch_menu.py",
+        ROOT / "api" / "tests" / "test_domain_numberwords.py",
+        ROOT / "api" / "tests" / "test_menu_corpus.py",
         ROOT / "evals" / "number_eval.py",
     ]
     found: set[str] = set()
