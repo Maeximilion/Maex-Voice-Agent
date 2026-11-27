@@ -2676,3 +2676,11 @@ Replaced or removed lines of `.claude/chain/brief-common.md`:
 > - Maxi's exceptions to `CLAUDE.md` (quote them where a rule seems to say otherwise): "Don't stop the chain any more" (24.11.2026: no handover at 300k or 450k, auto compaction carries you, so commit and push at every step and keep your state in the PR and in files); "Don't ever wait for my message to start new sessions ever again" (25.11.2026).
 >
 > - Slow mode: a 45-minute sleep after each finished part. Super slow or Hold: the coordinator tells you; sleep 50 minutes, renewed, and read the baton on every wake.
+
+## Open Points from Reviews (archive, menu split row fixed 27.11.2026)
+
+Fixed by item 9 of chain round 4 (#1066): the three helpers read each piece once from each end, and an old-against-new test over every sentence of the menu tests, the eval cases and generated sentences shows the same results and the same piece searches. What is left of the cost, `sole_item_number` on a long piece, has its own row in docs/24.
+
+| Point | Why still open | When due |
+|---|---|---|
+| Splitting by the card still reads earlier pieces again (`api/domain/menu/search.py` `_takes_a_number_back`, `_ends_in_card_number`, `_keep_allergy_clauses`) | Deep review of #888 round 3 plan item 7 (25.11.2026), older than that change: `_takes_a_number_back` checks every earlier piece again for each piece, `_ends_in_card_number` joins the rest of the words again for each "die", "nummer" or "nr", and `_keep_allergy_clauses` copies the list once for each leading allergy part, so a sentence of many pieces costs quadratic time; the 300-character cap of `query` keeps it to about 150 pieces today. | Before a caller without the 300-character cap goes live |

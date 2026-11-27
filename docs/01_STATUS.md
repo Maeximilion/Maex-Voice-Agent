@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.106
+> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.107
 
 ---
 
@@ -180,6 +180,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.107 · 27.11.2026:** Chain round 4 item 9 (docs/24): the menu search splits a sentence in linear time; `_takes_a_number_back`, `_ends_in_card_number` and `_keep_allergy_clauses` read each piece once and give the same results as before (old-against-new test over the menu tests, the eval cases and generated sentences); 600 pieces cost 4 ms instead of 396 ms; what is left in `sole_item_number` has its own docs/24 row
 - **v2.69.106 · 27.11.2026:** #1062 (Maxi on #1046): a caller who hangs up after the handover and before a team leg answers leaves a callback card only once the team rang VOICE_LEFT_MIN_RING_SECONDS (5); the dialplan's h measures the time since the first team leg's Dial
 - **v2.69.105 · 27.11.2026:** #1060: n8n 2.49.7, the newest stable release; the export imports and publishes against it, and a test holds the pin to a release named in a Checked line of n8n/README.md
 - **v2.69.104 · 27.11.2026:** #1063 (Maxi, 26.11.2026, on #1054): the once-a-day push of an operator's TOTP code counts the calendar day in `Europe/Berlin`, not 24 hours from the last push; a push at 23:50 no longer keeps the next morning quiet, and a clock change day keeps its one push
