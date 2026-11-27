@@ -651,10 +651,13 @@ class PickupScript:
             # Leaving out in addition to an extra ("ohne Zwiebeln, dafür mit Huhn").
             item.note = wish["note"]
         if wish["kind"] == "option":
-            item.options.append({"group": wish["group"], "name": wish["option"]})
-            item.pending = [g for g in item.pending if g["group"] != wish["group"]]
-            if (wish.get("price_delta_cents") or 0) > 0:
-                item.surcharges.append((wish["option"], wish.get("reason")))
+            # Two options from different groups come one by one in `options`.
+            for chosen in wish.get("options") or [wish]:
+                group = chosen["group"]
+                item.options.append({"group": group, "name": chosen["option"]})
+                item.pending = [g for g in item.pending if g["group"] != group]
+                if (chosen.get("price_delta_cents") or 0) > 0:
+                    item.surcharges.append((chosen["option"], chosen.get("reason")))
         elif wish["kind"] == "open" and wish.get("groups"):
             # The option stands in several groups: the question stays open
             # until the answer names one, none is chosen here.
