@@ -2777,3 +2777,11 @@ Replaced lines of `.claude/chain/brief-common.md`:
 
 > - Slow mode: a 45-minute sleep after each finished part.
 > - Paused (super slow, Hold, or above the lane count after turbo; the coordinator tells you): one background `sleep 3000` (50 minutes, never 60 or more), renewed, then read `~/.claude/chain/next-lane.txt` and `~/.claude/chain/notes.txt`; never end a turn without that sleep running. The baton names your item (`item 14`) or "go on item N" arrives: message the coordinator "lane taken item N" and go on.
+
+## Open Points from Reviews (archive, correction without a comma fixed 27.11.2026)
+
+Fixed by chain round 4 item 25 (#1066): `sole_item_number` reads "ich meine die 47" as the card number 47, so `_takes_a_number_back` (`api/domain/menu/search.py`) never searched the words in front of it. A piece with words of its own in front of a card number (alone or with a wish behind it) now searches only those words (`_words_before_card_number`, which replaced `_ends_in_card_number`); hitting no dish, they keep the sentence whole and it asks, as it already did with a comma. Filler, an ordering phrase ("ich nehme", "dann noch") and a quantity ("zweimal") in front take nothing back. Tests in `api/tests/test_domain_menu_search.py`.
+
+| Point | Why still open | When due |
+|---|---|---|
+| A correction without a comma books both dishes (`api/domain/menu/search.py` `_takes_a_number_back`) | Deep review of chain round 4 item 14 (27.11.2026), older than it: in "die 23, ich meine die 13 mit Allergie" or "die 23 und die 13, ich meine die 47" the piece "ich meine die 47" hits the 47, so nothing takes the number before it back and both dishes are booked; with a comma after "ich meine" the sentence asks. The read-back before the yes names every dish. | with the next splitter change |
