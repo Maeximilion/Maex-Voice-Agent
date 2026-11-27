@@ -304,8 +304,9 @@ def test_a_bounded_session_waits_for_a_free_connection_no_longer_than_its_bound(
 
     bound = bounded_db(200).kw["bind"]
     # Every connection the pool gives: its size and the default overflow of 10.
-    held = [bound.connect() for _ in range(bound.pool.size() + 10)]
+    held = []
     try:
+        held.extend(bound.connect() for _ in range(bound.pool.size() + 10))
         started = time.monotonic()
         with pytest.raises(PoolTimeout):
             bound.connect()
