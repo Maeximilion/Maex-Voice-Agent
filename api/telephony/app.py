@@ -23,6 +23,7 @@ import base64
 import binascii
 import contextlib
 import hmac
+import math
 import threading
 import time
 from collections import OrderedDict
@@ -80,6 +81,7 @@ class Voice:
         mouth: Callable[[], Mouth],
         silence_seconds: float,
         team_phone: Callable[[], str],
+        left_min_ring_seconds: float,
     ) -> None:
         self.lines = lines
         # The number the team is at now, "" when it cannot be read (#835).
@@ -89,6 +91,7 @@ class Voice:
         self._ear = ear
         self._mouth = mouth
         self._silence_seconds = silence_seconds
+        self._left_min_ring_seconds = left_min_ring_seconds
         self._lock = threading.Lock()
         self._endings: OrderedDict[str, str] = OrderedDict()
         self._asterisk_at: float | None = None
@@ -144,14 +147,36 @@ class Voice:
         with self._lock:
             return self._endings.pop(call_id, "")
 
-    def missed(self, call_id: str, *, left: bool = False) -> bool:
+    def missed(
+        self, call_id: str, *, left: bool = False, waited: str | None = None
+    ) -> bool:
         """Nobody answered the team legs, or (`left`) the caller hung up before
-        one did: True once the callback card is written."""
+        one did: True once the callback card is written. A caller who left
+        before the team rang `left_min_ring_seconds` (`waited`, measured by the
+        dialplan's `h`) gets none, as before #1046 (#1062)."""
+        rang = _seconds(waited) if left else None
+        if rang is not None and rang < self._left_min_ring_seconds:
+            logger.info(
+                "caller left before the team rang long enough, no card",
+                extra={"extra": {"session_id": call_id, "waited": rang}},
+            )
+            return False
         return self._events.on_team_missed(call_id, left=left)
 
     def recording_stopped(self, call_id: str) -> bool:
         """The team stopped the recording of a team leg: True once it is logged."""
         return self._events.on_recording_stopped(call_id)
+
+
+def _seconds(text: str | None) -> float | None:
+    """A time the dialplan measured, None when it cannot be read: missing,
+    not a number, negative (a clock that stepped back) or not finite. None
+    keeps the card (rule 5): a wrong measure never costs a caller theirs."""
+    try:
+        value = float(text or "")
+    except ValueError:
+        return None
+    return value if math.isfinite(value) and value >= 0 else None
 
 
 def announce(mouth: Mouth, folder: Path) -> None:
@@ -260,6 +285,7 @@ def voice_from_settings() -> Voice:
         mouth=make_mouth,
         silence_seconds=settings.voice_silence_seconds,
         team_phone=handler.team_phone,
+        left_min_ring_seconds=settings.voice_left_min_ring_seconds,
     )
 
 

@@ -223,3 +223,13 @@ def test_the_team_phone_check_reads_the_number_rule_of_the_domain():
 
     assert TEAM_PHONE_FORM.pattern == E164.pattern
     assert _settings(team_phone="+497215551234").team_phone == "+497215551234"
+
+
+def test_the_ring_threshold_of_a_caller_who_left_is_five_seconds():
+    """Maxi's decision of 26.11.2026 (#1046, #1062): a caller who hung up
+    before a team leg answered leaves a card once the team rang this long."""
+    assert _settings().voice_left_min_ring_seconds == 5.0
+    assert _settings(voice_left_min_ring_seconds=8).voice_left_min_ring_seconds == 8
+    for wrong in (-1, 31, float("inf"), float("nan")):
+        with pytest.raises(ValidationError):
+            _settings(voice_left_min_ring_seconds=wrong)
