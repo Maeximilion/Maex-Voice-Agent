@@ -1657,6 +1657,19 @@ def sole_item_number(
     return None, False
 
 
+def could_hold_item_number(text: str) -> bool:
+    """Could `sole_item_number` read any number, valid or not, from the text: does
+    it hold digits, a number word or a word above the card range? Without one it
+    reads no number and no named number, whatever the card: `_scan`,
+    `_marker_target` and `_prefixed_too_large` all start at such a token. Not a
+    quantity check: "zweimal" holds none, "eine" holds one (`wishes.has_number`
+    answers the other question)."""
+    return any(
+        t.isdigit() or _too_large(t) or _word_value(t) is not None
+        for t in _tokens(text)
+    )
+
+
 def has_item_number_marker(text: str) -> bool:
     """Is there an explicit "Nummer"/"Nr." in the sentence?
 

@@ -46,6 +46,7 @@ from api.domain.menu.numberwords import (
     CARD_SUFFIXES,
     CardFormat,
     canonical_card,
+    could_hold_item_number,
     fold,
     sole_item_number,
     spoken_card,
@@ -275,15 +276,35 @@ def position_parts(
 
 
 def _keep_allergy_clauses(query: str, parts: list[str]) -> list[str]:
-    if len(parts) <= 1 or not any(opens_with_allergy(p) for p in parts):
+    opens = [opens_with_allergy(p) for p in parts]
+    if len(parts) <= 1 or not any(opens):
         return parts
-    if opens_with_allergy(parts[0]):
-        # At the start of the sentence: it belongs to the first dish after it,
-        # as a wish behind the dish (review PR #139).
-        rest = _keep_allergy_clauses(query, parts[1:])
-        if opens_with_allergy(rest[0]):
-            return parts
-        return [f"{rest[0]}, {parts[0]}", *rest[1:]]
+    # At the start of the sentence the allergy parts belong to the first dish
+    # after them, as wishes behind the dish, the nearest first (review PR #139).
+    lead = next((k for k, allergy in enumerate(opens) if not allergy), len(parts))
+    if lead == 0:
+        return _allergy_spans(query, parts, opens)
+    if lead == len(parts):
+        return parts
+    rest = (
+        _allergy_spans(query, parts[lead:], opens[lead:])
+        if len(parts) - lead > 1 and any(opens[lead:])
+        else parts[lead:]
+    )
+    if opens_with_allergy(rest[0]):
+        return parts
+    head = f"{rest[0]}, {parts[lead - 1]}"
+    # `opens_with_allergy` reads up to the first word that is no lead word.
+    # With the dish in front that word no longer moves once one allergy part
+    # stands behind it, so only this first join is checked (the old recursion
+    # checked each, with the same result).
+    if lead > 1 and opens_with_allergy(head):
+        return parts
+    return [", ".join([head, *reversed(parts[: lead - 1])]), *rest[1:]]
+
+
+def _allergy_spans(query: str, parts: list[str], opens: list[bool]) -> list[str]:
+    """An allergy part behind a dish joins it, cut from the sentence as said."""
     spans: list[list[int]] = []
     at = 0
     for part in parts:
@@ -293,8 +314,8 @@ def _keep_allergy_clauses(query: str, parts: list[str]) -> list[str]:
         spans.append([start, start + len(part)])
         at = start + len(part)
     merged = [spans[0]]
-    for span, part in zip(spans[1:], parts[1:], strict=True):
-        if opens_with_allergy(part):
+    for span, allergy in zip(spans[1:], opens[1:], strict=True):
+        if allergy:
             merged[-1][1] = span[1]
         else:
             merged.append(span)
@@ -499,13 +520,19 @@ def _takes_a_number_back(
     its own ("zwei Cola", "für 8,50", "um 19 Uhr"): a correction carries none."""
     said = [sole_item_number(piece, card) for piece in pieces]
     card_numbers = [ref is not None or more for ref, more in said]
+    # Read once from each end instead of again for each piece (docs/24): is
+    # there a card number in a piece after this one, and a number before it.
+    after = [False] * len(pieces)
+    for k in range(len(pieces) - 2, -1, -1):
+        after[k] = after[k + 1] or card_numbers[k + 1]
+    before = False
     for k, piece in enumerate(pieces):
-        if card_numbers[k] or not any(
-            card_numbers[i] or has_number(pieces[i]) for i in range(k)
-        ):
+        number_before = before
+        before = before or card_numbers[k] or has_number(piece)
+        if card_numbers[k] or not number_before:
             continue
         own = _ends_in_card_number(piece, card)
-        if not (own or any(card_numbers[k + 1 :])):
+        if not (own or after[k]):
             continue
         if not normalize_query(piece) or (has_number(piece) and not own):
             continue
@@ -527,8 +554,16 @@ def _ends_in_card_number(piece: str, card: CardFormat) -> bool:
     """ "doch die 24": the piece ends in a card number with its article or
     marker, behind words of its own."""
     words = piece.split()
+    # Without a number behind it a lead is never a card number
+    # (`could_hold_item_number`), so the rest of the piece is read only behind
+    # leads that have one: a piece of many "die" no longer reads its rest again
+    # for each (docs/24).
+    number_after = [False] * (len(words) + 1)
+    for i in range(len(words) - 1, -1, -1):
+        number_after[i] = number_after[i + 1] or could_hold_item_number(words[i])
     return any(
-        fold(word).strip(".") in _CARD_NUMBER_LEADS
+        number_after[i]
+        and fold(word).strip(".") in _CARD_NUMBER_LEADS
         and sole_item_number(" ".join(words[i:]), card)[0] is not None
         for i, word in enumerate(words)
         if i
