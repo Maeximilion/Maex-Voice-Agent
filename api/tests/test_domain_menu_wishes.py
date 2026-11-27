@@ -2522,6 +2522,66 @@ def test_an_option_named_with_statt_matches_as_a_whole(said):
     assert wish.price_delta_cents == 350
 
 
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Nudeln anstatt Reis",
+        "mit Nudeln anstatt Reis bitte",
+        "Tofu, Nudeln anstatt Reis",
+    ],
+)
+def test_anstatt_matches_an_option_named_with_statt(said):
+    """docs/24 row of the item 26 deep review: "Nudeln anstatt Reis" was asked
+    about on a card with "Nudeln statt Reis"."""
+    wish = wish_of(said, SWAP_OPTION)
+    assert wish.kind == "option"
+    picked: list[tuple[str | None, str | None, int | None]] = [
+        (o.group, o.option, o.price_delta_cents) for o in wish.options or []
+    ]
+    assert ("Extras", "Nudeln statt Reis", 350) in (
+        picked or [(wish.group, wish.option, wish.price_delta_cents)]
+    )
+
+
+def test_statt_matches_an_option_named_with_anstatt():
+    groups = [
+        OptionGroup(
+            group="Extras",
+            required=False,
+            options=[
+                OptionOut(
+                    name="Nudeln anstatt Reis", price_delta_cents=350, default=False
+                ),
+            ],
+        )
+    ]
+    wish = wish_of("mit Nudeln statt Reis", groups)
+    assert (wish.kind, wish.option, wish.price_delta_cents) == (
+        "option",
+        "Nudeln anstatt Reis",
+        350,
+    )
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Nudeln statt Reis und Huhn",
+        "Nudeln statt gebratenem Reis",
+        "Nudeln statt Reis Tofu",
+        "Tofu statt Huhn, Nudeln statt Reis",
+        "Tofu statt Huhn",
+    ],
+)
+@pytest.mark.parametrize("groups", [SWAP_OPTION, BEILAGE], ids=["swap", "beilage"])
+def test_anstatt_is_read_as_statt(said, groups):
+    """What stays unclear with "statt" stays unclear with "anstatt" (hard rule
+    2): the same answer either way, no reading of its own."""
+    statt = wish_of(said, groups)
+    anstatt = wish_of(said.replace("statt", "anstatt"), groups)
+    assert anstatt.model_dump(exclude={"text"}) == statt.model_dump(exclude={"text"})
+
+
 def test_a_second_option_next_to_a_statt_option_is_kept():
     """abholung_0064: "mit Tofu und Nudeln statt Reis" was declined."""
     wish = wish_of("mit Tofu und Nudeln statt Reis", SWAP_OPTION)

@@ -137,6 +137,12 @@ def _words(text: str) -> list[str]:
     return [fold(w) for w in _WORD.findall(text)]
 
 
+def _as_statt(words: list[str]) -> list[str]:
+    """Every "anstatt" read as "statt", so an option named with one matches a
+    wish said with the other (deep review of chain round 4 item 26)."""
+    return ["statt" if word in _INSTEAD else word for word in words]
+
+
 def _tokens(text: str) -> tuple[list[re.Match[str]], list[str]]:
     """The words and commas of `text`, and the same folded."""
     tokens = list(_TOKEN.finditer(text))
@@ -2095,12 +2101,12 @@ def _without_swapped(text: str, groups: list[OptionGroup]) -> list[str] | None:
     both, and "statt gebratenem Reis" or "statt Reis Nudeln" may hide a wished
     word (deep review of chain round 4 item 26). A "statt" inside an option's
     own name stays, so "Nudeln statt Reis" on the card is matched whole."""
-    _, said = _tokens(text)
+    said = _as_statt(_tokens(text)[1])
     named: set[int] = set()
     if _INSTEAD & set(said):
         for group in groups:
             for option in group.options:
-                name = _words(option.name)
+                name = _as_statt(_words(option.name))
                 if _INSTEAD & set(name):
                     for i in range(len(said) - len(name) + 1):
                         if said[i : i + len(name)] == name:
@@ -2318,7 +2324,7 @@ def _names(option: str, group: str, said: list[str]) -> set[str]:
     Wortanfang: "Reisnudeln" ist nicht die Option Reis. The words of a longer
     name stand together: "mit gebratener Ente und Reis" is no "gebratener
     Reis" (sweep of the #1076 deep review)."""
-    words = _words(option)
+    words = _as_statt(_words(option))
     if any(said[i : i + len(words)] == words for i in range(len(said))):
         return set(words)
     compound = words[0] + "".join(_words(group)) if len(words) == 1 else None
@@ -2328,7 +2334,7 @@ def _names(option: str, group: str, said: list[str]) -> set[str]:
 def _spots(option: str, group: str, said: list[str]) -> set[int]:
     """Where in `said` the option is named, as `_names` finds it: every run of
     its words, else every compound with the group name."""
-    words = _words(option)
+    words = _as_statt(_words(option))
     n = len(words)
     runs = {
         j for i in range(len(said)) if said[i : i + n] == words for j in range(i, i + n)
