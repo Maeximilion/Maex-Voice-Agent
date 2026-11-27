@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.110
+> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.111
 
 ---
 
@@ -180,6 +180,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.111 · 27.11.2026:** Chain round 4 item 13: the build sessions of /chain are lanes; a freed lane is unbound, renamed, cleared, rerouted and briefed by message, no new session needed (Maxi, popup "Lane refill")
 - **v2.69.110 · 27.11.2026:** #1045 (chain round 4 item 6): the workbench drill hangs up a caller while the team telephone rings, after the ring threshold (card) and a second after the ring (none); 60 of 60 points
 - **v2.69.109 · 27.11.2026:** Chain round 4 item 9 (docs/24): the menu search splits a sentence in linear time; `_takes_a_number_back`, `_ends_in_card_number` and `_keep_allergy_clauses` read each piece once and give the same results as before (old-against-new test over the menu tests, the eval cases and generated sentences); at 600 pieces of the worst shape each, `_takes_a_number_back` costs 4 ms instead of 396, `_keep_allergy_clauses` 1 ms instead of 203 and `_ends_in_card_number` 1 ms instead of 5,007; what is left in `sole_item_number` and an older span quirk of `_allergy_spans` that the deep review found have their own docs/24 rows
 - **v2.69.108 · 27.11.2026:** docs/24 (Codex PR #139): a wish with two options from different groups ("mit Huhn und Nudeln") reaches the model with each option, and a named group settles an option in two groups ("mit Reis als Beilage"); not definite stays unknown (#1066 item 7)

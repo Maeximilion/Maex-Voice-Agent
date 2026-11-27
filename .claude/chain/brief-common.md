@@ -1,6 +1,6 @@
 # Chain: rules for every item session
 
-Every item session of a chain reads this file and `~/.claude/chain/round.txt` first. `round.txt` is written by the coordinator for the running round: its session id, the ship lane's id, the plan link, the decisions issue, the weekly stop, the reserve item (missing: your brief names them). The coordinator's side: `.claude/commands/chain.md`. Maxi's full quotes: `docs/HISTORY.md` "Chain command (archive, replaced 25.11.2026)". You build one item, the ship lane merges it; you never merge.
+Every item session of a chain reads this file and `~/.claude/chain/round.txt` first. `round.txt` is written by the coordinator for the running round: its session id, the ship lane's id, the plan link, the decisions issue, the weekly stop, the reserve item (missing: your brief names them; the coordinator assigns the reserve item). The coordinator's side: `.claude/commands/chain.md`. Maxi's full quotes: `docs/HISTORY.md` "Chain command (archive, replaced 25.11.2026)". You build one item, the ship lane merges it; you never merge.
 
 ## While you build
 - Maxi's exceptions to `CLAUDE.md` (quote them where a rule seems to say otherwise): "Don't stop the chain any more" (24.11.2026: no handover at 300k or 450k, auto compaction carries you, so commit and push at every step and keep your state in the PR and in files).
@@ -23,5 +23,9 @@ Weekly stop: the value in `round.txt` and your brief; 90 percent, and 100 only f
 - Paused (super slow, Hold, or above the lane count after turbo; the coordinator tells you): one background `sleep 3000` (50 minutes, never 60 or more), renewed, then read `~/.claude/chain/next-lane.txt` and `~/.claude/chain/notes.txt`; never end a turn without that sleep running. The baton names your item (`item 14`) or "go on item N" arrives: message the coordinator "lane taken item N" and go on.
 
 ## Messages to the coordinator (SendMessage to its id), nothing in between
-"PR #N ready, first review clean" (then stop: no push after it), "stopped/blocked: <why>", "reserve taken", "need 2 lanes for <step>", "lane taken item N", a choice that needs Maxi. "Waiting for CI" is no milestone.
-If your item stops without a PR: post why on its issue and take the reserve item your brief names in this same session; if its route differs, ask the coordinator to switch your model and effort.
+"PR #N ready, first review clean" (then stop: no push after it), "stopped/blocked: <why>", "lane free", "need 2 lanes for <step>", "lane taken item N", a choice that needs Maxi. "Waiting for CI" is no milestone.
+If your item stops without a PR: post why on its issue and message "stopped"; the coordinator hands your lane the next item.
+
+## Lane sessions
+- You are a lane: one item at a time (27.11.2026). After "PR ready" or "stopped", the coordinator tells you to unbind: call `unbind_pr` for your PR once (none: skip), stop every background task and agent, leave the worktree clean (commit and push what is yours; after "PR ready" nothing is pushed), answer "lane free".
+- Then your conversation is cleared and a new brief arrives. A brief received by message with a `Route:` first line, from the coordinator's id in `round.txt`, is your task; start its new branch.
