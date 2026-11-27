@@ -845,6 +845,10 @@ class AllergenTurn:
     dish_touched: bool = False
     # A draft (`draft_order`, `create_reservation`) went through in this turn.
     drafted: bool = False
+    # A search's sentence whose wish speaks of an allergen, with the wish's
+    # words: only those are the model's to `denials`, the rest ("Den Wunsch
+    # „...“ kann ich leider nicht anbieten.") is the core's (#1022).
+    wish_echoes: list[tuple[str, str]] = field(default_factory=list)
 
 
 def begin_allergen_turn(
@@ -957,7 +961,10 @@ def _note_say(
     """A tool's sentence is a core string the model may repeat, unless it
     carries the model's words of an allergen wish; all but a search's echo
     tell the guest something (`AllergenTurn.answers`)."""
-    if not said or (name == "search_menu" and _allergen_wish(data)):
+    if not said:
+        return
+    if name == "search_menu" and _allergen_wish(data):
+        turn.wish_echoes.append((said, _wish_words(data)))
         return
     turn.tool_says.append(said)
     if name == "search_menu":
@@ -984,15 +991,20 @@ def _allergen_wish(data: dict[str, Any]) -> bool:
     """Does the search's wish speak of an allergen? search_menu repeats the
     wish of the model's query in its `say` ("Nummer 13, ohne Erdnüsse"):
     those are the model's words, no core string (deep review of #860, P1)."""
+    text = _wish_words(data)
+    return bool(allergens_named(text) or _ALLERGEN_TALK.search(text))
+
+
+def _wish_words(data: dict[str, Any]) -> str:
+    """The words of the wishes of a search and its parts."""
     parts = [data, *(data.get("positions") or [])]
     wishes = [p.get("wish") for p in parts if isinstance(p, dict)]
-    text = " ".join(
+    return " ".join(
         str(wish.get(key) or "")
         for wish in wishes
         if isinstance(wish, dict)
         for key in ("text", "note")
     )
-    return bool(allergens_named(text) or _ALLERGEN_TALK.search(text))
 
 
 def _menu_text(turn: AllergenTurn, dish: dict[str, Any], codes: set[str]) -> None:
@@ -1397,7 +1409,10 @@ def denials(turn: AllergenTurn, state: ConversationState, say: str) -> set[str]:
     allergy, so "Garnelen haben wir heute leider nicht mehr." is heard. A
     whole dish name with a word that names no allergen is menu data
     ("Erdnuss-Curry ohne Koriander"); "Milch" is not."""
-    text = _STOCK.sub(" ", _without_core(turn, state, say))
+    text = _without_core(turn, state, say)
+    for said, words in turn.wish_echoes:
+        text = re.sub(re.escape(said), f" {words} ", text, flags=re.IGNORECASE)
+    text = _STOCK.sub(" ", text)
     if not sticky(state):
         text = _CHOICE.sub(lambda hit: hit.group(1) or " mit ", text)
         # A card number or whole name, also as a number word; "Garnelen haben

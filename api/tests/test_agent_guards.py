@@ -1514,7 +1514,8 @@ def test_the_old_absence_forms_are_no_list_claim_any_more():
             "Die 47 hat Erdnuss als Sauce zur Wahl.",
             None,
         ),
-        # The wish stands in the note of the line that changed in this turn.
+        # A wish read back with its denial is the core's line since #1022
+        # (test_the_guests_own_wish_is_read_back_by_the_core).
     ],
 )
 def test_an_order_sentence_named_like_an_allergen_is_spoken(said, tools, say, cart):
@@ -2511,3 +2512,26 @@ def test_the_denial_test(text, allergy_call, denied):
 
     assert sticky(state) is allergy_call
     assert denials(turn, state, text) == denied
+
+
+@pytest.mark.parametrize(
+    ("wish", "say", "denied"),
+    [
+        (
+            "mit Garnelen, aber extra scharf",
+            "Den Wunsch „mit Garnelen, aber extra scharf“ kann ich leider nicht "
+            "anbieten.",
+            set(),
+        ),
+        ("ohne Erdnüsse", "Nummer 47, ohne Erdnüsse.", {"E"}),
+    ],
+)
+def test_a_wish_echo_is_read_by_its_wish_words(wish, say, denied):
+    """#1022, eval of the redesign: a search's sentence with an allergen wish
+    is the model's words only as far as the wish goes; the "nicht anbieten"
+    of the core's template denies nothing."""
+    name, result, args = search(ENTE, wish={"text": wish})
+    echo = ToolResult(ok=True, data=result.data, say=say)
+    turn, state = allergen_turn("Die 47 bitte.", (name, echo, args))
+
+    assert denials(turn, state, say) == denied

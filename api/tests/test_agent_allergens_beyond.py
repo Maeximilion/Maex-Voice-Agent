@@ -2346,7 +2346,8 @@ def test_a_note_that_names_a_dish_goes_back(session, known_tenant):
             None,
             None,
         ),
-        # The wish stands in the note of the line that changed in this turn.
+        # A wish read back with its denial is the core's line since #1022
+        # (test_the_guests_own_wish_is_read_back_by_the_core).
         # The database text of the dish itself names soy.
         (
             "Was ist in der 25?",
