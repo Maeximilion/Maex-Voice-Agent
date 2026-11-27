@@ -10,6 +10,7 @@ Gelöschte Zeilen (Markierung `*`) liefert der Leser mit `deleted=True`; die
 Kasse sperrt einen Artikel, indem sie ihn so markiert (docs/14 §Quelle Kasse).
 """
 
+import bisect
 import struct
 from dataclasses import dataclass
 
@@ -118,6 +119,11 @@ def _read(data: bytes, memo: bytes | None) -> Table:
             raise DbfError("Memo-Datei (.DBT) fehlt")
         if memo_format is None:
             raise DbfError(f"Unbekanntes Memo-Format (Version 0x{data[0]:02x})")
+    starts = (
+        _memo_starts(data, header_len, record_len, count, fields)
+        if memo_format == _MEMO_III
+        else []
+    )
 
     rows: list[dict[str, str]] = []
     deleted: list[bool] = []
@@ -138,11 +144,16 @@ def _read(data: bytes, memo: bytes | None) -> Table:
             if field.type == "M":
                 # Memo gelöschter Zeilen nie lesen: ihr Zeiger kann ins Leere
                 # zeigen und würde sonst den ganzen Import blockieren.
-                row[field.name] = (
-                    ""
-                    if is_deleted
-                    else _memo(memo or b"", raw, encoding, memo_format or "")
-                )
+                try:
+                    row[field.name] = (
+                        ""
+                        if is_deleted
+                        else _memo(
+                            memo or b"", raw, encoding, memo_format or "", starts
+                        )
+                    )
+                except DbfError as exc:
+                    raise DbfError(f"Zeile {index + 1}: {field.name}: {exc}") from exc
             else:
                 value = raw.decode(encoding).strip()
                 if field.type == "L" and value not in _LOGICAL:
@@ -157,7 +168,28 @@ def _read(data: bytes, memo: bytes | None) -> Table:
     return Table(tuple(fields), encoding, tuple(rows), tuple(deleted))
 
 
-def _memo(memo: bytes, pointer: bytes, encoding: str, memo_format: str) -> str:
+def _memo_starts(
+    data: bytes, header_len: int, record_len: int, count: int, fields: list[Field]
+) -> list[int]:
+    """Sorted start blocks of every memo, deleted rows too: they own their blocks."""
+    spans, pos = [], 1
+    for field in fields:
+        if field.type == "M":
+            spans.append((pos, pos + field.length))
+        pos += field.length
+    starts = set()
+    for index in range(count):
+        record = header_len + index * record_len
+        for a, b in spans:
+            pointer = data[record + a : record + b].strip()
+            if pointer.isdigit() and int(pointer):
+                starts.add(int(pointer))
+    return sorted(starts)
+
+
+def _memo(
+    memo: bytes, pointer: bytes, encoding: str, memo_format: str, starts: list[int]
+) -> str:
     text = pointer.decode("ascii", "replace").strip()
     if not text or text.strip("0") == "":
         return ""  # leer oder 0: kein Memo
@@ -189,7 +221,20 @@ def _memo(memo: bytes, pointer: bytes, encoding: str, memo_format: str) -> str:
             raise DbfError(f"Memo-Block {text} abgeschnitten")
         body = memo[start + 8 : start + length]
     else:
-        end = memo.find(_MEMO_III_END, start)
+        # A memo that lost its 0x1A ends where the next memo starts, never in
+        # another record's text (Codex PR #149).
+        # shortcut: blocks orphaned by an edited memo are not known, a damaged
+        # memo before one still reads that old text; upgrade with a real dBase III source.
+        after = bisect.bisect_right(starts, int(text))
+        if after < len(starts):
+            end = memo.find(_MEMO_III_END, start, starts[after] * block_size)
+            if end == -1:
+                raise DbfError(
+                    f"memo block {text} has no end marker before the next memo "
+                    f"(block {starts[after]}), .DBT damaged"
+                )
+        else:
+            end = memo.find(_MEMO_III_END, start)
         if end == -1:
             raise DbfError(f"Memo-Block {text} ohne Ende, .DBT abgeschnitten")
         body = memo[start:end]
