@@ -223,6 +223,8 @@ def _memo(
     else:
         # A memo that lost its 0x1A ends where the next memo starts, never in
         # another record's text (Codex PR #149).
+        # shortcut: blocks orphaned by an edited memo are not known, a damaged
+        # memo before one still reads that old text; upgrade with a real dBase III source.
         after = bisect.bisect_right(starts, int(text))
         if after < len(starts):
             end = memo.find(_MEMO_III_END, start, starts[after] * block_size)
