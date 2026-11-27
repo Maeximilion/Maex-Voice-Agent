@@ -709,6 +709,7 @@ SAY_ASK_ALLERGY_DISH = "Für welches Gericht soll die Küche darauf achten?"
 # and no ingredient ("Die 23 mit Allergie und die 13 mit Allergie.", docs/24):
 # the core names all of them in front of it (`ask_for_the_dish`).
 SAY_ASK_ALLERGY_FOR = "Zur {dishes}: " + SAY_ASK_ALLERGY
+_ASK_ALLERGY_ANY_CASE = re.compile(re.escape(SAY_ASK_ALLERGY), re.IGNORECASE)
 SAY_ALLERGENS_OFFER = (
     "Wenn ich für ein Gericht die Allergene nachsehen soll, nennen Sie mir bitte "
     "seine Nummer."
@@ -1748,14 +1749,14 @@ def ask_for_the_dish(state: ConversationState, say: str) -> str:
     """`say` with the waiting dishes named in front of `SAY_ASK_ALLERGY`
     (`named_allergy_question`), so the guest hears which dishes the question
     is for. A sentence without the question ends the wait: a later question
-    may be about another allergy."""
-    if SAY_ASK_ALLERGY not in say:
+    may be about another allergy. Read in any case, as `_without_core` takes
+    a copy of either ("worauf genau ...", "35A" for "35a", Codex PR #1096)."""
+    if not _ASK_ALLERGY_ANY_CASE.search(say):
         state.allergy_dishes = []
     named = named_allergy_question(state)
-    # In any case, as `_without_core` takes a copy of it ("35A" for "35a").
     if named is None or named.casefold() in say.casefold():
         return say
-    return say.replace(SAY_ASK_ALLERGY, named, 1)
+    return _ASK_ALLERGY_ANY_CASE.sub(lambda _: named, say, count=1)
 
 
 def _word_in(word: str, text: str) -> bool:

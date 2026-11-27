@@ -159,3 +159,20 @@ def test_a_copy_in_another_case_is_not_named_twice(session, state):
     again, _ = run(session, state, "Wie bitte?", LLMTurn(say=copy))
 
     assert again.say == [copy]
+
+
+def test_the_plain_question_in_another_case_is_named(session, state):
+    """Codex PR #1096: the core takes the question in any case."""
+    lower = SAY_ASK_ALLERGY[0].lower() + SAY_ASK_ALLERGY[1:]
+    first, _ = run(session, state, TWO, searched(TWO), LLMTurn(say=lower))
+
+    assert first.say == [BOTH]
+
+
+def test_a_copy_in_another_case_keeps_the_dishes(session, state):
+    """Codex PR #1096: the next question still names the dishes."""
+    run(session, state, TWO, searched(TWO), ask())
+    run(session, state, "Wie bitte?", LLMTurn(say=BOTH.lower()))
+    then, _ = run(session, state, "Bei der 23 Erdnüsse.", ask())
+
+    assert then.say == [BOTH]
