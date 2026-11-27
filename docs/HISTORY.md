@@ -2701,6 +2701,13 @@ Shortened by item 10 of chain round 4 (#1066): the log entry after a tool waits 
 |---|---|---|
 | Waits around a tool that the turn's deadline does not bound (`api/db.py` `bounded_by`, `api/agent/dispatch.py` `_log_call`, `api/agent/loop.py` `_too_slow`) | Deep review of the #888 round 3 lock-wait PR, 25.11.2026, all three older than that PR: the tool's log entry after a tool that finished in time, the core's handover writes after a cut and a pool checkout or reconnect before a statement keep the line's 2 s bound, so a lock on the call's row or a database restart can still keep the guest up to 2 s past the deadline per statement. Rare on one thread per call; the handover writes are the rule-5 path and must not be cut. | Before the first test call with real guests (T-10.7) |
 
+## Open Points from Reviews (archive, unheard timing row fixed 27.11.2026)
+
+Fixed by item 23 of chain round 4 (#1066): the session keeps when the line reported each sentence of the last answer as played and when the last key of an entry was pressed, and reports to the core what the caller had not heard to its end by the time of their words or keys (`api/telephony/session.py` `_not_heard_at`), also when the ear's final or the keypad gap comes after the answer was played.
+
+| Point | Why still open | When due |
+|---|---|---|
+| Words said before the caller heard an answer can still run against it in two timing cases (`telephony/session.py` `_on_heard`, `_on_key`) | Deep review of the #888 round 3 `last_say` PR (25.11.2026): keys typed before an interruptible answer began to play are handed over after the keypad gap, when the answer may have been heard, so no `on_unheard` is sent for them; and a final the ear reports only after the whole answer was played is taken as said after it. Then `last_say` names a sentence the caller had not heard when they spoke. Read-backs and every sentence the core counts as heard are never interruptible, so no yes books anything (rule 3). | When the call log shows either case, or with the next change to the keypad or the ear's lag handling |
 ## Open Points from Reviews (archive, allergy with another dish in the order fixed 27.11.2026)
 
 Fixed by item 22 of chain round 4 (#1084): `search_menu` in the conversation core gets the dishes of the order (`state.cart`), and an allergy said with one dish while the order holds another goes on no dish by its place; the core asks "Gilt dies für alle Speisen oder für eine einzelne?" (`api/agent/dispatch.py` `_allergy_to_place`). What is still open of the rule is in docs/24 "Where the scope question for an allergy is not asked, or asked once too often".
