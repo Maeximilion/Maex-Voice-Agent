@@ -2559,3 +2559,12 @@ def test_what_the_swap_leaves_unclear_is_asked(said):
     assert wish_of(said, SWAP_OPTION if "gebratenem" in said else BEILAGE).kind == (
         "unknown"
     )
+
+
+def test_search_keeps_the_option_after_the_swap(session, tenant_id):
+    result = suche(session, tenant_id, "die 47 Nudeln statt Reis und Huhn")
+    assert [h.number for h in result.results] == ["47"]
+    assert [(o.group, o.option) for o in result.wish.options] == [
+        ("Beilage", "Nudeln"),
+        ("Fleisch", "Huhn"),
+    ]
