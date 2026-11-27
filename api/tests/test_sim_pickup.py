@@ -942,7 +942,7 @@ def test_a_wish_for_one_of_two_portions_stays_with_the_dish(
     """Deep review of item 14: "die eine" points back at a portion just named.
     Read as a card number it left the 13 without its allergy or removal; the
     wish stays with the 13, as before."""
-    _, turns = _bestellung(session, tenant, line)
+    _bestellung(session, tenant, line)
     [order] = orders(session)
     assert order.status == "confirmed"
     assert positions(session, order) == [("13", 2, [])]

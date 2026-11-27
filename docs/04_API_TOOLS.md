@@ -271,7 +271,16 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    13") opens a position even with a wish behind it: „die 23 ohne Karotten und
    die 13 mit Allergie" is two positions, each with its own wish, and a
    correction in front of it („die 23, quatsch, die 24 mit Reis") still keeps
-   the sentence whole.
+   the sentence whole. Behind „die/der/das/den" only digits of two or more
+   count; an article, a number word or a single digit there often points back
+   at portions just named („zweimal die 13, die eine mit Erdnussallergie") and
+   stays with the position before, as does a quantity („die 2 x ohne
+   Koriander"). Behind „Nummer" a single digit or a number word counts too.
+   A number that may point back at what the sentence said before it keeps the
+   old rule as well: a dish named by its name („zwei Pho Bo, die 13 ohne
+   Koriander"), the same number („zweimal die 13, die 13 mit
+   Erdnussallergie") or a count that reaches it („zwanzig Pho Bo, die 12 ohne
+   Koriander").
 2. Alias-Tabelle, exakt → `match_type: "alias"`
 3. Unscharfe Suche über Name und Alias (Trigram) → nur Treffer über Schwelle
    - genau ein Treffer über der hohen Schwelle → `match_type: "fuzzy_single"`

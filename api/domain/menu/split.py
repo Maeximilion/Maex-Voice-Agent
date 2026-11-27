@@ -29,6 +29,7 @@ Position, die Sauce ist Option und kein zweites Gericht.
 """
 
 import re
+from typing import NamedTuple
 
 from api.domain.menu.numberwords import (
     ALTERNATIVE_WORDS,
@@ -139,6 +140,7 @@ def _split(text: str, *, by_position: bool = True) -> list[str]:
     # joined part are the words of its pieces and separators in a row.
     parts = [[pieces[0]]]
     left = _WORD.findall(fold(pieces[0]))
+    before = _read(_nothing_said(), _full_words(pieces[0]))
     for sep, piece in zip(separators, pieces[1:], strict=True):
         right = _WORD.findall(fold(piece))
         # A pause at the "und" ("drei und äh zwanzig", "drei äh und zwanzig")
@@ -185,7 +187,12 @@ def _split(text: str, *, by_position: bool = True) -> list[str]:
                 )
             )
         )
-        attached = not _opens_position(piece) if by_position else _modifies(piece)
+        attached = (
+            not _opens_position(piece, before)
+            if by_position
+            else _modifies(piece, before)
+        )
+        before = _read(before, _full_words(piece))
         if number_joined or attached:
             parts[-1] += (sep, piece)
             left += _WORD.findall(fold(sep))
@@ -196,7 +203,48 @@ def _split(text: str, *, by_position: bool = True) -> list[str]:
     return ["".join(part) for part in parts]
 
 
-def _opens_position(part: str) -> bool:
+class _Said(NamedTuple):
+    """What the sentence said before a piece, for `_names_card_number`."""
+
+    numbers: set[str]
+    most: int  # the largest quantity said
+    name: bool  # a dish named by its name, not by its number
+
+
+def _nothing_said() -> _Said:
+    return _Said(set(), 0, False)
+
+
+def _read(before: _Said, words: list[str]) -> _Said:
+    """`before` with the words of the next piece read. The set of numbers grows
+    in place, one per sentence, so a long sentence is still read once."""
+    most = before.most
+    for i, word in enumerate(words):
+        said = find_quantity(word)  # "zweimal" said as one word
+        if said is None and _is_number(word):
+            before.numbers.add(word)
+            if not (i and _is_lead(words[i - 1])):
+                # Without "die" or "Nummer" in front a number is a count ("zwei
+                # Pho Bo", "2 x"); with it, a card number.
+                said = int(word) if word.isdigit() else parse_cardinal(word)
+        most = max(most, said or 0)
+    start = next((i for i, w in enumerate(words) if not _is_prefix_word(w)), None)
+    # A name behind a card number is that dish's own ("die 23 Frühlingsrollen").
+    name = (
+        start is not None
+        and words[start] not in _MODIFIERS
+        and not (
+            start > 1 and _is_lead(words[start - 2]) and _is_number(words[start - 1])
+        )
+    )
+    return _Said(before.numbers, most, before.name or name)
+
+
+def _is_lead(word: str) -> bool:
+    return word in _DETERMINERS or word in _NUMBER_MARKERS
+
+
+def _opens_position(part: str, before: _Said | None = None) -> bool:
     """Eröffnet der Teil selbst eine Position? Nur, wenn er damit **beginnt**.
 
     Vorn steht ein Präfix aus Artikel ("eine"), Menge ("zweimal", "2 x", "zwei
@@ -216,22 +264,24 @@ def _opens_position(part: str) -> bool:
     if not any(_opens(w) for w in words[:prefix]):
         return False
     if rest:
-        return rest[0] not in _MODIFIERS or _names_card_number(words[:prefix])
+        return rest[0] not in _MODIFIERS or _names_card_number(words[:prefix], before)
     return any(_is_number(w) for w in words)
 
 
-def _modifies(part: str) -> bool:
+def _modifies(part: str, before: _Said | None = None) -> bool:
     """Ein Hinweis zur Position davor: nach Artikel und Menge steht vorn "mit",
     "ohne", "extra" oder "aber" ("mit Reis", "2 x ohne Koriander")."""
     words = _full_words(part)
     start = next((i for i, w in enumerate(words) if not _is_prefix_word(w)), 0)
     rest = words[start:]
     return (
-        bool(rest) and rest[0] in _MODIFIERS and not _names_card_number(words[:start])
+        bool(rest)
+        and rest[0] in _MODIFIERS
+        and not _names_card_number(words[:start], before)
     )
 
 
-def _names_card_number(prefix: list[str]) -> bool:
+def _names_card_number(prefix: list[str], before: _Said | None) -> bool:
     """Does the prefix end in a card number with its own word ("die 13",
     "Nummer 13", "zweimal die 13")? Then the wish behind it is that dish's own:
     "die 23 ohne Karotten und die 13 mit Allergie" is two positions, each with
@@ -242,13 +292,27 @@ def _names_card_number(prefix: list[str]) -> bool:
     a word is an article, a number word or a small number, so behind die/der/
     das/den only digits of two or more count; a single digit or a number word
     counts behind "Nummer" alone. Everything else keeps the old rule and stays
-    with the position before, as does a quantity ("die 2 x ohne Koriander")."""
+    with the position before, as does a quantity ("die 2 x ohne Koriander").
+
+    The number may point back as well, at what the sentence said before it: a
+    dish named by its name ("zwei Pho Bo, die 13 ohne Koriander"), the same
+    number ("zweimal die 13, die 13 mit Erdnussallergie") or a count that
+    reaches it ("zwanzig Pho Bo, die 12 ohne Koriander"). Then too the part
+    stays with the position before, and the sentence asks as it did."""
     if len(prefix) < 2:
         return False
     lead, number = prefix[-2], prefix[-1]
+    before = before or _nothing_said()
+    if before.name or number in before.numbers:
+        return False
     if lead in _NUMBER_MARKERS:
         return number not in _ARTICLES and _is_number(number)
-    return lead in _DETERMINERS and number.isdigit() and len(number) > 1
+    return (
+        lead in _DETERMINERS
+        and number.isdigit()
+        and len(number) > 1
+        and int(number) > before.most
+    )
 
 
 def _is_prefix_word(word: str) -> bool:

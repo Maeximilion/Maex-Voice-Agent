@@ -105,9 +105,11 @@ from api.tests.test_domain_menu_search import (  # noqa: F401
             "die 23 und Nummer 13 mit Erdnussallergie",
             ["die 23", "Nummer 13 mit Erdnussallergie"],
         ),
+        # A dish named by its name before keeps the old rule: the number may
+        # point back at it (deep review of item 14).
         (
             "Pho Bo und zweimal die 23 ohne Koriander",
-            ["Pho Bo", "zweimal die 23 ohne Koriander"],
+            ["Pho Bo und zweimal die 23 ohne Koriander"],
         ),
         ("die 23 und Nummer 5 ohne Zwiebeln", ["die 23", "Nummer 5 ohne Zwiebeln"]),
         ("die 23 und Nummer zwei mit Reis", ["die 23", "Nummer zwei mit Reis"]),
@@ -135,6 +137,35 @@ from api.tests.test_domain_menu_search import (  # noqa: F401
         (
             "die 23 und die 2 x ohne Koriander",
             ["die 23 und die 2 x ohne Koriander"],
+        ),
+        # A number that points back at what the sentence said before it: a
+        # dish named by its name, the same number, a count that reaches it.
+        (
+            "zwei Pho Bo, die 13 ohne Koriander",
+            ["zwei Pho Bo, die 13 ohne Koriander"],
+        ),
+        (
+            "zweimal die 13, die 13 mit Erdnussallergie",
+            ["zweimal die 13, die 13 mit Erdnussallergie"],
+        ),
+        (
+            "zwanzig Pho Bo, die 12 ohne Koriander",
+            ["zwanzig Pho Bo, die 12 ohne Koriander"],
+        ),
+        (
+            "zwölfmal die 23, die 12 ohne Koriander",
+            ["zwölfmal die 23, die 12 ohne Koriander"],
+        ),
+        ("die 23, quatsch, die 24 mit Reis", ["die 23, quatsch, die 24 mit Reis"]),
+        # A count below the number and a name behind a card number point at
+        # nothing the number could mean.
+        (
+            "zweimal die 23 und die 13 ohne Zwiebeln",
+            ["zweimal die 23", "die 13 ohne Zwiebeln"],
+        ),
+        (
+            "die 23 Frühlingsrollen ohne Karotten und die 13 mit Allergie",
+            ["die 23 Frühlingsrollen ohne Karotten", "die 13 mit Allergie"],
         ),
         ("die 23 und zweimal die 13", ["die 23", "zweimal die 13"]),
         (
@@ -196,6 +227,11 @@ def test_jede_position_findet_ihr_gericht(session, tenant_id, gesagt, nummern): 
         (
             "zwei Pho Bo, die 2 x ohne Koriander",
             ["zwei Pho Bo, die 2 x ohne Koriander"],
+        ),
+        ("zwei Pho Bo, die 13 ohne Koriander", ["zwei Pho Bo, die 13 ohne Koriander"]),
+        (
+            "zweimal die 13, die 13 mit Erdnussallergie",
+            ["zweimal die 13, die 13 mit Erdnussallergie"],
         ),
         # The menu check sees the paused number whole as well (Codex PR #147).
         ("die drei und äh zwanzig", ["die drei und äh zwanzig"]),
