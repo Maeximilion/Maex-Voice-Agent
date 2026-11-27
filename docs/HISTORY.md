@@ -2701,6 +2701,14 @@ Shortened by item 10 of chain round 4 (#1066): the log entry after a tool waits 
 |---|---|---|
 | Waits around a tool that the turn's deadline does not bound (`api/db.py` `bounded_by`, `api/agent/dispatch.py` `_log_call`, `api/agent/loop.py` `_too_slow`) | Deep review of the #888 round 3 lock-wait PR, 25.11.2026, all three older than that PR: the tool's log entry after a tool that finished in time, the core's handover writes after a cut and a pool checkout or reconnect before a statement keep the line's 2 s bound, so a lock on the call's row or a database restart can still keep the guest up to 2 s past the deadline per statement. Rare on one thread per call; the handover writes are the rule-5 path and must not be cut. | Before the first test call with real guests (T-10.7) |
 
+## Open Points from Reviews (archive, allergy with another dish in the order fixed 27.11.2026)
+
+Fixed by item 22 of chain round 4 (#1084): `search_menu` in the conversation core gets the dishes of the order (`state.cart`), and an allergy said with one dish while the order holds another goes on no dish by its place; the core asks "Gilt dies für alle Speisen oder für eine einzelne?" (`api/agent/dispatch.py` `_allergy_to_place`). What is still open of the rule is in docs/24 "Where the scope question for an allergy is not asked, or asked once too often".
+
+| Point | Why still open | When due |
+|---|---|---|
+| An allergy said for one dish while another is already in the order is still noted on that dish (`api/agent/loop.py`, `api/agent/guards.py` `unnoted_allergy`) | Maxi, 27.11.2026 (#1067): with more than one dish in play the guest is asked "Gilt dies für alle Speisen oder für eine einzelne?". Chain round 4 item 14 (PR #1082) asks it for a sentence that names several dishes (`dispatch._allergy_to_place`); a sentence with one dish ("Pho Bo, ich habe eine Erdnussallergie" after "die 23") goes through the loop's allergy path and still notes it on its dish. | the next allergy change |
+
 ## Chain command (archive, one session per item replaced 27.11.2026)
 
 Replaced by chain round 4 item 13 (#1066). The app refused `start_session` in every turn Maxi's own message did not begin, so the night round of 27.11.2026 stopped after its first lanes. Maxi, 27.11.2026, popup "Lane refill": "Lane sessions"; items are refilled "nicht durch meine Eingaben sondern durch ein Mechanismus, der Triggert durch eine Nachricht, die von der Side Session zurück und dich (Coordinator) geht"; "you should also rename the Sessions correctly when a new item gets the new item but it should be done before the item gets started so first the rename then the item goes in there. When Clear works great and everything so the context don't rise than it is perfect. Auch sollten dann aber die PRs die gemerged sind nicht mehr zu sehen sein in der Lane Session weil es sonst unübersichtlich ist."
