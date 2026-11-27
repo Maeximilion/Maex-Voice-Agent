@@ -46,8 +46,8 @@ from api.domain.menu.numberwords import (
     CARD_SUFFIXES,
     CardFormat,
     canonical_card,
+    could_hold_item_number,
     fold,
-    holds_number,
     sole_item_number,
     spoken_card,
 )
@@ -554,12 +554,13 @@ def _ends_in_card_number(piece: str, card: CardFormat) -> bool:
     """ "doch die 24": the piece ends in a card number with its article or
     marker, behind words of its own."""
     words = piece.split()
-    # Without a number behind it a lead is never a card number (`holds_number`),
-    # so the rest of the piece is read only behind leads that have one: a piece
-    # of many "die" no longer reads its rest again for each (docs/24).
+    # Without a number behind it a lead is never a card number
+    # (`could_hold_item_number`), so the rest of the piece is read only behind
+    # leads that have one: a piece of many "die" no longer reads its rest again
+    # for each (docs/24).
     number_after = [False] * (len(words) + 1)
     for i in range(len(words) - 1, -1, -1):
-        number_after[i] = number_after[i + 1] or holds_number(words[i])
+        number_after[i] = number_after[i + 1] or could_hold_item_number(words[i])
     return any(
         number_after[i]
         and fold(word).strip(".") in _CARD_NUMBER_LEADS

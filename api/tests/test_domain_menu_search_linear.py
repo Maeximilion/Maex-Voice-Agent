@@ -6,6 +6,9 @@ for each piece (docs/24, deep review of round 3 item 7). The old versions are
 kept below as the reference only: every caller sentence of the menu tests and
 the eval cases, plus generated sentences, must give the same result and the
 same piece searches with the new ones (a differential test).
+
+A later change that means to change what these helpers return deletes the
+comparisons it outdates; the copies are never edited to match.
 """
 
 import ast
@@ -14,6 +17,7 @@ import random
 import time
 import zlib
 from collections.abc import Callable
+from functools import cache
 from pathlib import Path
 
 import pytest
@@ -24,8 +28,8 @@ from api.domain.menu.normalize import normalize_query
 from api.domain.menu.numberwords import (
     NO_PREFIXES,
     CardFormat,
+    could_hold_item_number,
     fold,
-    holds_number,
     sole_item_number,
 )
 from api.domain.menu.split import cut_at_separators, raw_pieces, split_positions
@@ -196,7 +200,13 @@ def _generated_sentences(count: int, seed: int) -> list[str]:
     return sentences
 
 
-CORPUS = sorted(_test_sentences() | _eval_sentences()) + _generated_sentences(4000, 9)
+@cache
+def _corpus() -> list[str]:
+    # Built at the first test, not at import: collection stays cheap in every
+    # shard, and a missing file fails these tests instead of the whole run.
+    return sorted(_test_sentences() | _eval_sentences()) + _generated_sentences(4000, 9)
+
+
 CARDS = [
     NO_PREFIXES,
     CardFormat(
@@ -243,7 +253,7 @@ def test_the_corpus_holds_test_and_eval_sentences() -> None:
 @pytest.mark.parametrize("card", CARDS, ids=["plain", "prefixes"])
 def test_ends_in_card_number_matches_the_old_version(card: CardFormat) -> None:
     differ = []
-    for sentence in CORPUS:
+    for sentence in _corpus():
         for piece in {sentence, *raw_pieces(sentence)}:
             old = _old_ends_in_card_number(piece, card)
             if search._ends_in_card_number(piece, card) != old:
@@ -254,7 +264,7 @@ def test_ends_in_card_number_matches_the_old_version(card: CardFormat) -> None:
 @pytest.mark.parametrize("card", CARDS, ids=["plain", "prefixes"])
 def test_takes_a_number_back_matches_the_old_version(card: CardFormat) -> None:
     differ = []
-    for sentence in CORPUS:
+    for sentence in _corpus():
         pieces = raw_pieces(sentence)
         old_calls: list[str] = []
         new_calls: list[str] = []
@@ -267,7 +277,7 @@ def test_takes_a_number_back_matches_the_old_version(card: CardFormat) -> None:
 
 def test_keep_allergy_clauses_matches_the_old_version() -> None:
     differ = []
-    for sentence in CORPUS:
+    for sentence in _corpus():
         for parts in _part_lists(sentence):
             old = _old_keep_allergy_clauses(sentence, list(parts))
             if search._keep_allergy_clauses(sentence, list(parts)) != old:
@@ -305,13 +315,19 @@ def test_keep_allergy_clauses_matches_on_generated_part_lists() -> None:
     assert differ == []
 
 
-def test_holds_number_finds_every_number_sole_item_number_reads() -> None:
+def test_could_hold_item_number_finds_every_number_sole_item_number_reads() -> None:
     """The shortcut of `_ends_in_card_number`: a text without such a token is
-    never a card number, valid or not."""
-    for sentence in CORPUS:
-        for card in CARDS:
-            if not holds_number(sentence):
-                assert sole_item_number(sentence, card)[0] is None, sentence
+    never a card number, valid or not. Checked on what that helper reads: every
+    rest of a piece from one of its words on."""
+    for sentence in _corpus():
+        for piece in {sentence, *raw_pieces(sentence)}:
+            words = piece.split()
+            for i in range(len(words)):
+                rest = " ".join(words[i:])
+                if could_hold_item_number(rest):
+                    continue
+                for card in CARDS:
+                    assert sole_item_number(rest, card)[0] is None, rest
 
 
 # --- The cost ---
@@ -323,12 +339,16 @@ def _seconds(call: Callable[[], object]) -> float:
     return time.perf_counter() - start
 
 
+@pytest.mark.latency
 def test_long_sentences_cost_linear_time() -> None:
     """Twice the pieces, about twice the time, never the four times of a
     quadratic loop. Measured against the same call at half the size, so a
-    slow machine does not matter; 3 leaves room for noise."""
+    slow machine does not matter; 3 leaves room for noise. Wall clock: runs
+    serially with the latency tests, not under xdist."""
 
     def costs(n: int) -> tuple[float, float, float]:
+        # Pieces without a number leave the loop before `after` is read. The old
+        # scan of the later pieces was a slice in C, too cheap to time here.
         pieces = ["Ente"] * n
         parts = ["einer Sesamallergie"] * n + ["Ente"]
         piece = "doch " + "die " * n + "Ente"
@@ -344,9 +364,8 @@ def test_long_sentences_cost_linear_time() -> None:
 
     small = [min(c) for c in zip(*(costs(1500) for _ in range(3)), strict=True)]
     large = [min(c) for c in zip(*(costs(3000) for _ in range(3)), strict=True)]
-    for name, a, b in zip(
-        ("takes_back", "keep_allergy", "ends_in_card"), small, large, strict=True
-    ):
+    names = ("takes_back", "keep_allergy", "ends_in_card")
+    for name, a, b in zip(names, small, large, strict=True):
         assert b < 3 * a + 0.002, (name, a, b)
 
 
