@@ -65,6 +65,10 @@ one call per drill:
   missed, down    the team telephone rings unanswered and `voice` is stopped
                   meanwhile: no card, the caller hears to call again, from the
                   file `voice` rendered at its start
+  caller left     the team telephone rings after the core handed the call
+                  over, and the caller hangs up: after the ring threshold a
+                  callback card under the caller's number, a second after the
+                  ring none, each reported once by the AI telephone (#1045)
   sentences       the files Asterisk plays hold the sentences of the code
   recording off   mode shadow as the product ships: not a word from the AI, the
                   team rings, and the folder of the recordings stays empty
@@ -149,6 +153,13 @@ CALL_TIMEOUT_SECONDS = 60.0
 POLL_SECONDS = 0.25
 # How long a callback card `voice` writes at the end of a call may take to show.
 CARD_SECONDS = 5.0
+# The default of VOICE_LEFT_MIN_RING_SECONDS (api/config.py), which the drill's
+# `voice` runs with: a caller who leaves sooner after the team leg started gets
+# no card (#1062). Kept here, the kit imports nothing of the app.
+LEFT_MIN_RING_SECONDS = 5.0
+# How long the AI telephone's `h` may take to log its report once the caller
+# left: 2 s to connect to `voice` and 4 s for its answer (extensions.conf).
+LEFT_REPORT_SECONDS = 10.0
 
 Check = tuple[str, bool, str]
 
@@ -340,6 +351,17 @@ class Drill:
         self.cli("router", f"channel originate Local/{n}@dialout extension {n}@caller")
         return call
 
+    def hang_up_caller(self, n: int) -> None:
+        """Caller n hangs up: the side of the router's Local channel that runs
+        `n@caller` (`place`), so the router's leg to the AI telephone is
+        cancelled as by a caller's telephone, and the team leg stays as it is."""
+        for line in self.cli("router", "core show channels concise").splitlines():
+            name = line.split("!", 1)[0]
+            if name.startswith(f"Local/{n}@dialout-") and name.endswith(";1"):
+                self.cli("router", f"channel request hangup {name}")
+                return
+        raise DrillError(f"call {n}: no caller channel on the router to hang up")
+
     def restart(self, service: str) -> None:
         self.compose("up", "-d", "--wait", service)
 
@@ -387,7 +409,7 @@ class Drill:
         numbers = [
             form
             for number in [
-                *(f"{NUMBER_PREFIX}{n}" for n in range(101, 134)),
+                *(f"{NUMBER_PREFIX}{n}" for n in range(101, 136)),
                 TEAM_PHONE,
                 LISTED_BUSY_NUMBER,
                 TODAY_NUMBER,
@@ -786,17 +808,19 @@ def missed_of(call: Call) -> tuple[str, str, str]:
         found = re.search(r"told the caller (missed_\w+) (\w+)", line)
         if found:
             told = " ".join(found.groups())
-    row = (
-        call.drill.sql(
-            "select c.outcome || '|' || count(b.id) || '|' || coalesce(max(b.phone), '') "
-            "from calls c left join callbacks b on b.call_id = c.id "
-            f"and b.deleted_at is null where c.external_session_id = '{sid}' "
-            "group by c.outcome"
-        )
-        if sid
-        else ""
+    return card, told, row_of(call.drill, sid)
+
+
+def row_of(drill: Drill, sid: str) -> str:
+    """The call's row as "outcome|cards|phone", "" without an id or a row."""
+    if not sid:
+        return ""
+    return drill.sql(
+        "select c.outcome || '|' || count(b.id) || '|' || coalesce(max(b.phone), '') "
+        "from calls c left join callbacks b on b.call_id = c.id "
+        f"and b.deleted_at is null where c.external_session_id = '{sid}' "
+        "group by c.outcome"
     )
-    return card, told, row
 
 
 def drill_team_missed(drill: Drill) -> list[Check]:
@@ -874,6 +898,88 @@ def drill_team_missed_voice_down(drill: Drill) -> list[Check]:
             "after it was placed",
         )
     ]
+
+
+LEFT_REPORT = (
+    r"call ([0-9.]+): caller left before the team answered after (\S*) s, "
+    r"card \[(\w*)\]"
+)
+
+
+def caller_left(drill: Drill, n: int, rang: float) -> Call:
+    """Caller n presses keys, the core hands the call to the team, whose
+    telephone rings, and the caller hangs up `rang` seconds after the router
+    saw it ring, before anybody answered (#1045)."""
+    with team_away(drill, "ring"):
+        call = drill.place(n)
+        _, seen = call.wait(call.team_rings, timeout=TEAM_LIMIT_SECONDS + 10)
+        time.sleep(max(0.0, seen + rang - time.monotonic()))
+        drill.hang_up_caller(n)
+    drill.quiet()
+    return call
+
+
+def left_of(call: Call) -> tuple[float, str, int, str]:
+    """What the AI telephone's `h` measured and `voice` answered for a caller
+    who left before the team answered: the seconds since the first team leg
+    started (nan when unreadable), the answer, how many reports the call left
+    (`h`'s and `missed`'s together), and the call's row. `h` logs once the
+    router went quiet, after its question to `voice`."""
+    end = time.monotonic() + LEFT_REPORT_SECONDS
+    while True:
+        lines = call.lines("asterisk")
+        reports = [found for line in lines if (found := re.search(LEFT_REPORT, line))]
+        if reports or time.monotonic() > end:
+            break
+        time.sleep(POLL_SECONDS)
+    if not reports:
+        return float("nan"), "", 0, ""
+    sid, waited, card = reports[0].groups()
+    try:
+        seconds = float(waited)
+    except ValueError:
+        seconds = float("nan")
+    missed = sum("nobody at the team, card" in line for line in lines)
+    return seconds, card, len(reports) + missed, row_of(call.drill, sid)
+
+
+def drill_caller_left(drill: Drill) -> list[Check]:
+    """A caller hangs up while the team telephone rings (#1045), on both sides
+    of the ring threshold (#1062): 134 after it, with a callback card under the
+    caller's number; 135 a second after the ring, without one, the call counted
+    as handed over. `h` measures from its first team Dial, a little before the
+    router sees the ring, and the drill's own delay adds to 135's time: both
+    stay far from the threshold. A time on the wrong side fails the point, so
+    a run that could not time it shows as such."""
+    late = caller_left(drill, 134, LEFT_MIN_RING_SECONDS + 3)
+    waited, card, reports, row = left_of(late)
+    checks: list[Check] = [
+        (
+            "caller left after the ring threshold: one report, a card under the "
+            "caller's number",
+            card == "noted"
+            and reports == 1
+            and waited >= LEFT_MIN_RING_SECONDS
+            and row == f"callback|1|{late.caller}",
+            f"voice answered [{card}] after {waited:.3f} s, {reports} report(s), "
+            f"call row {row or 'not found'}",
+        )
+    ]
+    early = caller_left(drill, 135, 1.0)
+    waited, card, reports, row = left_of(early)
+    checks.append(
+        (
+            "caller left before the ring threshold: one report, no card, the call "
+            "handed over",
+            card == "none"
+            and reports == 1
+            and waited < LEFT_MIN_RING_SECONDS
+            and row == "transferred|0|",
+            f"voice answered [{card}] after {waited:.3f} s, {reports} report(s), "
+            f"call row {row or 'not found'}",
+        )
+    )
+    return checks
 
 
 def drill_announcements(drill: Drill) -> list[Check]:
@@ -1585,6 +1691,7 @@ SCENARIOS: list[tuple[str, Callable[[Drill], list[Check]]]] = [
     ("the team does not answer (111)", drill_team_missed),
     ("the team does not answer a paused line (112)", drill_team_missed_paused),
     ("the team does not answer, voice goes down (113)", drill_team_missed_voice_down),
+    ("the caller leaves while the team rings (134, 135)", drill_caller_left),
     ("mode shadow, recording off (121)", drill_recording_off),
     ("the recording of a call (122 to 126)", drill_recording),
     ("a transfer to a number off the list (109)", drill_unlisted),
