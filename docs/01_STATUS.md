@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.112
+> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.113
 
 ---
 
@@ -180,6 +180,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.113 · 27.11.2026:** Chain round 4 item 14 (docs/24, own test PR #139): a card number with a wish of its own is its own position; "die 23 ohne Karotten und die 13 mit Allergie" takes both dishes, each wish and the allergy stay with their dish, and a correction in front of such a number still asks
 - **v2.69.112 · 27.11.2026:** #1075 ledger, deep review of #1074: the dBase register reader bounds a dBase IV memo by the next memo too, reads a memo pointer one way in both places, refuses a control byte in a memo and names a cut .DBT as cut
 - **v2.69.111 · 27.11.2026:** Chain round 4 item 13: the build sessions of /chain are lanes; a freed lane is unbound, renamed, cleared, rerouted and briefed by message, no new session needed (Maxi, popup "Lane refill")
 - **v2.69.110 · 27.11.2026:** #1045 (chain round 4 item 6): the workbench drill hangs up a caller while the team telephone rings, after the ring threshold (card) and a second after the ring (none); 60 of 60 points
