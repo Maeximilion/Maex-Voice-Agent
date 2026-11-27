@@ -25,10 +25,11 @@ is up to the caller, not this module.
 """
 
 import re
+from bisect import bisect_left, bisect_right
 from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import cached_property
-from itertools import pairwise, product
+from itertools import accumulate, pairwise, product
 
 # Upper limit: menu numbers and quantities stay at three digits. Anything above
 # is no longer a number word on the phone but a string of digits.
@@ -413,9 +414,12 @@ def _scan(tokens: list[str], start: int) -> _Span | None:
 def _bare_number_at(tokens: list[str], at: int) -> bool:
     """Is the rest of the sentence from `at` one number and filler only?"""
     span = _scan(tokens, at)
+    # By index, not a slice: the first word that is no filler ends the loop,
+    # and a copy of the rest per call made a sentence of many such numbers
+    # quadratic (docs/24).
     return span is not None and all(
         t in PUNCTUATION or t in _SENTENCE_FILLER or t in _LEAD_FILLER or hesitation(t)
-        for t in tokens[span.end :]
+        for t in (tokens[k] for k in range(span.end, len(tokens)))
     )
 
 
@@ -447,20 +451,27 @@ _SPELLED_LEAD = frozenset(
 )  # fmt: skip
 
 
-def _clean_lead(tokens: list[str], at: int) -> bool:
-    """Is there only punctuation, a hesitation, an article, a marker or a
-    quantity before position `at`? Only then may a letter name be a prefix
-    there."""
-    return all(
-        t in PUNCTUATION
-        or t in _SPELLED_LEAD
-        or t in _LEAD_FILLER
-        or hesitation(t)
-        or t in _QUANTITY_NOUNS
-        or _word_value(t) is not None
-        or (_QUANTITY_SUFFIX.match(t) is not None and _word_value(t[:-3]) is not None)
-        for t in tokens[:at]
-    )
+def _clean_until(tokens: list[str]) -> int:
+    """How many tokens from the start are only punctuation, a hesitation, an
+    article, a marker or a quantity: a letter name may be a prefix at a
+    position up to there (a clean lead), not after it. Read once per sentence:
+    asked again at every position, the check made a long sentence quadratic
+    (docs/24)."""
+    for k, t in enumerate(tokens):
+        if not (
+            t in PUNCTUATION
+            or t in _SPELLED_LEAD
+            or t in _LEAD_FILLER
+            or hesitation(t)
+            or t in _QUANTITY_NOUNS
+            or _word_value(t) is not None
+            or (
+                _QUANTITY_SUFFIX.match(t) is not None
+                and _word_value(t[:-3]) is not None
+            )
+        ):
+            return k
+    return len(tokens)
 
 
 def _number_spans(
@@ -479,6 +490,7 @@ def _number_spans(
     to the span (`_with_prefix`).
     """
     spans: list[_Span] = []
+    clean = _clean_until(tokens)
     i = 0
     while i < len(tokens):
         if tokens[i] in PUNCTUATION:
@@ -489,7 +501,7 @@ def _number_spans(
             i += 1
             continue
         floor = spans[-1].end if spans else 0
-        spans.append(_with_prefix(tokens, span, card, floor, prefixed))
+        spans.append(_with_prefix(tokens, span, card, floor, clean, prefixed))
         i = max(span.end, i + 1)
     return spans
 
@@ -499,21 +511,22 @@ def _with_prefix(
     span: _Span,
     card: CardFormat,
     floor: int,
+    clean: int,
     prefixed: set[int] | frozenset[int] = frozenset(),
 ) -> _Span:
     """The span extended by a card prefix directly in front, longest first.
 
     Only tokens from `floor` on: what belongs to the previous number is not a
-    prefix. Letter names only after a clean sentence start (`_clean_lead`) and
-    never glued to the digits: "ES12" is the prefix ES, not "Es zwölf" (Codex
-    PR #155).
+    prefix. Letter names only after a clean sentence start (up to `clean`,
+    `_clean_until`) and never glued to the digits: "ES12" is the prefix ES,
+    not "Es zwölf" (Codex PR #155).
     """
     for n in range(_MAX_PREFIX_TOKENS, 0, -1):
         start = span.start - n
         if start < floor:
             continue
         apart = span.start - 1 not in prefixed
-        spelled = apart and _clean_lead(tokens, start)
+        spelled = apart and start <= clean
         found = card.prefixes_of(tokens[start : span.start], spelled, heard=apart)
         if found:
             return _Span(start, span.end, span.value, n, found)
@@ -527,12 +540,14 @@ def _quantity_spans(tokens: list[str]) -> list[_Span]:
     spans: list[_Span] = []
     # Where a number named as a dish ends ("Nummer zwei hundert"): a quantity
     # behind it starts there, never inside it (Codex PR #722).
-    dish_ends = [
+    # Sorted, so the last end before a quantity is a binary search, not a
+    # loop over all of them per quantity (docs/24).
+    dish_ends = sorted(
         span.end
         for k in range(1, len(tokens))
         if tokens[k - 1] in _ITEM_NUMBER_MARKERS | _LINK_ARTICLES
         and (span := _scan(tokens, k)) is not None
-    ]
+    )
     for i, token in enumerate(tokens):
         suffix = _QUANTITY_SUFFIX.match(token)
         if suffix:
@@ -541,7 +556,8 @@ def _quantity_spans(tokens: list[str]) -> list[_Span]:
                 spans.append(_Span(i, i + 1, value))
                 continue
         if token in _QUANTITY_NOUNS and i > 0:
-            floor = max((e for e in dish_ends if e <= i - 1), default=0)
+            before = bisect_right(dish_ends, i - 1)
+            floor = dish_ends[before - 1] if before else 0
             span = _scan_ending_at(tokens, i - 1, floor)
             if span is not None:
                 spans.append(span)
@@ -1307,6 +1323,10 @@ def _joined_without_und(tokens: list[str], k: int) -> bool:
     comma separates ("die 3, zwanzig Portionen" is 20 of the 3). "eine" counts
     only before a tens quantity: it cannot be the article of "zwanzig
     Portionen" (Codex PR #362)."""
+    if not _first_half(tokens[k]) and tokens[k] not in ARTICLES:
+        # Nothing else can open one, see the last line; returning here keeps a
+        # run of pauses from being walked again from each of them (docs/24).
+        return False
     j = k + 1
     paused = False
     while j < len(tokens) and pause_before_und(tokens[j]):
@@ -1362,6 +1382,7 @@ def _prefixed_too_large(
     belong to a number after a marker.
     """
     found_all: list[tuple[int, int, ItemNumber]] = []
+    clean = _clean_until(tokens)
     i = 0
     while i < len(tokens):
         hit = None
@@ -1369,7 +1390,7 @@ def _prefixed_too_large(
             at = i + n
             if at >= len(tokens) or any(k in taken for k in range(i, at + 1)):
                 continue
-            spelled = _clean_lead(tokens, i) and at - 1 not in prefixed
+            spelled = i <= clean and at - 1 not in prefixed
             oversized = _oversized_after_prefix(tokens, i, n, card, spelled, False)
             if oversized is not None:
                 hit = (i, *oversized)
@@ -1418,6 +1439,13 @@ def sole_item_number(
     glued = _glued(text)
     prefixed = _prefixed(text)
     mengen = _quantity_spans(tokens)
+    # Every position below is read against what the sentence holds as a whole,
+    # read once (first number word, number ends, cuts), never by going over
+    # all the numbers or the rest of the sentence again for each token: that
+    # made a long sentence quadratic (docs/24).
+    first_number = next(
+        (k for k, t in enumerate(tokens) if _word_value(t) is not None), len(tokens)
+    )
     # "die dreizehn mal zwei", "13 x 2": with an article in front or as the
     # first number, either number may be the dish and the other the quantity.
     # Asked, never swapped (#677).
@@ -1432,7 +1460,7 @@ def sole_item_number(
             and _bare_number_at(tokens, q.end + 1)
             and (
                 (q.start > 0 and tokens[q.start - 1] in _LINK_ARTICLES)
-                or all(_word_value(t) is None for t in tokens[: q.start])
+                or q.start <= first_number
             )
         ):
             return None, True
@@ -1475,10 +1503,11 @@ def sole_item_number(
             and not (span.start > 0 and tokens[span.start - 1] in _LINK_ARTICLES)
         )
 
+    # The tokens of the marked numbers and the quantities: a span overlaps one
+    # of them exactly when it holds one of these tokens (no span is empty).
+    held = {k for s in [*marked, *mengen] for k in range(s.start, s.end)}
     for span in spans:
-        if any(span.overlaps(m) for m in marked) or any(
-            span.overlaps(q) for q in mengen
-        ):
+        if any(k in held for k in range(span.start, span.end)):
             continue
         if any(k in invalid_at for k in range(span.start, span.end)):
             continue
@@ -1490,6 +1519,14 @@ def sole_item_number(
     if not numbers and not invalid:
         return None, False
 
+    marked_set, number_set = set(marked), set(numbers)
+    # From each position on: only words that may trail a number (`_trails`).
+    trails_from = [True] * (len(tokens) + 1)
+    if card.lettered:
+        for k in range(len(tokens) - 1, -1, -1):
+            trails_from[k] = trails_from[k + 1] and (
+                tokens[k] in PUNCTUATION or _trails(tokens[k])
+            )
     for span in [*numbers, *mengen]:
         consumed.update(range(span.start, span.end))
         nxt = span.end
@@ -1503,9 +1540,9 @@ def sole_item_number(
         if (
             after in _QUANTITY_NOUNS
             or after in _SUFFIXES
-            or (span in marked and _long_suffix(after))
+            or (span in marked_set and _long_suffix(after))
             or (
-                span in marked
+                span in marked_set
                 and after.isalpha()
                 and (span.digits_at in glued or len(after) == 1)
             )
@@ -1519,7 +1556,7 @@ def sole_item_number(
         # Only where the menu has that lettered dish: else the letter stays
         # unread, and the plain number is not taken unasked.
         if (
-            span in numbers
+            span in number_set
             and at < len(tokens)
             and tokens[at] in _LETTER_WORDS
             and any(
@@ -1527,16 +1564,17 @@ def sole_item_number(
                 in card.lettered
                 for prefix in span.prefixes or ("",)
             )
-            and all(_trails(t) for t in tokens[at + 1 :] if t not in PUNCTUATION)
+            and trails_from[at + 1]
         ):
             consumed.add(at)
     consumed |= marker_at
     # Tokens that belong to a number - valid or not.
     number_at = {k for s in numbers for k in range(s.start, s.end)} | invalid_at
+    lowest, highest = (min(number_at), max(number_at)) if number_at else (0, 0)
 
     def _connects(k: int) -> bool:
-        """Steht links und rechts von Position k eine Zahl?"""
-        return any(x < k for x in number_at) and any(x > k for x in number_at)
+        """Is there a number left and right of position k?"""
+        return lowest < k < highest
 
     # A connecting word between two numbers is transparent: "23 oder 24" is a
     # follow-up question about the number, not a sentence about a dish called
@@ -1558,6 +1596,15 @@ def sole_item_number(
     # and "und ein und zwanzig" stay continuations. Only "und": an "oder" or
     # "nein" up front refers to something this sentence does not name and
     # stays a follow-up question.
+    opening = next(
+        (
+            k
+            for k, t in enumerate(tokens)
+            if not (t in PUNCTUATION or hesitation(t) or t in _OPENING)
+        ),
+        len(tokens),
+    )
+
     def _opens(k: int) -> bool:
         if tokens[k] != "und":
             return False
@@ -1566,9 +1613,7 @@ def sole_item_number(
             j += 1
         if j < len(tokens) and tens_half(tokens[j]):
             return False
-        return all(
-            t in PUNCTUATION or hesitation(t) or t in _OPENING for t in tokens[:k]
-        )
+        return k <= opening
 
     loose = any(
         t in _CONNECTORS and not _connects(k) and not _opens(k)
@@ -1576,13 +1621,19 @@ def sole_item_number(
         if k not in consumed
     )
     # Tokens between a marker and the next number: _LEAD_FILLER does not apply
-    # there, "Nummer dazu 23" stays unclear (review PR #147).
-    after_marker = {
-        k
-        for i, tok in enumerate(tokens)
-        if tok in _ITEM_NUMBER_MARKERS
-        for k in range(i + 1, min((n.start for n in numbers if n.start > i), default=0))
-    }
+    # there, "Nummer dazu 23" stays unclear (review PR #147). The next number
+    # after a later marker never comes before the one after an earlier marker,
+    # so the last marker before a token decides; with no number after it,
+    # none after an earlier marker reaches the token either.
+    starts = sorted(n.start for n in numbers)
+    after_marker: set[int] = set()
+    next_number = 0
+    for k, tok in enumerate(tokens):
+        if k < next_number:
+            after_marker.add(k)
+        if tok in _ITEM_NUMBER_MARKERS:
+            later = bisect_right(starts, k)
+            next_number = starts[later] if later < len(starts) else 0
     # What is left over and could be a dish name. A word glued to the digits
     # ("JA12") is never a filler word (Codex PR #155).
     residue_at = [
@@ -1604,21 +1655,18 @@ def sole_item_number(
     ]
     residue = [tokens[k] for k in residue_at]
     has_marker = bool(marked or invalid)
+    # How many cuts ("und", punctuation) stand before each position.
+    cuts = [0, *accumulate(t in PUNCTUATION or t == "und" for t in tokens)]
 
     def _apart(span: _Span) -> bool:
         """Is there an "und" or punctuation between the prefixed number and
         every leftover word? Then the rest is a position of its own (code
-        review PR #155)."""
-
-        def cut(a: int, b: int) -> bool:
-            return any(
-                tokens[x] in PUNCTUATION or tokens[x] == "und" for x in range(a, b)
-            )
-
-        return all(
-            cut(span.end, k) if k >= span.end else cut(k + 1, span.start)
-            for k in residue_at
-        )
+        review PR #155). The nearest leftover word on each side decides: a
+        cut before it also stands before every word further away."""
+        behind = bisect_left(residue_at, span.end)
+        return (
+            behind == len(residue_at) or cuts[residue_at[behind]] > cuts[span.end]
+        ) and (behind == 0 or cuts[span.start] > cuts[residue_at[behind - 1] + 1])
 
     # A marker that caught no number itself still counts - but only for a
     # number that comes after it: "Nummer Ente 23" is a number next to a name,
@@ -1632,14 +1680,15 @@ def sole_item_number(
     # prefix that was only heard (`_HEARD_LETTERS`) leaves the plain number
     # possible, so next to a name it is what it was without it: "das ist 5g
     # Zucker" stays a sentence for the name search.
+    first_marker = next(
+        (i for i, tok in enumerate(tokens) if tok in _ITEM_NUMBER_MARKERS), None
+    )
     nummer_gemeint = (
         has_marker
         or any(s.prefixes and "" not in s.prefixes and not _apart(s) for s in numbers)
-        or any(
-            span.start > i
-            for i, tok in enumerate(tokens)
-            if tok in _ITEM_NUMBER_MARKERS
-            for span in numbers
+        or (
+            first_marker is not None
+            and any(span.start > first_marker for span in numbers)
         )
     )
     # A loose connecting word is only a number taken back if a number was being
