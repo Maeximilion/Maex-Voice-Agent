@@ -207,3 +207,4 @@ date,task,split,session,model,calls,input,cache_write,cache_write_1h,cache_read,
 2026-11-27,chain4-item25 correction without comma,yes,6861f9f8-a84e-4ece-a7a7-51bc37ede320,claude-sonnet-5-5,168,346,1026766,0,28386372,358003,5912456
 2026-11-27,chain4-item26 statt cut,yes,207aa9d3-52ef-4ecc-81d4-3653e2bbe3a5,claude-opus-5-5,242,498,1011225,279886,44984783,359515,7770497
 2026-11-27,chain4-item26 statt cut,yes,207aa9d3-52ef-4ecc-81d4-3653e2bbe3a5,claude-sonnet-5-5,107,222,579253,0,16771900,219098,3496968
+2026-11-27,chain4-item30 allergy question names dish,yes,989e5f93-1be8-473c-9ee5-773e7d85f5a3,claude-opus-5-5,283,570,1027200,260020,46329748,225962,7242370
