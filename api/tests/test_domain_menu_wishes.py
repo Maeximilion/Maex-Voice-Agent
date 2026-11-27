@@ -2643,3 +2643,28 @@ def test_search_keeps_the_option_after_the_swap(session, tenant_id):
         ("Beilage", "Nudeln"),
         ("Fleisch", "Huhn"),
     ]
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "ohne Zwiebeln, keine Nudeln statt Reis",
+        "ohne Zwiebeln, ohne Nudeln statt Reis",
+        "ohne Zwiebeln und keine Nudeln statt Reis",
+        "ohne Zwiebeln, Tofu und Nudeln statt Reis",
+        "ohne Zwiebeln, Tofu, Nudeln statt Reis",
+    ],
+)
+def test_an_unclear_swap_keeps_the_plain_removal_in_front(said):
+    """The removal in front still reaches the kitchen, the swap is asked about
+    (sweep of the deep review of chain round 4 item 26)."""
+    wish = wish_of(said, SWAP_OPTION)
+    assert (wish.kind, wish.options, wish.price_delta_cents) == ("unknown", None, None)
+    assert wish.note == "ohne Zwiebeln"
+
+
+def test_an_unclear_swap_next_to_an_allergy_keeps_the_removal():
+    said = "ohne Zwiebeln, Tofu und Nudeln statt Reis, ich habe eine Erdnussallergie"
+    wish = wish_of(said, SWAP_OPTION)
+    assert wish.kind == "allergy"
+    assert "Ohne Zwiebeln" in wish.text and "Tofu" not in wish.text

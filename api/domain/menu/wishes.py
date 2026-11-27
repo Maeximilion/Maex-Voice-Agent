@@ -1954,9 +1954,10 @@ def _classify(text: str, groups: list[OptionGroup]) -> Wish:
     lead = next((w for w in words if w not in _LEAD_FILLER), None)
     if lead in _REMOVE:
         split = _split_addition(text)
-        if split is None:
-            # Not understood, and never a free note.
-            return Wish(text=text, kind="unknown")
+        if isinstance(split, str):
+            # Not understood, and never a free note; the plain removals in
+            # front still reach the kitchen.
+            return Wish(text=text, kind="unknown", note=split or None)
         left_out, added = split
         if added is None:
             return Wish(text=text, kind="note")
@@ -2196,9 +2197,11 @@ def _read_back(options: list[OptionOut]) -> str:
     return f"{', '.join(parts[:-1])}{', und ' if priced else ' und '}{parts[-1]}"
 
 
-def _split_addition(text: str) -> tuple[str, str | None] | None:
+def _split_addition(text: str) -> tuple[str, str | None] | str:
     """ "ohne Zwiebeln, dafür mit Nudeln" -> ("ohne Zwiebeln", "mit Nudeln").
-    None when the addition in front of a "statt" has no clear start."""
+    When the addition in front of a "statt" has no clear start, only the plain
+    removals before it: "ohne Zwiebeln, Tofu und Nudeln statt Reis" -> "ohne
+    Zwiebeln"."""
     tokens, words = _tokens(text)
     at = next(
         (
@@ -2213,27 +2216,51 @@ def _split_addition(text: str) -> tuple[str, str | None] | None:
     begin = at + 1 if words[at] in _SWAP else at
     if words[at] in _INSTEAD:
         at = begin = at - 1
-        if _unclear_before_swap(words[:at]):
-            return None
+        # A removal word right in front turns the swap down: "keine Nudeln
+        # statt Reis".
+        end = at - 1 if at and words[at - 1] in _REMOVE else at
+        spans = _comma_parts(words[:end])
+        if (
+            end < at
+            or not spans
+            or words[at - 1] in _LISTING
+            or not _removes(words[spans[-1][0] : spans[-1][1] + 1])
+        ):
+            return ", ".join(
+                _without_glue(text[tokens[i].start() : tokens[j].end()])
+                for i, j in spans
+                if _removes(words[i : j + 1])
+            )
     removal = _without_glue(text[: tokens[at].start()])
     return removal, text[tokens[begin].start() :].strip(" ,.;")
 
 
-def _unclear_before_swap(before: list[str]) -> bool:
-    """The addition in front of a "statt" is taken to begin one word before
-    it, so what stands before that word must be one plain removal: "ohne
-    Zwiebeln, Nudeln statt Reis". Not when it names nothing to leave out ("ohne
-    statt Reis"; "keine Nudeln statt Reis" turns the swap down), when a list
-    runs into that word ("ohne Zwiebeln, Tofu und Nudeln statt Reis") or when
-    its last part has no removal word ("ohne Zwiebeln, Tofu, Nudeln statt
-    Reis"), deep review of chain round 4 item 26."""
-    if not set(before) - _REMOVE - _LEAD_FILLER - {","}:
-        return True
-    if before[-1] in {"und", "oder", "sowie"}:
-        return True
-    parts = " ".join(before).split(",")
-    last = next(part for part in reversed(parts) if part.strip())
-    return not _REMOVE & set(last.split())
+# The addition in front of a "statt" is taken to begin one word before it, so
+# what stands before that word must be plain removals: "ohne Zwiebeln, Nudeln
+# statt Reis". Not when it names nothing to leave out ("ohne statt Reis"), when
+# a removal word turns the swap down ("ohne Zwiebeln, keine Nudeln statt
+# Reis"), when a list runs into that word ("ohne Zwiebeln, Tofu und Nudeln
+# statt Reis") or when its last part has no removal word ("ohne Zwiebeln,
+# Tofu, Nudeln statt Reis"); deep review of chain round 4 item 26.
+_LISTING = frozenset({"und", "oder", "sowie"})
+
+
+def _comma_parts(words: list[str]) -> list[tuple[int, int]]:
+    """First and last index of each part between commas, empty ones left out."""
+    parts = []
+    start = 0
+    for i, word in enumerate([*words, ","]):
+        if word == ",":
+            if i > start:
+                parts.append((start, i - 1))
+            start = i + 1
+    return parts
+
+
+def _removes(part: list[str]) -> bool:
+    """A part that leaves something out: a removal word and a word it names."""
+    said = set(part)
+    return bool(_REMOVE & said and said - _REMOVE - _LEAD_FILLER - _LISTING)
 
 
 # What may stand at either end of such a part besides whitespace.
