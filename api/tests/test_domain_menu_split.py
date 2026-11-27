@@ -148,6 +148,11 @@ from api.tests.test_domain_menu_search import (  # noqa: F401
             "zweimal die 13, die 13 mit Erdnussallergie",
             ["zweimal die 13, die 13 mit Erdnussallergie"],
         ),
+        # The same number said as a word first (Codex PR #1082).
+        (
+            "zweimal die dreizehn, die 13 mit Erdnussallergie",
+            ["zweimal die dreizehn, die 13 mit Erdnussallergie"],
+        ),
         (
             "zwanzig Pho Bo, die 12 ohne Koriander",
             ["zwanzig Pho Bo, die 12 ohne Koriander"],
@@ -232,6 +237,11 @@ def test_jede_position_findet_ihr_gericht(session, tenant_id, gesagt, nummern): 
         (
             "zweimal die 13, die 13 mit Erdnussallergie",
             ["zweimal die 13, die 13 mit Erdnussallergie"],
+        ),
+        # The same number said as a word first (Codex PR #1082).
+        (
+            "zweimal die dreizehn, die 13 mit Erdnussallergie",
+            ["zweimal die dreizehn, die 13 mit Erdnussallergie"],
         ),
         # The menu check sees the paused number whole as well (Codex PR #147).
         ("die drei und äh zwanzig", ["die drei und äh zwanzig"]),

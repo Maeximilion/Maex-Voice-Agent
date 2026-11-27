@@ -206,7 +206,7 @@ def _split(text: str, *, by_position: bool = True) -> list[str]:
 class _Said(NamedTuple):
     """What the sentence said before a piece, for `_names_card_number`."""
 
-    numbers: set[str]
+    numbers: set[int]  # by value: "dreizehn" and "13" are the same
     most: int  # the largest quantity said
     name: bool  # a dish named by its name, not by its number
 
@@ -221,12 +221,13 @@ def _read(before: _Said, words: list[str]) -> _Said:
     most = before.most
     for i, word in enumerate(words):
         said = find_quantity(word)  # "zweimal" said as one word
-        if said is None and _is_number(word):
-            before.numbers.add(word)
+        value = _value(word) if said is None else None
+        if value is not None:
+            before.numbers.add(value)
             if not (i and _is_lead(words[i - 1])):
                 # Without "die" or "Nummer" in front a number is a count ("zwei
                 # Pho Bo", "2 x"); with it, a card number.
-                said = int(word) if word.isdigit() else parse_cardinal(word)
+                said = value
         most = max(most, said or 0)
     start = next((i for i, w in enumerate(words) if not _is_prefix_word(w)), None)
     # A name behind a card number is that dish's own ("die 23 Frühlingsrollen").
@@ -238,6 +239,10 @@ def _read(before: _Said, words: list[str]) -> _Said:
         )
     )
     return _Said(before.numbers, most, before.name or name)
+
+
+def _value(word: str) -> int | None:
+    return int(word) if word.isdigit() else parse_cardinal(word)
 
 
 def _is_lead(word: str) -> bool:
@@ -303,7 +308,7 @@ def _names_card_number(prefix: list[str], before: _Said | None) -> bool:
         return False
     lead, number = prefix[-2], prefix[-1]
     before = before or _nothing_said()
-    if before.name or number in before.numbers:
+    if before.name or _value(number) in before.numbers:
         return False
     if lead in _NUMBER_MARKERS:
         return number not in _ARTICLES and _is_number(number)
