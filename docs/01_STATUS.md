@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.122
+> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.123
 
 ---
 
@@ -183,6 +183,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.123 · 27.11.2026:** Chain round 4 item 25 (docs/24): a correction without a comma ("die 23, ich meine die 13 mit Allergie", "die 23 und die 13, ich meine die 47") takes the number before it back, the sentence asks instead of booking both; only the words in front of a card number are searched (hard rule 2)
 - **v2.69.122 · 27.11.2026:** Chain round 4 item 24 (docs/24, #983 points 1 and 5): api.config builds settings on first use and the menu package loads its names on first use; scripts/call_log.py ends an invalid .env with exit 2 and the setting's name and runs without SQLAlchemy
 - **v2.69.121 · 27.11.2026:** Chain round 4 item 23 (docs/24): words or keys older than the answer they meet report it unheard by their own time, also when the ear's final or the keypad gap comes after the answer was played
 - **v2.69.120 · 27.11.2026:** Chain round 4 item 22 (#1084): an allergy said with one dish while the order already holds another goes on no dish by its place either; the core asks "Gilt dies für alle Speisen oder für eine einzelne?" and the answer decides which dishes get the note; the question leaves no allergen open for the next turn, a dish that is out keeps its sold-out sentence, and the gaps left are in docs/24

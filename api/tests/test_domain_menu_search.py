@@ -1578,6 +1578,33 @@ def test_a_correction_in_a_list_takes_the_number_before_it_back(session, sushi):
     assert not any("13" in part for part in clear), clear
 
 
+@pytest.mark.parametrize(
+    "said",
+    ["die 23, ich meine die 13 mit Allergie", "die 23 und die 13, ich meine die 47"],
+)
+def test_a_correction_without_a_comma_makes_the_search_ask(session, sushi, said):
+    """docs/24: the whole search asks for the number instead of finding both."""
+    with pytest.raises(Ambiguous) as err:
+        suche(session, sushi, said)
+    assert "Welche Nummer" in (err.value.say or "")
+
+
+@pytest.mark.parametrize(
+    ("said", "clear"),
+    [
+        ("die 13, ich nehme die 24", ["die 13", "ich nehme die 24"]),
+        ("die 13, zweimal die 24", ["die 13", "zweimal die 24"]),
+        ("die 13, bitte die 24", ["die 13", "bitte die 24"]),
+    ],
+)
+def test_an_order_word_in_front_of_a_number_takes_nothing_back(
+    session, sushi, said, clear
+):
+    """docs/24: only words that hit no dish and are no filler or quantity take
+    the number before them back; "ich nehme", "zweimal", "bitte" leave both."""
+    assert _clear_parts(session, sushi, said) == clear
+
+
 def test_a_number_said_again_is_not_split_off_in_a_part(session, tenant_id):
     """Codex PR #1082: the top split keeps "die 23 mit Erdnussallergie" with
     the part before, since the 23 was said already; the split of that part
