@@ -77,7 +77,7 @@ from api.domain.menu.wishes import (
     names_coeliac,
     speaks_of_health,
 )
-from api.domain.ordering.readback import spoken_euro
+from api.domain.ordering.readback import SpokenLine, spoken_euro, spoken_line
 from api.schemas.orders import NOTE_MAX
 from api.schemas.reservations import RESERVATION_NOTE_MAX
 
@@ -296,13 +296,24 @@ def note_unheard(state: ConversationState, unheard: str) -> None:
 # What a model may never claim about allergens (L17, E14), and the fixed
 # sentence the prompt gives it for such a question, which hands over in any
 # call (Codex PR #369). A word that names an allergen's absence itself
-# ("glutenfrei", "spurenfrei") is a claim anywhere.
+# ("glutenfrei", "spurenfrei") is a claim anywhere, also with a hyphen
+# ("Erdnuss-frei"), and written apart at the end of its clause ("Die 47 ist
+# Erdnuss frei."; the stopped parallel build of #1022): "Fisch frei wählen"
+# and "Senf frei dazu" claim nothing (deep review of #1065). "frei von
+# Erdnüssen" reads a span, so it is a soft hold (`denials`), never this.
 # ponytail: closed lists; add the wording when the call log shows it. A
 # sentence they miss reaches the guest, so the prompt forbids the claim too.
+_FREE = r"frei(?:e[mnrs]?)?"
+_APART = rf"\s+{_FREE}(?=\s*(?:[.!?,;:]|$))"
+_STEMS = (
+    r"(?:allergen|allergie|spuren|gluten|laktose|lactose|nuss|sesam|soja|milch"
+    r"|sellerie|senf|lupinen|sulfit|weizen|fisch|garnelen|krebstier|schalentier"
+    r"|mandel|cashew|schwefel)"
+)
 _ALWAYS = re.compile(
     r"keine verl(?:ä|ae)ssliche auskunft"
-    r"|(?:allergen|allergie|spuren|gluten|laktose|lactose|nuss|sesam|soja|milch|sellerie"
-    r"|senf|lupinen|sulfit|weizen|fisch)frei(?:e[mnrs]?)?\b|\beie?r?frei(?:e[mnrs]?)?\b"
+    rf"|{_STEMS}(?:-?{_FREE}\b|{_APART})"
+    rf"|\beie?r?(?:-?{_FREE}\b|{_APART})"
 )
 # Safety and separate preparation: a claim in a call that speaks of
 # allergies.
@@ -391,7 +402,8 @@ def allergen_claim(state: ConversationState, say: str) -> ToolResult | None:
     # "ohne Glutamat zubereitet"; Codex PR #643).
     if names_an_additive(lowered):
         return ADDITIVE_CLAIM
-    if _ALWAYS.search(lowered) or (
+    # "ß" as the allergen names read it: "erdnußfrei" (deep review of #1065).
+    if _ALWAYS.search(lowered.replace("ß", "ss")) or (
         (state.allergy_talk or named) and _SAFE.search(_ASKS_IF_SURE.sub(" ", lowered))
     ):
         return ALLERGEN_CLAIM
@@ -712,20 +724,28 @@ HINT_ALLERGY_TURN = (
     "WICHTIG-Hinweis und sag nur „" + SAY_ALLERGY_NOTED + "“ Ist unklar, worauf "
     "die Küche achten soll, sag nur „" + SAY_ASK_ALLERGY + "“"
 )
+# The model never speaks a denial ("ohne Erdnüsse", #1022, Maxi 27.11.2026):
+# the hints say so, so a wish goes into the `cart`, whose line the core says.
+_DENIAL_HINT = (
+    " Ein Allergen mit „ohne“, „kein“, „nicht“, „weder“ oder „frei von“ sagst "
+    "du nie selbst. Wünscht der Gast es für eine Position, schreib es als "
+    "`note` an diese Position im `cart`, vorlesen tut es der Kern; fragt er, "
+    "ob etwas enthalten ist, lies es mit get_item_details."
+)
 HINT_UNLICENSED_ALLERGEN = (
     "Abgelehnt: dein Satz nennt ein Allergen, das weder die Karte in diesem Zug "
-    "noch die Bestellung nennt. Was in einem Gericht ist und ob es für den Gast "
-    "passt, sagt nur der Kern: lies es mit get_item_details."
+    "noch die Bestellung nennt, oder verneint eines. Was in einem Gericht ist "
+    "und ob es für den Gast passt, sagt nur der Kern: lies es mit "
+    "get_item_details." + _DENIAL_HINT
 )
 # Row 6 in a call where the guest named an allergy (`sticky`): the retry may
 # say only core sentences (`loop.py`), so the hint names them.
 HINT_ALLERGY_CALL = (
     "Abgelehnt: dein Satz nennt ein Allergen, das weder die Karte in diesem Zug "
-    "noch die Bestellung nennt, und der Gast hat in diesem Gespräch eine Allergie "
-    "genannt: deinen eigenen Satz hört er jetzt nicht. Was in einem Gericht ist, "
-    "sagt nur der Kern: lies es mit get_item_details. Sonst sag nur „"
-    + SAY_ALLERGY_NOTED
-    + "“"
+    "noch die Bestellung nennt, oder verneint eines, und der Gast hat in diesem "
+    "Gespräch eine Allergie genannt: deinen eigenen Satz hört er jetzt nicht. "
+    "Was in einem Gericht ist, sagt nur der Kern: lies es mit get_item_details. "
+    "Sonst sag nur „" + SAY_ALLERGY_NOTED + "“" + _DENIAL_HINT
 )
 # In the same call a sentence about a dish of the call, with no order step in
 # the turn (`about_a_dish`, #928): "Bei Ihrer Allergie ist die 13 kein
@@ -770,7 +790,8 @@ class AllergenTurn:
     text the core accepted in this turn. Built by the loop while the tools
     run; no database access and never sent to the model.
 
-    The core reads no German grammar for it: a turn is open when the guest
+    The core reads no German grammar for it, but for a negation word next to
+    an allergen (`denials`, #1022, Maxi 27.11.2026): a turn is open when the guest
     speaks of an allergy or of allergens, or names an allergen that neither
     that menu text nor a changed order line explains (`is_open`). In an open
     turn the guest hears only sentences the core wrote; in every other turn
@@ -824,6 +845,10 @@ class AllergenTurn:
     dish_touched: bool = False
     # A draft (`draft_order`, `create_reservation`) went through in this turn.
     drafted: bool = False
+    # A search's sentence whose wish speaks of an allergen, with the wish's
+    # words: only those are the model's to `denials`, the rest ("Den Wunsch
+    # „...“ kann ich leider nicht anbieten.") is the core's (#1022).
+    wish_echoes: list[tuple[str, str]] = field(default_factory=list)
 
 
 def begin_allergen_turn(
@@ -936,7 +961,10 @@ def _note_say(
     """A tool's sentence is a core string the model may repeat, unless it
     carries the model's words of an allergen wish; all but a search's echo
     tell the guest something (`AllergenTurn.answers`)."""
-    if not said or (name == "search_menu" and _allergen_wish(data)):
+    if not said:
+        return
+    if name == "search_menu" and _allergen_wish(data):
+        turn.wish_echoes.append((said, _wish_words(data)))
         return
     turn.tool_says.append(said)
     if name == "search_menu":
@@ -963,15 +991,20 @@ def _allergen_wish(data: dict[str, Any]) -> bool:
     """Does the search's wish speak of an allergen? search_menu repeats the
     wish of the model's query in its `say` ("Nummer 13, ohne Erdnüsse"):
     those are the model's words, no core string (deep review of #860, P1)."""
+    text = _wish_words(data)
+    return bool(allergens_named(text) or _ALLERGEN_TALK.search(text))
+
+
+def _wish_words(data: dict[str, Any]) -> str:
+    """The words of the wishes of a search and its parts."""
     parts = [data, *(data.get("positions") or [])]
     wishes = [p.get("wish") for p in parts if isinstance(p, dict)]
-    text = " ".join(
+    return " ".join(
         str(wish.get(key) or "")
         for wish in wishes
         if isinstance(wish, dict)
         for key in ("text", "note")
     )
-    return bool(allergens_named(text) or _ALLERGEN_TALK.search(text))
 
 
 def _menu_text(turn: AllergenTurn, dish: dict[str, Any], codes: set[str]) -> None:
@@ -1203,9 +1236,9 @@ def own_allergens(turn: AllergenTurn, state: ConversationState, say: str) -> set
     """The allergen letters the model's own words of `say` name outside a
     whole dish name, licensed or not. `unlicensed` licenses one by the dish's
     own text or, in a sentence without a dish, by the whole turn's menu text:
-    the 47's option "Erdnuss" licensed "Die 47 hat keine Erdnüsse" as a
-    refusal for the dish alone and "Ja, die ist ohne Erdnüsse" as its retry
-    (deep review of #997).
+    the 47's option "Erdnuss" licensed "Ja, die ist ohne Erdnüsse" as the
+    retry of a refusal for the dish alone (deep review of #997); since #1022
+    a denial is held anywhere (`denials`).
     shortcut: an option name counts ("die 47 mit Erdnuss"), so a refused
     sentence that names one keeps the strict retry of before R1."""
     return allergens_named(_without_dish_names(state, _without_core(turn, state, say)))
@@ -1263,25 +1296,28 @@ def _with_search_says(turn: AllergenTurn, say: str, own: str) -> str:
     )
 
 
-def _dishes_said(state: ConversationState, text: str) -> set[str]:
+def _dishes_said(
+    state: ConversationState, text: str, *, short: bool = True
+) -> set[str]:
     """The dishes of the call `text` names, read as the guest's words are: a
     card number also as a number word or without its leading zeros ("die
     Dreizehn", "013"), a whole name also without its count ("Frühlingsrollen
     (4 Stück)") (deep review of #928). Prices, times and dates name none.
     shortcut: a card number with a letter said apart ("35 A") and other
     numbers (an address, a party size) are read as said; a dish named by a
-    word of its name only is missed (docs/24)."""
+    word of its name only is missed (docs/24). `short`: also a name
+    without its filler words ("Garnelen" for "Gebratene Garnelen")."""
     text = _FIGURES.sub(" ", text)
     numbers = {str(n) for n in find_numbers(text)}
     lowered = text.lower()
     said = set()
     for item_id, seen in state.seen_items.items():
         number, name = seen.get("number"), seen.get("name")
-        short = normalize_query(name) if isinstance(name, str) else ""
+        bare = normalize_query(name) if short and isinstance(name, str) else ""
         if (
             _names_it(text, seen)
             or (isinstance(number, str) and canonical_card(number) in numbers)
-            or (short and re.search(rf"(?<!\w){re.escape(short)}(?!\w)", lowered))
+            or (bare and re.search(rf"(?<!\w){re.escape(bare)}(?!\w)", lowered))
         ):
             said.add(item_id)
     return said
@@ -1295,18 +1331,18 @@ def unlicensed(turn: AllergenTurn, state: ConversationState, say: str) -> set[st
     in this turn; in a clause that names a dish of the call (card number or
     whole name), only that dish's own text and lines license, every named
     dish for itself, so the option "Erdnuss" of the 47 licenses no "die 13
-    hat keine Erdnüsse" nor "die 47 und die 13 enthalten keine Erdnüsse".
+    hat Erdnusssauce" nor "die 47 und die 13 enthalten Erdnüsse".
     shortcut: a sentence about two dishes that is true of one ("Die 47 mit
     Erdnusssauce und die 13 sind notiert") goes back once. Whole dish
     names the search delivered in this call are menu data and are left out
-    ("Erdnuss-Curry").
+    ("Erdnuss-Curry"). A denial licenses nothing (`denials`, #1022).
     A clause that names no dish speaks of the dishes its sentence names, or
-    else of those the sentence before it named: "Die 13? Nein, keine
-    Erdnüsse." and "Bei der 47 und der 13: keine Erdnüsse." (deep review of
+    else of those the sentence before it named: "Die 13? Nein, Erdnüsse
+    sind drin." and "Bei der 47 und der 13: Erdnüsse." (deep review of
     #860, P1).
     shortcut: a sentence that names no dish while none before it did ("Sie
-    hat keine Erdnüsse.") is licensed by the whole turn; the residual R1 of
-    the design."""
+    hat Erdnusssauce dabei.") is licensed by the whole turn; the residual R1
+    of the design."""
     rest = _without_core(turn, state, say)
     changed = _changed_lines(turn, state)
     words: set[str] = set()
@@ -1325,7 +1361,138 @@ def unlicensed(turn: AllergenTurn, state: ConversationState, say: str) -> set[st
             words |= allergens_named(clause) - _licence(turn, state, changed, named)
             if _ALLERGEN_TALK.search(clause):
                 words.add("allergen")
-    return words
+    return words | denials(turn, state, say)
+
+
+# The words that deny an allergen (#1022, Maxi 27.11.2026: the model never
+# speaks a denial, an exception to "no German grammar" of #798). The test is
+# scope-free and monotone: the model's own words of a turn that hold one of
+# them and an allergen are held, whatever the negation speaks of, so no added
+# word can let them through ("die 47 mit Erdnuss, ohne Koriander" is held
+# too; the core says the line instead, `wish_says`). One scope for all its
+# sentences: "Erdnüsse? Keine.", "in der Nr. 47 nicht drin" (deep review of
+# #1065). A stock phrase that is a clause of its own ("Kein Problem, ...",
+# "ohne Weiteres") denies nothing; "Erdnüsse sind da kein Problem" does.
+# shortcut: closed lists; "Erdnüsse weglassen" is missed, add the wording
+# when the call log shows it.
+_NEGATION = re.compile(r"\b(?:ohne|kein\w*|weder|frei\s+von|nicht\w*)\b", re.IGNORECASE)
+_STOCK = re.compile(
+    r"(?:^|(?<=[,;:.!?]))\s*kein(?:e|en)?\s+(?:problem|sorge|thema|ursache|frage"
+    r"|angst)\s*(?=[,;:.!?]|$)|\bohne\s+weiteres\b",
+    re.IGNORECASE,
+)
+# An offered variant ("mit oder ohne Erdnusssauce", docs/14) and what is sold
+# out ("Leider haben wir keine Garnelen mehr", "Garnelen haben wir heute
+# leider nicht mehr").
+# Also "mit Erdnusssauce oder ohne?" and "mit oder auch ohne" (sweep of the
+# deep review of #1065).
+_CHOICE = re.compile(
+    r"\bmit\s+oder\s+(?:auch\s+|lieber\s+)?ohne\b"
+    r"|(?<=\bmit\s)([\w-]+)\s+oder\s+(?:auch\s+|lieber\s+)?ohne(?=\s*(?:[.!?,;:]|$))",
+    re.IGNORECASE,
+)
+_NO_MORE = re.compile(
+    r"\bkein\w*(?:\s+[\w-]+){1,3}?\s+mehr\b|\bnicht\s+mehr\b", re.IGNORECASE
+)
+# In a note for the kitchen "ohne Erdnuss" is an instruction (leave the extra
+# off, "ohne das Extra"), "enthält keine Erdnüsse" a claim (`_claims_in`).
+_CLAIMED_ABSENCE = re.compile(
+    r"\b(?:kein\w*|weder|frei\s+von|nicht\w*)\b", re.IGNORECASE
+)
+
+
+def denials(turn: AllergenTurn, state: ConversationState, say: str) -> set[str]:
+    """The allergen letters of the model's own words of `say` when they hold
+    a negation word (#1022). Outside a call where the guest named an allergy
+    (`sticky`) an offered variant denies nothing, nor, in words that name no
+    dish, what is sold out: "Haben Sie Garnelen?" names an allergen and no
+    allergy, so "Garnelen haben wir heute leider nicht mehr." is heard. A
+    whole dish name with a word that names no allergen is menu data
+    ("Erdnuss-Curry ohne Koriander"); "Milch" is not."""
+    text = _without_core(turn, state, say)
+    for said, words in turn.wish_echoes:
+        text = re.sub(re.escape(said), f" {words} ", text, flags=re.IGNORECASE)
+    text = _STOCK.sub(" ", text)
+    if not sticky(state):
+        text = _CHOICE.sub(lambda hit: hit.group(1) or " mit ", text)
+        # A card number or whole name, also as a number word; "Garnelen haben
+        # wir nicht mehr" speaks of what is sold out.
+        if not _dishes_said(state, text, short=False):
+            text = _NO_MORE.sub(" ", text)
+    if not _NEGATION.search(text):
+        return set()
+    return allergens_named(_without_dish_names(state, text, plain_only=True))
+
+
+def wish_says(
+    turn: AllergenTurn, state: ConversationState, denied: set[str]
+) -> list[str]:
+    """What the guest hears in place of a model sentence held for a denial in
+    a turn that changed the order (#1022): the read-back of a draft of this
+    turn, else the core's sentence for each changed line, its options and
+    note named as the guest's ("Einmal Nummer 47 Ente knusprig mit Ente, Ihr
+    Hinweis: ohne Erdnuss."), then the tools' own answers of the turn (a dish
+    sold out, the candidates of an unclear search). Empty, so the loop sends
+    the sentence back, when a line is not one the call found, or when a
+    `denied` letter is on no note or option of the order: the guest's wish
+    would be lost unheard, and the retry's hint asks for it (deep review of
+    #1065)."""
+    if turn.drafted and state.readback:
+        said = [state.readback]
+    else:
+        lines = [_spoken(state, line) for line in _changed_lines(turn, state)]
+        if not lines or None in lines:
+            return []
+        said = [spoken_line(line) for line in lines if line is not None]
+    noted = _codes(
+        *turn.draft_notes,
+        *(
+            text
+            for line in state.cart
+            for text in [
+                line.get("note"),
+                *(o["name"] for o in line.get("options", [])),
+            ]
+        ),
+    )
+    if denied - noted:
+        return []
+    return list(dict.fromkeys([*said, *turn.answers]))
+
+
+def wish_names_an_additive(turn: AllergenTurn, state: ConversationState) -> bool:
+    """Does a changed line's note name an additive? The core's line would
+    read it aloud and promise what no table holds; it goes to the team as a
+    draft's note does (#649, Codex review of #1065, P1)."""
+    return any(
+        names_an_additive(line.get("note") or "")
+        for line in _changed_lines(turn, state)
+    )
+
+
+def _spoken(state: ConversationState, line: dict[str, Any]) -> SpokenLine | None:
+    """A cart line as the read-back speaks it. A cart option carries the
+    model's `name`, matched to the card by `option_key` (`_options_fit`); the
+    read-back says the card's spelling as `option`."""
+    seen = state.seen_items.get(line["menu_item_id"])
+    if not seen or not seen.get("number") or not seen.get("name"):
+        return None
+    card = {
+        option_key(name): name
+        for group in [*seen.get("required", []), *seen.get("optional", [])]
+        for name in group["options"]
+    }
+    options = [
+        {"option": card.get(option_key(o["name"]), o["name"])}
+        for o in line.get("options", [])
+    ]
+    return SpokenLine(
+        str(seen["number"]),
+        str(seen["name"]),
+        line["quantity"],
+        options,
+        line.get("note"),
+    )
 
 
 def _dishes_named(state: ConversationState, clause: str) -> set[str]:
@@ -1701,18 +1868,30 @@ def _claims_in(
             # Codex review of #860 (P1): "Enthält keine Erdnüsse" on a line
             # the guest only ordered would be read back as their note.
             return NOTE_CLAIM
+        claimed = allergens_named(note) if _CLAIMED_ABSENCE.search(note) else set()
+        if not old and claimed - _said_licence(state):
+            # #1022: a dish's text never licenses a claimed absence; the 47's
+            # option "Erdnuss" let "Enthält keine Erdnüsse" onto its line.
+            return NOTE_CLAIM
     return None
 
 
-def _note_licence(state: ConversationState, ids: list[str]) -> set[str]:
-    """The allergen letters a new note may name: those the guest named in
-    this call (`allergens_said`, so a wish said turns before the draft still
-    counts), the guest's health sentences (coeliac disease names gluten), and
-    the dish and option names of the note's dishes."""
+def _said_licence(state: ConversationState) -> set[str]:
+    """The allergen letters the guest named in this call: `allergens_said`
+    (a wish said turns before the draft still counts) and the guest's health
+    sentences (coeliac disease names gluten)."""
     said = " ".join(state.allergy_said)
     codes = set(state.allergens_said) | allergens_named(said)
     if names_coeliac(said):
         codes |= _GLUTEN
+    return codes
+
+
+def _note_licence(state: ConversationState, ids: list[str]) -> set[str]:
+    """The allergen letters a new note may name: those the guest named in
+    this call (`_said_licence`) and the dish and option names of the note's
+    dishes."""
+    codes = _said_licence(state)
     for item_id in ids:
         seen = state.seen_items.get(item_id, {})
         groups = [*seen.get("required", []), *seen.get("optional", [])]

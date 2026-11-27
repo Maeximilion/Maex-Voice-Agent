@@ -755,6 +755,8 @@ class ConversationLoop:
                 # Where its allergen words come from decides what the guest
                 # hears (#798, rule 1); the lists above went first.
                 open_turn = guards.is_open(aturn, state)
+                # The guest hears the core's line for a held denial (#1022).
+                core_said = False
                 changed = guards.order_changed(aturn, state)
                 # Row 1: the table sentence of every dish looked up, in an
                 # open turn that changed no order.
@@ -818,12 +820,42 @@ class ConversationLoop:
                         if about_a_dish and guards.states_a_price(aturn, state, say)
                         else []
                     )
+                    # The model never speaks a denial (#1022, Maxi 27.11.2026):
+                    # with the order changed in this turn the core says the
+                    # changed lines with their notes, with no retry. Not in an
+                    # open turn, whose retry asks for the kitchen's note, nor
+                    # for a held retry without a denial: after "Kann ich die 13
+                    # essen? Dann nehme ich sie." the line reads as a yes
+                    # (docs/24, deep review of #997).
+                    denied = guards.denials(aturn, state, say)
+                    wishes = (
+                        guards.wish_says(aturn, state, denied)
+                        if changed and not open_turn and denied
+                        else []
+                    )
                     if prices:
                         # A price the model stated for a dish this turn's
                         # search found: the core says it, from the database
                         # (#928, Maxi: B2). A retry could say only a core
                         # sentence, none better than this one.
                         say = " ".join(prices)
+                    elif wishes and guards.wish_names_an_additive(aturn, state):
+                        log_refused(
+                            self._session,
+                            state.call_id,
+                            state.tenant_id,
+                            SAY,
+                            guards.ADDITIVE_CLAIM,
+                        )
+                        return self._allergens_to_team(
+                            state,
+                            lead=SAY_ALLERGENS_BEYOND,
+                            table=open_table,
+                            card=SUMMARY_ADDITIVES,
+                        )
+                    elif wishes:
+                        say = " ".join(wishes)
+                        core_said = True
                     elif not allergen_back:
                         # Rows 3 and 6: back to the model once.
                         allergen_back = True
@@ -890,7 +922,9 @@ class ConversationLoop:
                         left and guards.SAY_ALLERGENS_OFFER in say
                     )
                     state.allergen_question_codes = guards.codes_left(aturn, state, say)
-                refused = guards.false_booking(state, say)
+                # The core's own line is no booking claim, whatever its note
+                # says (deep review of #1065).
+                refused = None if core_said else guards.false_booking(state, say)
                 if refused is not None:
                     # Rule 3 for what the guest hears: "Ihre Abholung ist
                     # bestätigt, der Abholcode lautet 8842" with nothing booked

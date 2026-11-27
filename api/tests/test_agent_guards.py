@@ -27,6 +27,7 @@ from api.agent.guards import (
     begin_turn,
     claims_in_a_note,
     core_only,
+    denials,
     false_booking,
     is_open,
     leaves_a_question,
@@ -1513,13 +1514,8 @@ def test_the_old_absence_forms_are_no_list_claim_any_more():
             "Die 47 hat Erdnuss als Sauce zur Wahl.",
             None,
         ),
-        # The wish stands in the note of the line that changed in this turn.
-        (
-            "Die 13 ohne Erdnüsse bitte.",
-            [search(PHO)],
-            "Die 13 ohne Erdnüsse ist kein Problem.",
-            [{"menu_item_id": PHO, "note": "ohne Erdnüsse"}],
-        ),
+        # A wish read back with its denial is the core's line since #1022
+        # (test_the_guests_own_wish_is_read_back_by_the_core).
     ],
 )
 def test_an_order_sentence_named_like_an_allergen_is_spoken(said, tools, say, cart):
@@ -1778,8 +1774,9 @@ def test_a_note_naming_an_allergen_nobody_said_goes_back(note):
 
 def test_a_note_moved_to_another_dish_is_checked_again():
     """Codex review of #860 (P1): the 47's option "Erdnuss" licenses the note
-    on the 47; copied onto the 13 it is a new note there."""
-    note = "Enthält keine Erdnüsse"
+    on the 47; copied onto the 13 it is a new note there. An affirmative note:
+    a denial the option never licenses (#1022)."""
+    note = "Bitte extra Erdnuss"
     ente = {"menu_item_id": ENTE, "quantity": 1, "note": note}
     _, state = allergen_turn("Die 47 bitte.", search(ENTE), cart=[ente])
     _, state = allergen_turn("Und die 13.", search(PHO), state=state)
@@ -1962,7 +1959,7 @@ def test_a_clause_without_a_dish_speaks_of_the_dish_named_before_it(say):
 @pytest.mark.parametrize(
     "say",
     [
-        "Die 47 mit Erdnuss, die 13 ohne Zwiebeln.",
+        "Die 47 mit Erdnuss, die 13 mit Zwiebeln.",
         "Gerne, die 47 mit Erdnuss kostet 12,40 Euro.",
         "Die 13 kostet 11,90 Euro. Die 47 gibt es mit Erdnuss.",
     ],
@@ -2440,3 +2437,101 @@ def test_a_suitability_promise_states_no_price():
     _hit_found(turn, pho, "13", "Pho Bo", 1190)
 
     assert not states_a_price(turn, state, "Die 13 ist für Sie kein Problem.")
+
+
+@pytest.mark.parametrize(
+    ("text", "allergy_call", "denied"),
+    [
+        # Deep review of #1022: every form the first reader missed.
+        ("Die 47 ohne Koriander und ohne Erdnüsse ist notiert", True, {"E"}),
+        ("Kein Fleisch und keine Erdnüsse", True, {"E"}),
+        ("Die 47 ohne Koriander, Zwiebeln und Erdnüsse", True, {"E"}),
+        ("Die 47 enthält keinerlei Erdnüsse", True, {"E"}),
+        ("Die 47 enthält weder Erdnüsse noch Koriander", True, {"E"}),
+        ("Erdnüsse hat die 47 keine", True, {"E"}),
+        ("Erdnüsse sind in der 47 keine drin laut Karte", True, {"E"}),
+        ("Die 47 ist ganz ohne jegliche Spuren von Erdnüssen", True, {"E"}),
+        ("Die 47 ohne Soja- und Erdnusssauce", True, {"E", "F"}),
+        ("Die 47 ohne (Erdnuss)", True, {"E"}),
+        ("Die 47 ist frei von Erdnüssen", True, {"E"}),
+        ("Erdnüsse sind in der 47 nicht drin", False, {"E"}),
+        # Deep review of #1065: a bare "nicht", "nichts", a reassurance that
+        # is the claim, an abbreviation's full stop, the negation alone.
+        ("Gern, Erdnüsse enthält die 47 nicht", True, {"E"}),
+        ("Nein, Erdnüsse sind nicht in der 47", True, {"E"}),
+        ("Da ist nichts mit Erdnuss drin", True, {"E"}),
+        ("Gern, die 47 ist notiert. Erdnüsse sind da kein Problem", True, {"E"}),
+        ("Keine Sorge wegen der Erdnüsse, die 47 ist notiert", True, {"E"}),
+        ("Gern, Erdnüsse sind in der Nr. 47 nicht drin", True, {"E"}),
+        ("Erdnüsse? Keine", True, {"E"}),
+        ("In der 47 ist kein Sesam enthalten", False, {"N"}),
+        # Scope-free: a negation anywhere in the sentence holds every
+        # allergen of it; no added word undoes it (Codex review of #1065).
+        ("Die 47 mit Ente und Erdnuss, ohne Koriander", True, {"E"}),
+        ("Die 47 bekommt Erdnusssauce und keinen Koriander", False, {"E"}),
+        (
+            "Der Tisch ist frei von 18 bis 20 Uhr und die 47 mit Erdnusssauce",
+            False,
+            {"E"},
+        ),
+        # The model's words of the turn are one scope: a negation in one
+        # sentence holds an allergen of another (deep review of #1065).
+        ("Die 47 mit Erdnuss ist notiert. Ohne Koriander", True, {"E"}),
+        # A pronoun after a core sentence (docs/24 row of #1022, now held).
+        ("Notiert: Nummer 47. Die ist auch ohne Erdnüsse", True, {"E"}),
+        # No allergen, or a stock phrase: nothing held.
+        ("Die 47 ohne Koriander ist notiert", True, set()),
+        ("Kein Problem, Erdnusssauce ist dabei", True, set()),
+        ("Keine Sorge, die 47 mit Erdnuss ist notiert", True, set()),
+        # An offered variant and what is sold out deny nothing outside a call
+        # about an allergy, and count inside one; sold out only in a sentence
+        # that names no dish.
+        ("Möchten Sie die 47 mit oder ohne Erdnusssauce?", False, set()),
+        ("Möchten Sie die 47 mit oder ohne Erdnusssauce?", True, {"E"}),
+        ("Leider haben wir heute keine Garnelen mehr", False, set()),
+        ("Leider haben wir heute keine Garnelen mehr", True, {"B"}),
+        ("Die 47 hat keine Erdnüsse mehr", False, {"E"}),
+        ("Die 47 ist notiert. Sie hat keine Erdnüsse mehr", False, {"E"}),
+        ("Die siebenundvierzig hat keine Erdnüsse mehr", False, {"E"}),
+        ("Die 47 gibt es auch mit Tofu oder ohne Erdnüsse", False, {"E"}),
+        # Sweep of the deep review of #1065: the other ways to offer a
+        # variant, a hyphenated dish sold out.
+        ("Möchten Sie die 47 mit Erdnusssauce oder ohne?", False, set()),
+        ("Gern mit oder auch ohne Erdnusssauce", False, set()),
+        ("Möchten Sie die 47 mit Erdnusssauce oder ohne?", True, {"E"}),
+        ("Leider haben wir keine Garnelen-Nudeln mehr", False, set()),
+    ],
+)
+def test_the_denial_test(text, allergy_call, denied):
+    """#1022 (redesign): a sentence of the model's own words that holds a
+    negation word and an allergen is held, read without a dish's scope."""
+    said = ["Ich habe eine Erdnussallergie."] if allergy_call else []
+    turn, state = allergen_turn(
+        "Die 47 bitte.", search(ENTE), state=new_state(allergy_said=said)
+    )
+
+    assert sticky(state) is allergy_call
+    assert denials(turn, state, text) == denied
+
+
+@pytest.mark.parametrize(
+    ("wish", "say", "denied"),
+    [
+        (
+            "mit Garnelen, aber extra scharf",
+            "Den Wunsch „mit Garnelen, aber extra scharf“ kann ich leider nicht "
+            "anbieten.",
+            set(),
+        ),
+        ("ohne Erdnüsse", "Nummer 47, ohne Erdnüsse.", {"E"}),
+    ],
+)
+def test_a_wish_echo_is_read_by_its_wish_words(wish, say, denied):
+    """#1022, eval of the redesign: a search's sentence with an allergen wish
+    is the model's words only as far as the wish goes; the "nicht anbieten"
+    of the core's template denies nothing."""
+    name, result, args = search(ENTE, wish={"text": wish})
+    echo = ToolResult(ok=True, data=result.data, say=say)
+    turn, state = allergen_turn("Die 47 bitte.", (name, echo, args))
+
+    assert denials(turn, state, say) == denied

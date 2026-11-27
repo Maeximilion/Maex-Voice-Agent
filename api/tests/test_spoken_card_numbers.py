@@ -14,7 +14,7 @@ from api.agent import guards
 from api.domain.menu.details import say_allergens
 from api.domain.menu.numberwords import spoken_card
 from api.domain.menu.search import say_understood
-from api.domain.ordering.readback import SpokenLine, _spoken_line
+from api.domain.ordering.readback import SpokenLine, spoken_line
 from api.schemas.menu import MenuHit
 
 
@@ -37,11 +37,11 @@ def test_the_prefix_is_said_in_capitals(stored, spoken):
 
 def test_the_read_back_says_the_prefix_in_capitals():
     line = SpokenLine("s12", "Thunfisch Maki", 2, [], None)
-    assert _spoken_line(line) == "Zweimal Nummer S12 Thunfisch Maki."
+    assert spoken_line(line) == "Zweimal Nummer S12 Thunfisch Maki."
 
 
 def test_the_read_back_keeps_a_plain_and_a_lettered_number():
-    assert _spoken_line(SpokenLine("35b", "Bun Cha", 1, [], None)) == (
+    assert spoken_line(SpokenLine("35b", "Bun Cha", 1, [], None)) == (
         "Einmal Nummer 35b Bun Cha."
     )
 
