@@ -4033,6 +4033,7 @@ def test_a_denial_in_an_open_turn_still_goes_back(session, known_tenant):
 
     assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_ALLERGY_TURN
     assert said_nowhere(result, claim)
+    assert result.say == [guards.SAY_ALLERGY_NOTED]
 
 
 @pytest.mark.parametrize(
@@ -4077,12 +4078,14 @@ def test_frei_von_is_no_claim_but_a_word_with_frei_is(session, known_tenant):
     for claim in (
         "Die 47 ist Erdnuss frei, ich trage sie ein.",
         "Die 47 ist erdnußfrei.",
+        "Die 23 ist garnelenfrei.",
     ):
         assert guards.allergen_claim(state, claim) is guards.ALLERGEN_CLAIM
     for plain in (
         "Bei der 47 können Sie zwischen Ente, Huhn und Fisch frei wählen.",
         "Ketchup und Senf frei dazu.",
         "Ein Ei frei dazu.",
+        "Den Salat gibt es mit Senf frei wählbar.",
     ):
         assert guards.allergen_claim(state, plain) is None
 
@@ -4204,9 +4207,7 @@ def test_an_additive_note_behind_a_denial_goes_to_the_team(session, known_tenant
     assert all("Glutamat" not in say for say in result.say)
 
 
-def test_a_booking_word_in_a_note_does_not_refuse_the_core_line(
-    session, known_tenant
-):
+def test_a_booking_word_in_a_note_does_not_refuse_the_core_line(session, known_tenant):
     """Deep review of #1065: `false_booking` read the core's own line, so a
     note with "gebucht" sent it back on every hop."""
     state = state_for(session, known_tenant, phone=CALLER)

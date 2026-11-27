@@ -244,28 +244,39 @@ up (`guards.is_open`)
        the guest named in this turn); whole dish names of the search are
        menu data. A clause that names a dish is licensed by that dish's own
        text, one that names none by the dishes its sentence or the sentence
-       before it named. A sentence of the model's own words that holds a
-       negation word ("ohne", "kein...", "weder", "frei von", "nicht
-       drin/enthalten/dabei") and an allergen is held, whatever the
-       negation speaks of: the dish's text names what it may hold, never
-       what it lacks ("Die 47 ist ohne Erdnüsse" next to the 47's option
-       "Erdnuss", #1022, Maxi 27.11.2026: the redesign after three review
-       rounds of a span reader). The test is monotone, no added word lets
-       such a sentence through, so "Die 47 mit Erdnuss, ohne Koriander" is
-       held too. Stock phrases ("Kein Problem") deny nothing; outside a
-       call about an allergy neither does an offered variant ("mit oder
-       ohne Erdnusssauce") nor, in a sentence naming no dish, what is sold
-       out ("keine Garnelen mehr"). With the order changed in the turn, and
-       the turn not open, the guest hears the core instead, with no retry:
-       the read-back of a draft of the turn, else each changed line as the
-       read-back says it ("Einmal Nummer 47 Ente knusprig mit Ente, Ihr
-       Hinweis: ohne Erdnuss.", `guards.wish_says`); the model's follow-up
-       question is lost that turn. Otherwise it goes back once, then as
-       below. "Erdnuss-frei" and "Erdnuss frei" are claims like
-       "erdnussfrei"; "frei von" is only this soft hold, so "frei von 18
+       before it named. The model's own words of the turn that hold a
+       negation word ("ohne", "kein...", "weder", "frei von", "nicht",
+       "nichts") and an allergen are held, whatever the negation speaks of
+       and in whichever of their sentences: the dish's text names what it
+       may hold, never what it lacks ("Die 47 ist ohne Erdnüsse" next to
+       the 47's option "Erdnuss", #1022, Maxi 27.11.2026: the redesign after
+       three review rounds of a span reader). The test is monotone, no
+       added word lets such words through, so "Die 47 mit Erdnuss, ohne
+       Koriander" is held too, and so are "Erdnüsse? Keine." and "in der
+       Nr. 47 nicht drin". A stock phrase that is a clause of its own
+       ("Kein Problem, ...") denies nothing, "Erdnüsse sind da kein
+       Problem" does. Outside a call where the guest named an allergy
+       neither does an offered variant ("mit oder ohne Erdnusssauce",
+       "mit Erdnusssauce oder ohne?") nor, in words that name no dish by
+       card number (also as a number word) or whole name, what is sold out
+       ("keine Garnelen mehr", "Garnelen haben wir nicht mehr"). With the
+       order changed in the turn, and the turn not open, the guest hears
+       the core instead, with no retry: the read-back of a draft of the
+       turn, else each changed line as the read-back says it ("Einmal
+       Nummer 47 Ente knusprig mit Ente, Ihr Hinweis: ohne Erdnuss.",
+       `guards.wish_says`), then the tools' own answers of the turn (a dish
+       sold out); the model's follow-up question is lost that turn. Only
+       when each denied allergen stands on a note or option of the order:
+       a wish the model left out of the `cart` would be lost unheard, so
+       that sentence goes back once, its hint asking for the note. A
+       changed line whose note names an additive goes to the team, as a
+       draft does (#649). Otherwise it goes back once, then as below.
+       "Erdnuss-frei", "erdnußfrei", "garnelenfrei" and "Erdnuss frei" at
+       the end of its clause are claims like "erdnussfrei"; "Fisch frei
+       wählen" is none; "frei von" is only this soft hold, so "frei von 18
        bis 20 Uhr" next to a peanut option hands nothing over. A cart note
-       may claim an absence ("enthält keine Erdnüsse") only of what the
-       guest named. An
+       may claim an absence ("enthält keine Erdnüsse", "Erdnüsse sind
+       nicht enthalten") only of what the guest named. An
        unlicensed word, or "Allergene" or "Allergiker"
        in the model's own words, goes back once, then as above; in a call
        where the guest named an allergy the retry may say only core

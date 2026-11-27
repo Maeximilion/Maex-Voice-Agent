@@ -2493,6 +2493,12 @@ def test_a_suitability_promise_states_no_price():
         ("Die 47 ist notiert. Sie hat keine Erdnüsse mehr", False, {"E"}),
         ("Die siebenundvierzig hat keine Erdnüsse mehr", False, {"E"}),
         ("Die 47 gibt es auch mit Tofu oder ohne Erdnüsse", False, {"E"}),
+        # Sweep of the deep review of #1065: the other ways to offer a
+        # variant, a hyphenated dish sold out.
+        ("Möchten Sie die 47 mit Erdnusssauce oder ohne?", False, set()),
+        ("Gern mit oder auch ohne Erdnusssauce", False, set()),
+        ("Möchten Sie die 47 mit Erdnusssauce oder ohne?", True, {"E"}),
+        ("Leider haben wir keine Garnelen-Nudeln mehr", False, set()),
     ],
 )
 def test_the_denial_test(text, allergy_call, denied):
