@@ -43,7 +43,7 @@ Not compared with a second model. Accepted 02.11.2026 under Maxi's delegation (r
 - **U4, logs:** periods decided with L8 (docs/03).
 - **U5, team data:** GUI accounts and audit log on Art. 6(1)(b), (c), (f); audit log 12 months (decided with L8); no speech-to-text and no recording on the team's leg after the AI hands a call over (the recorded team calls of mode `shadow` follow L11).
 - **U6, reservations and addresses:** periods decided with L8 (docs/03).
-- **U7, backups:** client-side encryption, EU storage with a DPA, rolling 30 days (decided with L8); an erasure ledger outside the database and its backups (row ids and date, no personal data) is replayed after every restore, so nothing erased comes back (T-9.3); the privacy notice says erased data lives on in backups until they expire.
+- **U7, backups:** client-side encryption, EU storage with a DPA, rolling 30 days (decided with L8); an erasure ledger outside the database and its backups (row ids and date, no personal data) is replayed after every restore, so nothing erased comes back (#1085); the privacy notice says erased data lives on in backups until they expire.
 - **U8, text model and speech services:** per vendor before the first key on real data: signed DPA, EU region in the contract, no training, zero or stated retention, sub-processor list, transfer basis (L7), deletion at contract end.
 
 ### Review of 02.11.2026 (Claude, at Maxi's request)
@@ -81,7 +81,7 @@ The plugin's compliance check ran over L1 to L18, D9, U1 to U8, N1 and N2. Three
 | L2 recording consent | built, off (T-11.3); before it goes on: team consents (L11), keys of the real telephones, L4, mark on the files | Maxi; #637 |
 | L3, L4, L15 privacy notice | open: draft ready, not online | Maxi |
 | L5, L6, L7, U8 contracts, zero retention, transfers | open: no paid service chosen; none needed in the test phase | Maxi |
-| L8 deletion | built (T-11.2, T-11.7, T-6.7); the restore ledger of T-9.3 waits for the second storage | T-9.3 |
+| L8 deletion | built (T-11.2, T-11.7, T-6.7); the replay of the erasure ledger after a restore is open (#1085) | #1085 |
 | L9 record of processing | open: draft ready | Maxi |
 | L10, L12 DSFA with the balancing | open: draft v0.1 outside the repository | Maxi |
 | L11 team sheet and consents | open: draft ready | Maxi |
