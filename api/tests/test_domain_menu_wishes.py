@@ -2526,7 +2526,7 @@ def test_a_second_option_next_to_a_statt_option_is_kept():
     """abholung_0064: "mit Tofu und Nudeln statt Reis" was declined."""
     wish = wish_of("mit Tofu und Nudeln statt Reis", SWAP_OPTION)
     assert wish.kind == "option"
-    assert [(o.group, o.option, o.price_delta_cents) for o in wish.options] == [
+    assert [(o.group, o.option, o.price_delta_cents) for o in wish.options or []] == [
         ("Fleisch", "Tofu", 0),
         ("Extras", "Nudeln statt Reis", 350),
     ]
@@ -2539,7 +2539,7 @@ def test_words_after_the_swapped_part_still_count(said):
     """ "Nudeln statt Reis und Huhn" dropped Huhn without a word."""
     wish = wish_of(said, BEILAGE)
     assert wish.kind == "option"
-    assert [(o.group, o.option) for o in wish.options] == [
+    assert [(o.group, o.option) for o in wish.options or []] == [
         ("Beilage", "Nudeln"),
         ("Fleisch", "Huhn"),
     ]
@@ -2564,7 +2564,7 @@ def test_what_the_swap_leaves_unclear_is_asked(said):
 def test_search_keeps_the_option_after_the_swap(session, tenant_id):
     result = suche(session, tenant_id, "die 47 Nudeln statt Reis und Huhn")
     assert [h.number for h in result.results] == ["47"]
-    assert [(o.group, o.option) for o in result.wish.options] == [
+    assert [(o.group, o.option) for o in result.wish.options or []] == [
         ("Beilage", "Nudeln"),
         ("Fleisch", "Huhn"),
     ]
