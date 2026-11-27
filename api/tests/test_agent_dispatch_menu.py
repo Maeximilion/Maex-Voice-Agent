@@ -14,9 +14,10 @@ import pytest
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
-from api.agent.dispatch import SAY_ALLERGY_SCOPE, dispatch
+from api.agent.dispatch import SAY_ALLERGY_SCOPE, _split_allergy, dispatch
 from api.agent.state import ConversationState, apply_tool_result
 from api.models import Call, MenuItem, Order
+from api.schemas.menu import Wish
 from api.tests.test_domain_draft_order import NOW, _call, _tenant
 
 
@@ -554,11 +555,6 @@ def test_each_number_in_a_list_keeps_its_own_wish(
         ),
         # A removal said with the allergy stays on its dish (Codex PR #1082).
         (
-            "die 23 und Pho Bo ohne Zwiebeln, ich habe eine Erdnussallergie",
-            [None, ("note", "Ohne Zwiebeln")],
-            "WICHTIG !!! Allergie: Erdnuss",
-        ),
-        (
             "die 23 ohne Erdnüsse, mit Allergie und die 13",
             [("note", "ohne Erdnüsse"), None],
             "mit Allergie",
@@ -581,6 +577,23 @@ def test_an_allergy_with_several_dishes_is_asked_about(
     assert result.data["allergy"]["text"] == allergy
     assert result.data["say"].endswith(SAY_ALLERGY_SCOPE)
     assert "frei davon" not in result.data["say"]
+
+
+def test_a_removal_said_with_the_allergy_stays_on_its_dish():
+    """Codex PR #1082: with the ingredient known the removal is in the text."""
+    kept, allergy = _split_allergy(
+        Wish(
+            text="WICHTIG !!! Allergie: Erdnuss. Ohne Zwiebeln",
+            kind="allergy",
+            ingredient="Erdnuss",
+        )
+    )
+    assert kept is not None and (kept.kind, kept.text) == ("note", "Ohne Zwiebeln")
+    assert allergy.text == "WICHTIG !!! Allergie: Erdnuss"
+    alone, same = _split_allergy(
+        Wish(text="WICHTIG !!! Allergie: Erdnuss", kind="allergy", ingredient="Erdnuss")
+    )
+    assert alone is None and same.text == "WICHTIG !!! Allergie: Erdnuss"
 
 
 def test_an_allergy_with_one_dish_stays_with_it(session, tenant_id, call_id):
