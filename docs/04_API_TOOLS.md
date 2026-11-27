@@ -201,7 +201,10 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    Gesprächskern (`agent/dispatch.py`) fragt nicht nach, sondern zerlegt selbst
    und sucht je Teil: Antwort `match_type: "positions"` mit einem Eintrag je Teil
    (`query`, `ok`, Treffer oder `error_code` und `say`). The only allergy of a
-   sentence that clearly names several dishes stays on none of them (Maxi,
+   sentence that clearly names several dishes, or names one while the order
+   (`cart` of the state) already holds another (#1084, then as `positions`
+   with one entry; not for a dish that is out, and not in the turn that
+   answers the question), stays on none of them (Maxi,
    27.11.2026, #1067): the answer carries it as `allergy`, its `say` ends in
    „Gilt dies für alle Speisen oder für eine einzelne?" (a fixed sentence of
    an allergy turn), and the guest's answer decides which dishes get the note. Trennt der Satz allein

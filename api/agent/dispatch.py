@@ -12,7 +12,7 @@ import json
 import logging
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from types import EllipsisType
@@ -288,16 +288,20 @@ def _search_menu(
     tenant_id: uuid.UUID,
     args: dict[str, Any],
     now: datetime | None,
+    in_cart: Collection[str] = (),
 ) -> BaseModel:
     """One sentence, one position (docs/04 §search_menu): if the guest names
     several, the sentence is split here and each part is searched. Over HTTP,
     search_menu answers that with ambiguous; the agent gets all parts in one go
     instead. A part without a hit stays visible with error_code and say instead
-    of silently dropping out."""
+    of silently dropping out. `in_cart`: the menu_item_ids of the order as it
+    stands, so that an allergy said with one dish while the order holds
+    another is asked about like one said with several (#1084)."""
     req = SearchMenuRequest(call_id=call_id, tenant_id=tenant_id, **args)
     # Read the menu once per tool call, not per part (code review PR #155).
     card = card_format(session, tenant_id)
     parts = position_parts(session, tenant_id, req.query, now=now, card=card)
+    founds: list[SearchResult | AppError] = []
     if len(parts) <= 1:
         # Already split: search_menu does not check again (review PR #139).
         found = search_menu(
@@ -309,30 +313,37 @@ def _search_menu(
             split_check=False,
             card=card,
         )
-        if _repeats(found):
-            echo = say_understood(
-                [(found.match_type, found.results[0], found.wish)], req.query
-            )
-            # An allergy is repeated as well; its sentence from the domain follows.
-            return found.model_copy(update={"say": _join(echo, found.say)})
-        return found
+        # A dish that is out takes no scope question: the guest hears that it
+        # is out and what is left, as before (#1084 review).
+        out = bool(found.results) and found.results[0].sold_out
+        if out or _allergy_to_place([found], in_cart) is None:
+            if _repeats(found):
+                echo = say_understood(
+                    [(found.match_type, found.results[0], found.wish)], req.query
+                )
+                # An allergy is repeated as well; its sentence from the domain
+                # follows.
+                return found.model_copy(update={"say": _join(echo, found.say)})
+            return found
+        # Its allergy waits for its dishes, as in a sentence of several.
+        parts, founds = [req.query], [found]
+    else:
+        for part in parts:
+            try:
+                founds.append(
+                    search_menu(
+                        session, tenant_id, part, req.max_results, now=now, card=card
+                    )
+                )
+            except AppError as exc:
+                founds.append(exc)
     positions = []
     understood = []
     # Mandatory sentences of the parts: "kann ich nicht anbieten" and the note
     # about the allergy belong in the answer's sentence, otherwise they would
     # be lost in a list (Codex PR #139, P1).
     notices: list[str] = []
-    founds: list[SearchResult | AppError] = []
-    for part in parts:
-        try:
-            founds.append(
-                search_menu(
-                    session, tenant_id, part, req.max_results, now=now, card=card
-                )
-            )
-        except AppError as exc:
-            founds.append(exc)
-    scope = _allergy_to_place(founds)
+    scope = _allergy_to_place(founds, in_cart)
     allergy = None
     if scope is not None:
         unplaced = founds[scope]
@@ -397,11 +408,15 @@ def _split_allergy(wish: Wish) -> tuple[Wish | None, Wish]:
     return (Wish(text=removal, kind="note") if removal else None), allergy
 
 
-def _allergy_to_place(founds: list[SearchResult | AppError]) -> int | None:
+def _allergy_to_place(
+    founds: Sequence[SearchResult | AppError], in_cart: Collection[str] = ()
+) -> int | None:
     """The part whose allergy must not stay on its dish: the only allergy of a
-    sentence that clearly named several dishes ("die 23 und die 13 mit
-    Erdnussallergie", "Pho Bo und die 23, ich habe eine Erdnussallergie").
-    Where it stands says nothing about whose dishes it is for."""
+    sentence when more than one dish is in play, named in it ("die 23 und die
+    13 mit Erdnussallergie", "Pho Bo und die 23, ich habe eine
+    Erdnussallergie") or already in the order (`in_cart`, "die 13, ich habe
+    eine Erdnussallergie" after "die 23", #1084). Where it stands says nothing
+    about whose dishes it is for."""
     clear = {
         i: f
         for i, f in enumerate(founds)
@@ -410,7 +425,9 @@ def _allergy_to_place(founds: list[SearchResult | AppError]) -> int | None:
     allergic = [
         i for i, f in clear.items() if f.wish is not None and f.wish.kind == "allergy"
     ]
-    return allergic[0] if len(clear) > 1 and len(allergic) == 1 else None
+    named = {str(f.results[0].menu_item_id) for f in clear.values()}
+    dishes = len(clear) + bool({str(i) for i in in_cart} - named)
+    return allergic[0] if dishes > 1 and len(allergic) == 1 else None
 
 
 def _repeats(found: SearchResult) -> bool:
@@ -517,12 +534,15 @@ def dispatch(
     now: datetime | None = None,
     pending_order: uuid.UUID | EllipsisType | None = ...,
     seconds_left: float | None = None,
+    in_cart: Collection[str] = (),
 ) -> ToolResult:
     """`pending_order`: the order the conversation holds for a yes, None for
     none; it decides whether `draft_order` may replay a stored draft (#952).
     The default is a caller without a conversation. `seconds_left`: what is
     left of the guest's turn, which bounds the tool's waits on the phone
-    line (`db.bounded_by`), the statements of its log entry included."""
+    line (`db.bounded_by`), the statements of its log entry included.
+    `in_cart`: the menu_item_ids of the conversation's order, for
+    `search_menu` (#1084)."""
     started = time.perf_counter()
     adapter = TOOLS.get(name)
     # Call and tenant come from the code, never from the model. A real model
@@ -539,6 +559,8 @@ def dispatch(
                 result = (
                     _draft_order(session, call_id, tenant_id, args, now, pending_order)
                     if adapter is _draft_order
+                    else _search_menu(session, call_id, tenant_id, args, now, in_cart)
+                    if adapter is _search_menu
                     else adapter(session, call_id, tenant_id, args, now)
                 )
         except ValidationError as exc:

@@ -2708,6 +2708,13 @@ Fixed by item 23 of chain round 4 (#1066): the session keeps when the line repor
 | Point | Why still open | When due |
 |---|---|---|
 | Words said before the caller heard an answer can still run against it in two timing cases (`telephony/session.py` `_on_heard`, `_on_key`) | Deep review of the #888 round 3 `last_say` PR (25.11.2026): keys typed before an interruptible answer began to play are handed over after the keypad gap, when the answer may have been heard, so no `on_unheard` is sent for them; and a final the ear reports only after the whole answer was played is taken as said after it. Then `last_say` names a sentence the caller had not heard when they spoke. Read-backs and every sentence the core counts as heard are never interruptible, so no yes books anything (rule 3). | When the call log shows either case, or with the next change to the keypad or the ear's lag handling |
+## Open Points from Reviews (archive, allergy with another dish in the order fixed 27.11.2026)
+
+Fixed by item 22 of chain round 4 (#1084): `search_menu` in the conversation core gets the dishes of the order (`state.cart`), and an allergy said with one dish while the order holds another goes on no dish by its place; the core asks "Gilt dies für alle Speisen oder für eine einzelne?" (`api/agent/dispatch.py` `_allergy_to_place`). What is still open of the rule is in docs/24 "Where the scope question for an allergy is not asked, or asked once too often".
+
+| Point | Why still open | When due |
+|---|---|---|
+| An allergy said for one dish while another is already in the order is still noted on that dish (`api/agent/loop.py`, `api/agent/guards.py` `unnoted_allergy`) | Maxi, 27.11.2026 (#1067): with more than one dish in play the guest is asked "Gilt dies für alle Speisen oder für eine einzelne?". Chain round 4 item 14 (PR #1082) asks it for a sentence that names several dishes (`dispatch._allergy_to_place`); a sentence with one dish ("Pho Bo, ich habe eine Erdnussallergie" after "die 23") goes through the loop's allergy path and still notes it on its dish. | the next allergy change |
 
 ## Chain command (archive, one session per item replaced 27.11.2026)
 

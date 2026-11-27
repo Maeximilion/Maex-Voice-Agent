@@ -17,13 +17,14 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from api.agent.dispatch import ToolResult
+from api.agent.dispatch import SAY_ALLERGY_SCOPE, ToolResult
 from api.agent.guards import (
     HINT_CART_FORM,
     HINT_CART_ITEM,
     HINT_CART_OPTION,
     HINT_CART_SOLD_OUT,
     HINT_DRAFT_DIFFERS,
+    SAY_ALLERGY_NOTED,
     begin_turn,
     note_said,
     refusal,
@@ -989,3 +990,198 @@ def test_a_cart_note_is_taken_as_the_model_wrote_it(note):
 
     assert take_cart(state, [line(ENTE, note=note)]) is None
     assert state.cart[0]["note"] == note
+
+
+ERDNUSS = "WICHTIG !!! Allergie: Erdnuss"
+
+
+def allergy_after_another_dish(state, said):
+    """An order of two dishes over two turns, the allergy said with the second
+    one, read from state and input alone. The allergy the core left on no dish
+    goes on the dishes the guest's answer names (#1084)."""
+    result = tool_result(said)
+    if result and result["tool"] == "search_menu":
+        data = result["data"]
+        found = data.get("positions") or [data]
+        cart = [
+            *state.get("cart", []),
+            *(line(part["results"][0]["menu_item_id"]) for part in found),
+        ]
+        return LLMTurn(say=result.get("say") or "Gern.", cart=cart)
+    if result and result["tool"] == "draft_order":
+        return LLMTurn(say=result["data"]["readback"])
+    if result and result["tool"] == "confirm":
+        return LLMTurn(say="Vielen Dank, bis gleich.")
+    if result and result["tool"] == "say":
+        # Its own sentence went back in an allergy turn.
+        return LLMTurn(say=SAY_ALLERGY_NOTED, cart=state["cart"])
+    if said.startswith("Die "):
+        return LLMTurn(tool_call=ToolCall("search_menu", {"query": said}))
+    if said in ("Nur für die 13.", "Für alle."):
+        cart = [
+            {**entry, "note": ERDNUSS}
+            if said == "Für alle." or entry["number"] == "13"
+            else entry
+            for entry in state["cart"]
+        ]
+        return LLMTurn(say=SAY_ALLERGY_NOTED, cart=cart)
+    if said == "Müller":
+        return LLMTurn(
+            tool_call=ToolCall(
+                "draft_order",
+                {
+                    "type": "pickup",
+                    "customer": {"name": said, "phone": state["slots"]["phone"]},
+                    "items": state["cart"],
+                },
+            ),
+            state_patch={"guest_name": said},
+        )
+    return LLMTurn(
+        tool_call=ToolCall(
+            "confirm", {"entity": "order", "entity_id": state["order_id"]}
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("answer", "notes"),
+    [
+        ("Nur für die 13.", {"23": None, "13": ERDNUSS}),
+        ("Für alle.", {"23": ERDNUSS, "13": ERDNUSS}),
+    ],
+)
+def test_an_allergy_with_one_dish_is_asked_about_when_the_order_holds_another(
+    session, tenant_id, state, answer, notes
+):
+    """#1084: an allergy said with one dish while another is already in the
+    order was noted on that one dish without asking. With more than one dish
+    in play the core asks whether it holds for all or one (Maxi, 27.11.2026,
+    #1067), and the answer decides which dishes get the note."""
+    loop = ConversationLoop(
+        session, StatelessModel(allergy_after_another_dish), "system", now=NOW
+    )
+    loop.run_turn(state, "Die 23.")
+    asked = loop.run_turn(state, "Die 13, ich habe eine Erdnussallergie.")
+    assert SAY_ALLERGY_SCOPE in " ".join(asked.say)
+    # The allergy waits for the answer: on no dish yet.
+    assert [entry.get("note") for entry in state.cart] == [None, None]
+    loop.run_turn(state, answer)
+    loop.run_turn(state, "Müller")
+    loop.run_turn(state, "Ja, passt so.")
+
+    order = session.scalars(select(Order)).one()
+    assert order.status == "confirmed"
+    booked = session.execute(
+        select(MenuItem.number, OrderItem.note)
+        .join(MenuItem, MenuItem.id == OrderItem.menu_item_id)
+        .where(OrderItem.order_id == order.id)
+    )
+    assert dict(booked.all()) == notes
+
+
+def test_an_allergy_with_the_only_dish_of_the_order_stays_on_it(
+    session, tenant_id, state
+):
+    """The dish of the order said again with the allergy is no other dish:
+    nothing to ask, the allergy stays on it."""
+    model = StatelessModel(allergy_after_another_dish)
+    loop = ConversationLoop(session, model, "system", now=NOW)
+    state.cart = [line(item_id(session, tenant_id, "13"))]
+    found = loop.run_turn(state, "Die 13, ich habe eine Erdnussallergie.")
+    assert SAY_ALLERGY_SCOPE not in " ".join(found.say)
+    search = tool_result(model.inputs[1])
+    assert search["data"]["wish"]["text"] == ERDNUSS
+
+
+def asks_the_scope_again(state, said):
+    """The guest says the allergy again after the scope question, and the
+    model asks it again."""
+    if said == "Ich habe eine Erdnussallergie.":
+        return LLMTurn(say=SAY_ALLERGY_SCOPE, cart=state["cart"])
+    return allergy_after_another_dish(state, said)
+
+
+def test_the_scope_question_asked_twice_keeps_the_order(session, tenant_id, state):
+    """Review of #1084: the scope question left the peanut unexplained for the
+    next turn, so asking it again handed the call to the team with the order
+    not placed. It asks the guest about the allergy, like "Worauf genau soll
+    die Küche achten?"."""
+    loop = ConversationLoop(
+        session, StatelessModel(asks_the_scope_again), "system", now=NOW
+    )
+    loop.run_turn(state, "Die 23.")
+    loop.run_turn(state, "Die 13, ich habe eine Erdnussallergie.")
+    assert state.allergen_question_codes == []
+    again = loop.run_turn(state, "Ich habe eine Erdnussallergie.")
+    assert not again.ended
+    assert again.say == [SAY_ALLERGY_SCOPE]
+    loop.run_turn(state, "Nur für die 13.")
+    loop.run_turn(state, "Müller")
+    loop.run_turn(state, "Ja, passt so.")
+    assert session.scalars(select(Order)).one().status == "confirmed"
+
+
+def paraphrases_the_scope(state, said):
+    """A model that says the scope question in its own words, then follows
+    the hint of the refusal: a hint without the cart case notes the allergy
+    on the dish the guest named, as the guest's words read."""
+    result = tool_result(said)
+    if result and result["tool"] == "search_menu":
+        data = result["data"]
+        found = data.get("positions") or [data]
+        cart = [
+            *state.get("cart", []),
+            *(line(part["results"][0]["menu_item_id"]) for part in found),
+        ]
+        return LLMTurn(say="Gern, die 13. Gilt das für alle Gerichte?", cart=cart)
+    if result and result["tool"] == "say":
+        if "im `cart`" in result["hint"]:
+            return LLMTurn(say=SAY_ALLERGY_SCOPE, cart=state["cart"])
+        cart = [
+            {**entry, "note": ERDNUSS} if entry["number"] == "13" else entry
+            for entry in state["cart"]
+        ]
+        return LLMTurn(say=SAY_ALLERGY_NOTED, cart=cart)
+    return allergy_after_another_dish(state, said)
+
+
+def test_a_refused_scope_question_is_asked_on_the_retry(session, tenant_id, state):
+    """Review of #1084: the retry of a refused sentence sees the state and the
+    hint, not the search. The hint asked the scope question only for a
+    sentence of several dishes, so the retry noted the allergy on the one
+    dish named. It names the cart case too."""
+    loop = ConversationLoop(
+        session, StatelessModel(paraphrases_the_scope), "system", now=NOW
+    )
+    loop.run_turn(state, "Die 23.")
+    asked = loop.run_turn(state, "Die 13, ich habe eine Erdnussallergie.")
+    assert asked.say == [SAY_ALLERGY_SCOPE]
+    assert [entry.get("note") for entry in state.cart] == [None, None]
+
+
+@pytest.mark.parametrize("talked_over", [False, True])
+def test_the_answer_to_the_scope_question_is_not_asked_again(
+    session, tenant_id, state, talked_over
+):
+    """Review of #1084: the guest answers the scope question with the dish
+    and the allergy again ("Die 13, wegen der Erdnussallergie."). Searched
+    with the order, that sentence asked the same question again; it is the
+    answer and its allergy goes on the dish it names."""
+    model = StatelessModel(allergy_after_another_dish)
+    loop = ConversationLoop(session, model, "system", now=NOW)
+    loop.run_turn(state, "Die 23.")
+    loop.run_turn(state, "Die 13, ich habe eine Erdnussallergie.")
+    if talked_over:
+        # The guest spoke into the question (`guards.note_unheard`).
+        state.unheard_say, state.last_say = state.last_say, "Alles klar."
+    seen = len(model.inputs)
+    answer = loop.run_turn(state, "Die 13, wegen der Erdnussallergie.")
+    assert SAY_ALLERGY_SCOPE not in " ".join(answer.say)
+    [search] = [
+        result
+        for result in map(tool_result, model.inputs[seen:])
+        if result and result["tool"] == "search_menu"
+    ]
+    assert "allergy" not in search["data"]
+    assert search["data"]["wish"]["text"] == ERDNUSS
