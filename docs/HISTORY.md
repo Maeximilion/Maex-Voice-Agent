@@ -2693,6 +2693,14 @@ Fixed in one PR of chain round 4 (item 7, #1066): `classify_wish` takes two or m
 | Two options in one wish (`classify_wish`) | Codex PR #139 (P2, rule A): "mit Huhn und Nudeln" is declined as `unknown` instead of two options from different groups. | with the next wish change |
 | Spoken group for an option in two groups (`classify_wish`) | Codex PR #139 (P2, rule A): "mit Reis als Beilage" still returns `open` and asks "Reis bei Beilage oder bei Extra?" although the group was named. | with the next wish change |
 
+## Open Points from Reviews (archive, turn deadline waits row shortened 27.11.2026)
+
+Shortened by item 10 of chain round 4 (#1066): the log entry after a tool waits only what is left of the turn (`api/agent/dispatch.py`), and the phone line's pool gives up on a missing free connection after the line's bound instead of SQLAlchemy's 30 s (`api/db.py` `pool_timeout`). Measured before the fix: 2.04 s for a tool with 0.3 s left under a lock on the call's row, and 30 s for a full pool. The handover writes and the reconnect stay in the row.
+
+| Point | Why still open | When due |
+|---|---|---|
+| Waits around a tool that the turn's deadline does not bound (`api/db.py` `bounded_by`, `api/agent/dispatch.py` `_log_call`, `api/agent/loop.py` `_too_slow`) | Deep review of the #888 round 3 lock-wait PR, 25.11.2026, all three older than that PR: the tool's log entry after a tool that finished in time, the core's handover writes after a cut and a pool checkout or reconnect before a statement keep the line's 2 s bound, so a lock on the call's row or a database restart can still keep the guest up to 2 s past the deadline per statement. Rare on one thread per call; the handover writes are the rule-5 path and must not be cut. | Before the first test call with real guests (T-10.7) |
+
 ## Chain command (archive, one session per item replaced 27.11.2026)
 
 Replaced by chain round 4 item 13 (#1066). The app refused `start_session` in every turn Maxi's own message did not begin, so the night round of 27.11.2026 stopped after its first lanes. Maxi, 27.11.2026, popup "Lane refill": "Lane sessions"; items are refilled "nicht durch meine Eingaben sondern durch ein Mechanismus, der Triggert durch eine Nachricht, die von der Side Session zurück und dich (Coordinator) geht"; "you should also rename the Sessions correctly when a new item gets the new item but it should be done before the item gets started so first the rename then the item goes in there. When Clear works great and everything so the context don't rise than it is perfect. Auch sollten dann aber die PRs die gemerged sind nicht mehr zu sehen sein in der Lane Session weil es sonst unübersichtlich ist."
