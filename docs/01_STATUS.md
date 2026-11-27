@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.107
+> Status: 27.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.108
 
 ---
 
@@ -181,7 +181,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.107 · 27.11.2026:** #1022: an allergen the model's sentence denies is licensed only by the order's own wish, never by the dish's text (Maxi: the negation rule); "frei von" is a claim anywhere; notes too
+- **v2.69.108 · 27.11.2026:** #1022: an allergen the model's sentence denies is licensed only by the order's own wish, never by the dish's text (Maxi: the negation rule); "frei von" is a claim anywhere; notes too
+- **v2.69.107 · 27.11.2026:** docs/24 row closed (Codex PR #149): a dBase III memo that lost its 0x1A ends at the next memo's block; the register import stops with table, row and field instead of reading another extra's WRGSHOW
 - **v2.69.106 · 27.11.2026:** #1062 (Maxi on #1046): a caller who hangs up after the handover and before a team leg answers leaves a callback card only once the team rang VOICE_LEFT_MIN_RING_SECONDS (5); the dialplan's h measures the time since the first team leg's Dial
 - **v2.69.105 · 27.11.2026:** #1060: n8n 2.49.7, the newest stable release; the export imports and publishes against it, and a test holds the pin to a release named in a Checked line of n8n/README.md
 - **v2.69.104 · 27.11.2026:** #1063 (Maxi, 26.11.2026, on #1054): the once-a-day push of an operator's TOTP code counts the calendar day in `Europe/Berlin`, not 24 hours from the last push; a push at 23:50 no longer keeps the next morning quiet, and a clock change day keeps its one push
