@@ -416,7 +416,8 @@ is rung (Maxi, 20.10.2026). The outage paths (paused, shadow, `voice` down, a fa
   round 3, rule 5): while a leg rings, between two legs, or before the first one rang. Asterisk
   runs the extension `h` of `[ai]` once the dialplan ends; it sends the same report with `left=1`
   and `waited`, the seconds since the first team leg's `Dial` started (`RINGFROM`, set once right
-  before it, wall clock to the millisecond; 0 when no leg started). `voice` writes the card only
+  before it, wall clock to the millisecond; 0 when no leg started, empty when one started and left
+no stamp). `voice` writes the card only
   when `waited` is at least `VOICE_LEFT_MIN_RING_SECONDS` (Maxi, 26.11.2026 on #1046 and #1032:
   5 s, #1062): the team's only notice then, since its telephone shows only a missed call from our
   registration (T-10.2). A caller gone sooner (a wrong number, a one-ring call) leaves no card and ends as before #1046. The time
@@ -441,7 +442,8 @@ is rung (Maxi, 20.10.2026). The outage paths (paused, shadow, `voice` down, a fa
   (27.11.2026, #1062) with the branch's own router behind it and a leg that rings and never
   answers: gone after 1.5 s and 4.5 s of ringing, and during a slow `/team` question before any
   leg (`waited=0`), no card; after 6.5 s, and 2.5 s into the second leg after the first rang out
-  (`waited` 32.5, counted from the first leg), the card. Not yet in the workbench drill (#1045).
+  (`waited` 32.5, counted from the first leg), the card; with the stamp removed from the
+  dialplan, an empty `waited` and the card. Not yet in the workbench drill (#1045).
 
 | Drill | Result |
 |---|---|

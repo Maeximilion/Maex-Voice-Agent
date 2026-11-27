@@ -1007,9 +1007,10 @@ def test_a_caller_who_leaves_before_the_team_answers_gets_a_card():
     assert gone[0] == (
         'exten => h,1,GotoIf($["${HANDED}" != "yes" | "${DIALSTATUS}" = "ANSWER"]?end)'
     )
-    # The time since the first team leg started (#1062), 0 when none did.
+    # The time since the first team leg started (#1062), 0 when none did, and
+    # empty (the card) when one did and left no stamp.
     assert gone[1:4] == [
-        "same => n,Set(WAITED=0)",
+        'same => n,Set(WAITED=${IF($["${TRIED}" = ""]?0:)})',
         'same => n,GotoIf($["${RINGFROM}" = ""]?report)',
         "same => n,Set(WAITED=$[${STRFTIME(,,%s.%3q)} - ${RINGFROM}])",
     ]
