@@ -693,6 +693,7 @@ class ConversationLoop:
                     state.tenant_id,
                     turn.tool_call.name,
                     refused,
+                    seconds_left=self._left_in_turn(turn_started),
                 )
                 guards.note_said(state, reread)
                 return TurnResult(state=state, say=[reread])
@@ -723,7 +724,12 @@ class ConversationLoop:
                 refused = guards.take_cart(state, turn.cart)
                 if refused is not None:
                     log_refused(
-                        self._session, state.call_id, state.tenant_id, CART, refused
+                        self._session,
+                        state.call_id,
+                        state.tenant_id,
+                        CART,
+                        refused,
+                        seconds_left=self._left_in_turn(turn_started),
                     )
                     called.append(CART)
                     # A handover does not act on the order: dropped, the
@@ -742,7 +748,12 @@ class ConversationLoop:
                     # said it cannot: the guest hears neither from it, the
                     # team answers before any `confirm` (redesign of PR #369).
                     log_refused(
-                        self._session, state.call_id, state.tenant_id, SAY, claim
+                        self._session,
+                        state.call_id,
+                        state.tenant_id,
+                        SAY,
+                        claim,
+                        seconds_left=self._left_in_turn(turn_started),
                     )
                     return self._allergens_to_team(
                         state,
@@ -813,7 +824,12 @@ class ConversationLoop:
                         else guards.UNLICENSED_ALLERGEN
                     )
                     log_refused(
-                        self._session, state.call_id, state.tenant_id, SAY, refused
+                        self._session,
+                        state.call_id,
+                        state.tenant_id,
+                        SAY,
+                        refused,
+                        seconds_left=self._left_in_turn(turn_started),
                     )
                     prices = (
                         guards.price_says(aturn, state, say)
@@ -846,6 +862,7 @@ class ConversationLoop:
                             state.tenant_id,
                             SAY,
                             guards.ADDITIVE_CLAIM,
+                            seconds_left=self._left_in_turn(turn_started),
                         )
                         return self._allergens_to_team(
                             state,
@@ -930,7 +947,12 @@ class ConversationLoop:
                     # bestätigt, der Abholcode lautet 8842" with nothing booked
                     # sends a guest away who will find no order (13.10.2026).
                     log_refused(
-                        self._session, state.call_id, state.tenant_id, SAY, refused
+                        self._session,
+                        state.call_id,
+                        state.tenant_id,
+                        SAY,
+                        refused,
+                        seconds_left=self._left_in_turn(turn_started),
                     )
                     called.append(SAY)
                     pending_input = _tool_result_as_input(SAY, refused, zone)
@@ -956,6 +978,7 @@ class ConversationLoop:
                     state.tenant_id,
                     turn.tool_call.name,
                     _RULE_FIRST,
+                    seconds_left=self._left_in_turn(turn_started),
                 )
                 return offered
 
@@ -995,6 +1018,7 @@ class ConversationLoop:
                     state.tenant_id,
                     turn.tool_call.name,
                     guards.ADDITIVE_CLAIM,
+                    seconds_left=self._left_in_turn(turn_started),
                 )
                 return self._note_to_team(
                     state,
@@ -1037,6 +1061,7 @@ class ConversationLoop:
                     state.tenant_id,
                     turn.tool_call.name,
                     refused,
+                    seconds_left=self._left_in_turn(turn_started),
                 )
                 result = refused
             else:

@@ -68,6 +68,9 @@ def bounded_sessions(
     bounded = create_engine(
         url,
         **_ENGINE_ARGS,
+        # A pool with no free connection: the line's bound, not the pool's
+        # 30 s; the phone line hands the call to the team on it.
+        pool_timeout=seconds,
         connect_args={
             "connect_timeout": seconds,
             "tcp_user_timeout": ms,

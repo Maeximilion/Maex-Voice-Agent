@@ -522,7 +522,7 @@ def dispatch(
     none; it decides whether `draft_order` may replay a stored draft (#952).
     The default is a caller without a conversation. `seconds_left`: what is
     left of the guest's turn, which bounds the tool's waits on the phone
-    line (`db.bounded_by`); its log entry below keeps the line's own bound."""
+    line (`db.bounded_by`), the statements of its log entry included."""
     started = time.perf_counter()
     adapter = TOOLS.get(name)
     # Call and tenant come from the code, never from the model. A real model
@@ -567,8 +567,11 @@ def dispatch(
             hint=hint,
         )
 
-    duration_ms = round((time.perf_counter() - started) * 1000, 1)
-    _log_call(session, call_id, tenant_id, name, duration_ms, outcome)
+    elapsed = time.perf_counter() - started
+    left = None if seconds_left is None else seconds_left - elapsed
+    _log_call(
+        session, call_id, tenant_id, name, round(elapsed * 1000, 1), outcome, left
+    )
     return outcome
 
 
@@ -588,11 +591,18 @@ def log_refused(
     tenant_id: uuid.UUID,
     name: str,
     refused: ToolResult,
+    *,
+    seconds_left: float | None = None,
 ) -> None:
     """A call the core refused before it reached its tool (guards.py) stands in
     `calls.tool_calls` like any other failed call: the log shows what the model
-    tried, not only what was let through."""
-    _log_call(session, call_id, tenant_id, name, 0.0, refused)
+    tried, not only what was let through. `seconds_left` as for `dispatch`."""
+    _log_call(session, call_id, tenant_id, name, 0.0, refused, seconds_left)
+
+
+# A plain entry takes about a millisecond; the guest waits at most this past
+# the deadline for one, and a lock on the call's row costs the entry instead.
+_LOG_FLOOR_SECONDS = 0.1
 
 
 def _log_call(
@@ -602,12 +612,20 @@ def _log_call(
     name: str,
     duration_ms: float,
     outcome: ToolResult,
+    seconds_left: float | None = None,
 ) -> None:
+    """`seconds_left`: what is left of the guest's turn on the phone line. The
+    entry's statements wait no longer, so a lock on the call's row does not
+    keep the guest past the deadline; a cut entry is lost, the answer not. A
+    pool checkout or reconnect keeps the line's bound (docs/24). A tool cut
+    at the deadline has nothing left: its entry gets `_LOG_FLOOR_SECONDS`."""
     entry = {"name": name, "duration_ms": duration_ms, "ok": outcome.ok}
     if outcome.error_code:
         entry["error_code"] = outcome.error_code
+    left = None if seconds_left is None else max(seconds_left, _LOG_FLOOR_SECONDS)
     try:
-        append_tool_call(session, str(call_id), str(tenant_id), entry)
+        with bounded_by(session, left):
+            append_tool_call(session, str(call_id), str(tenant_id), entry)
     except Exception:  # noqa: BLE001 - logging must never break the answer
         # The failed statement leaves the transaction aborted, and the next
         # one of the turn would fail too, after a booking that stands (ultra

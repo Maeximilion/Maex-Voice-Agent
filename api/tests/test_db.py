@@ -292,3 +292,28 @@ def test_a_bounded_session_gives_up_on_a_silent_network(bounded_db, ms, seconds)
     assert params["connect_timeout"] == seconds
     assert params["keepalives"] == "1"
     assert params["keepalives_count"] == seconds
+
+
+def test_a_bounded_session_waits_for_a_free_connection_no_longer_than_its_bound(
+    bounded_db,
+):
+    """A pool with no free connection keeps the guest no longer than a
+    statement may (the pool's own default is 30 s); the phone line hands
+    the call to the team on it (`telephony/handler.py` `_DATABASE_DOWN`)."""
+    from sqlalchemy.engine import Connection
+    from sqlalchemy.exc import TimeoutError as PoolTimeout
+
+    bound = bounded_db(200).kw["bind"]
+    # Every connection the pool gives: its size and the default overflow of 10.
+    held: list[Connection] = []
+    try:
+        held.extend(bound.connect() for _ in range(bound.pool.size() + 10))
+        started = time.monotonic()
+        with pytest.raises(PoolTimeout):
+            bound.connect()
+        waited = time.monotonic() - started
+    finally:
+        for conn in held:
+            conn.close()
+
+    assert waited < 3
