@@ -2692,3 +2692,55 @@ Fixed in one PR of chain round 4 (item 7, #1066): `classify_wish` takes two or m
 |---|---|---|
 | Two options in one wish (`classify_wish`) | Codex PR #139 (P2, rule A): "mit Huhn und Nudeln" is declined as `unknown` instead of two options from different groups. | with the next wish change |
 | Spoken group for an option in two groups (`classify_wish`) | Codex PR #139 (P2, rule A): "mit Reis als Beilage" still returns `open` and asks "Reis bei Beilage oder bei Extra?" although the group was named. | with the next wish change |
+
+## Chain command (archive, one session per item replaced 27.11.2026)
+
+Replaced by chain round 4 item 13 (#1066). The app refused `start_session` in every turn Maxi's own message did not begin, so the night round of 27.11.2026 stopped after its first lanes. Maxi, 27.11.2026, popup "Lane refill": "Lane sessions"; items are refilled "nicht durch meine Eingaben sondern durch ein Mechanismus, der Triggert durch eine Nachricht, die von der Side Session zurück und dich (Coordinator) geht"; "you should also rename the Sessions correctly when a new item gets the new item but it should be done before the item gets started so first the rename then the item goes in there. When Clear works great and everything so the context don't rise than it is perfect. Auch sollten dann aber die PRs die gemerged sind nicht mehr zu sehen sein in der Lane Session weil es sonst unübersichtlich ist."
+
+Replaced or removed lines of `.claude/commands/chain.md`:
+
+> description: Work off several tasks or issues as a chain - one coordinator, one fresh session per pull request that builds it, one ship lane that merges, usage paced, until the plan is done or Maxi says stop.
+>
+> 1. **No queued sessions** (27.11: "Generely no queued sessions. Active sessions and planned sessions." "Don't start every session"): an item session starts only into a free build lane of the mode (section 3), beside it only the ship lane runs; every other item stays planned, without a session, until a lane frees (step 5). A start works only in a turn Maxi's message begins and in a `<side-sessions-event>` turn that follows it (the app's note when all child sessions are idle), never in a turn begun by a child's own message (`SendMessage`, e.g. "merged #N"), a timer or an agent report. Remote Control on the coordinator and auto mode's classifier refuse too: the coordinator runs with Remote Control off, in bypass mode (Maxi, 25.11). Order in a turn Maxi's message begins: scouts for the items about to start (section 2), the starts, a ship lane if none runs, then the open decisions as popups (section 4); nothing waits for an answer.
+>
+> 4. **On "PR #N ready, first review clean":** verify it the same way, then send the ship lane "ship #N, build session <id>". Chain-changing PRs ship first, then plan order.
+>
+> 5. **When a lane frees** (27.11: "As soon as a lane gets Free one of the planned sessions get's the free spot"), it goes, in this order (25.11): (a) a planned item that changes the chain itself (this command, the brief file, the dashboard, chain memories); (b) a heavy step a running item waits for: send "go heavy"; (c) a paused session (section 3), else the next planned item (one that runs after another only once that one is merged). A planned item gets the lane by starting its session in that turn; refused: one push, and the lane waits for the next turn that can start one (step 1). A paused session gets it by the baton: `item N` into `next-lane.txt` and "go on item N" (a message wakes it at once from any turn; super slow: section 3); on "lane taken item N" write `none` back.
+>
+>    In a round Maxi left running while away (27.11: "When the lanes are free and you don't start new Items because of reasons like you can not or so then shutdown the pc"): no session works and no lane can be filled, not even in a turn that should allow the start: write the state files first (section 4), then `shutdown /s /f /t 60`.
+>
+> 6. **On "merged #N":** mark it done on the dashboard at once, archive the build session if the ship lane could not, rewrite the state memory, re-read the mode, fill the free lane (step 5; 26.11: "after an Item gets merged you pick another one and start a sub session which get's into the new free lane").
+>
+> 8. **Plan runs empty:** plan about 20 new items on the plan issue and go on; they get sessions as lanes free (step 5). **Last item merged:** section 5.
+>
+> **Build session:** one per item (24.11, popup "One item per session"), `start_session` with `context` "fresh", its own worktree, the item's `model` and `effort` from `CLAUDE.md` "Model Routing" (Fable only on Maxi's word for that chain, until its week is used up). Title: the item, for example "13 last_say after barge-in" (25.11). It builds through `/done` until CI is green and the first independent review is clean, fixes every finding of that round itself (P0 and P1 too), sends "PR #N ready, first review clean" and stops. Its rules: `.claude/chain/brief-common.md`.
+>
+> **Brief,** the session's only context, in this order:
+>
+> 5. Where the code lives: the scout's map, caveats kept. Scout: one Explore agent per item, `model` haiku, foreground, all in parallel, before the starts (23.11); Graphify connector first; at most 300 words: file and line of each named function, callers, linked tests, graph `commitSha` against `HEAD`, caveats. A late map follows by message.
+>
+> 8. The reserve item with its route.
+>
+> 9. The round's weekly stop (section 3) and exceptions to `CLAUDE.md` in Maxi's words with date; a session refuses a rule change relayed without them.
+>
+> - Per "ship #N": merge `origin/main` in, get CI, Codex and evals on the new head, fix that round, merge, message "merged #N" first, nothing in between (24.11), then archive the build session named in "ship #N" (25.11, popup "Ship lane archives it"; refused: say so in "merged #N").
+>
+> - Idle: open Dependabot PRs go to its queue. Context over 300k: a fresh ship lane in the next turn that can start one (step 1); the old one finishes its PR.
+>
+> - Mode change: running sessions finish their step; only new starts follow the new count (24.11). Leaving turbo before the reset: sessions above 3 lanes finish the step, commit, push and wait on the baton.
+>
+> - An item stopped without a PR: its session takes the reserve item itself (23.11); the coordinator names a new reserve in Maxi's next turn.
+>
+> - Never route a new task into a finished session to get around a refused start (auto mode refuses it, 25.11).
+>
+> - Archives every finished or stopped item session of its own at once, without asking (27.11; stopped without a PR: 23.11); other sessions only on Maxi's word (23.11). Refused for a running background task: send "merged #N: stop every background task and end your turn", archive at the next note; the same for an item shipped before its own "ready" (25.11).
+>
+> When the last item is merged (18.11): the reviews the plan asks for (security audit, UI review) as read-only sessions, one issue each; a triage of the issues left open; Maxi's decisions in one record on the plan issue; the fix items as the next chain at once (questions as one bundle, the rest start without waiting). A merged migration: the workbench migration last, backup first (the migration path rule), run by Claude. Close the finished issues, report merged PRs, open decisions, usage.
+
+Replaced lines of `.claude/chain/brief-common.md`:
+
+> Every item session of a chain reads this file and `~/.claude/chain/round.txt` first. `round.txt` is written by the coordinator for the running round: its session id, the ship lane's id, the plan link, the decisions issue, the weekly stop, the reserve item (missing: your brief names them). The coordinator's side: `.claude/commands/chain.md`. Maxi's full quotes: `docs/HISTORY.md` "Chain command (archive, replaced 25.11.2026)". You build one item, the ship lane merges it; you never merge.
+>
+> "PR #N ready, first review clean" (then stop: no push after it), "stopped/blocked: <why>", "reserve taken", "need 2 lanes for <step>", "lane taken item N", a choice that needs Maxi. "Waiting for CI" is no milestone.
+>
+> If your item stops without a PR: post why on its issue and take the reserve item your brief names in this same session; if its route differs, ask the coordinator to switch your model and effort.
