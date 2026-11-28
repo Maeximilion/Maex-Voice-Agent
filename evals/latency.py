@@ -41,6 +41,7 @@ of the caller's phone, the router). Writes `latency.json` and `latency.md`.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import math
 import os
@@ -101,7 +102,9 @@ class Rec:
     call: str
     events: list[tuple[str, float, float, str]] = field(default_factory=list)
 
-    def add(self, kind: str, t0: float, t1: float | None = None, info: str = "") -> None:
+    def add(
+        self, kind: str, t0: float, t1: float | None = None, info: str = ""
+    ) -> None:
         self.events.append((kind, t0, t0 if t1 is None else t1, info))
 
 
@@ -319,7 +322,9 @@ class TimedEvents:
             self._handler.on_user_turn(session_id, text)
         finally:
             if rec is not None:
-                rec.add("core_end", time.monotonic(), info=f"{time.thread_time() - cpu}")
+                rec.add(
+                    "core_end", time.monotonic(), info=f"{time.thread_time() - cpu}"
+                )
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._handler, name)
@@ -424,9 +429,9 @@ class Caller:
         self._next = time.monotonic()
         last = -math.inf
         for said in lines:
-            if not self._quiet_until(self._answered(last), ANSWER_WAIT):
-                if self.line.ended:
-                    break
+            answered = self._quiet_until(self._answered(last), ANSWER_WAIT)
+            if not answered and self.line.ended:
+                break
             # The frame sent at `self._next` holds the audio that ends then.
             began = self._next - FRAME_SECONDS
             last = began + said.speech_end
@@ -443,7 +448,11 @@ class Caller:
 
 def turns_of(rec: Rec) -> list[dict[str, Any]]:
     ends = sorted(t0 for k, t0, _, _ in rec.events if k == "speech_end")
-    texts = [info for k, _, _, info in sorted(rec.events, key=lambda e: e[1]) if k == "speech_end"]
+    texts = [
+        info
+        for k, _, _, info in sorted(rec.events, key=lambda e: e[1])
+        if k == "speech_end"
+    ]
     out = []
     for i, end in enumerate(ends):
         until = ends[i + 1] if i + 1 < len(ends) else math.inf
@@ -489,20 +498,25 @@ def environment(sha: str) -> dict[str, Any]:
     from api.config import settings
 
     versions = {}
-    for name in ("faster-whisper", "ctranslate2", "piper-tts", "onnxruntime", "torch", "httpx"):
+    for name in (
+        "faster-whisper",
+        "ctranslate2",
+        "piper-tts",
+        "onnxruntime",
+        "torch",
+        "httpx",
+    ):
         try:
             versions[name] = metadata.version(name)
         except metadata.PackageNotFoundError:
             versions[name] = None
     cpu = ""
-    try:
+    with contextlib.suppress(OSError, StopIteration):
         cpu = next(
             line.split(":", 1)[1].strip()
             for line in Path("/proc/cpuinfo").read_text().splitlines()
             if line.startswith("model name")
         )
-    except (OSError, StopIteration):
-        pass
     return {
         "sha": sha,
         "python": platform.python_version(),
@@ -549,7 +563,9 @@ def main(argv: list[str] | None = None) -> int:
     levels = [int(n) for n in args.calls.split(",")]
     models = Path(os.environ.get("SPEECH_MODELS", "/models"))
     speech_engines.MODELS = models
-    settings.voice_ear_device = os.environ.get("SPEECH_DEVICE", settings.voice_ear_device)
+    settings.voice_ear_device = os.environ.get(
+        "SPEECH_DEVICE", settings.voice_ear_device
+    )
 
     cases = {c["id"]: c for c in load_cases(CASES, [])}
     scenarios = []
@@ -572,7 +588,9 @@ def main(argv: list[str] | None = None) -> int:
     watchdog.start()
     make_ear = speech_engines._whisper(watchdog)
     make_mouth = speech_engines._piper(watchdog)
-    caller_voice = PiperMouth(Steady(PiperVoice.load(models / "piper" / f"{CALLER_VOICE}.onnx")))
+    caller_voice = PiperMouth(
+        Steady(PiperVoice.load(models / "piper" / f"{CALLER_VOICE}.onnx"))
+    )
     spoken = {
         line: utterance(line, pcm(caller_voice, line)[0])
         for _, said in scenarios
@@ -580,7 +598,10 @@ def main(argv: list[str] | None = None) -> int:
     }
     noise = telephone_line(b"", 30.0, 0.0)
     load_seconds = time.monotonic() - loaded
-    print(f"engines loaded, {len(spoken)} caller lines spoken in {load_seconds:.1f} s", flush=True)
+    print(
+        f"engines loaded, {len(spoken)} caller lines spoken in {load_seconds:.1f} s",
+        flush=True,
+    )
 
     url = create_scratch_db(prefix="maex_latency")
     report: dict[str, Any] = {"environment": environment(args.sha), "levels": {}}
@@ -613,7 +634,9 @@ def main(argv: list[str] | None = None) -> int:
             recs: list[Rec] = []
             samples: list[dict[str, float]] = []
             stop = threading.Event()
-            watcher = threading.Thread(target=sampler, args=(stop, samples), daemon=True)
+            watcher = threading.Thread(
+                target=sampler, args=(stop, samples), daemon=True
+            )
             watcher.start()
             gpu: list[str] = []
             started = time.monotonic()
@@ -644,7 +667,9 @@ def main(argv: list[str] | None = None) -> int:
                     worker = threading.Thread(target=work, daemon=True)
                     caller = Caller(session, line, rec, noise)
                     talker = threading.Thread(
-                        target=caller.run, args=([spoken[s] for s in said],), daemon=True
+                        target=caller.run,
+                        args=([spoken[s] for s in said],),
+                        daemon=True,
                     )
                     workers += [worker, talker]
                     worker.start()
@@ -659,7 +684,9 @@ def main(argv: list[str] | None = None) -> int:
             stop.set()
             turns = [t for rec in recs for t in turns_of(rec)]
             for t in turns:
-                t["cold"] = first and t["turn"] == 1 and t["call"].startswith("L%d-R1-C1" % level)
+                t["cold"] = (
+                    first and t["turn"] == 1 and t["call"].startswith(f"L{level}-R1-C1")
+                )
             first = False
             report["levels"][str(level)] = {
                 "seconds": round(time.monotonic() - started, 1),
@@ -668,12 +695,21 @@ def main(argv: list[str] | None = None) -> int:
                 "first_turns": summarize([t for t in turns if t["turn"] == 1]),
                 "later_turns": summarize([t for t in turns if t["turn"] > 1]),
                 "cold": [t for t in turns if t["cold"]],
-                "cores_mean": round(statistics.mean(s["cores"] for s in samples), 2) if samples else None,
-                "cores_max": round(max(s["cores"] for s in samples), 2) if samples else None,
-                "rss_mb_max": round(max(s.get("rss_mb", 0.0) for s in samples)) if samples else None,
+                "cores_mean": round(statistics.mean(s["cores"] for s in samples), 2)
+                if samples
+                else None,
+                "cores_max": round(max(s["cores"] for s in samples), 2)
+                if samples
+                else None,
+                "rss_mb_max": round(max(s.get("rss_mb", 0.0) for s in samples))
+                if samples
+                else None,
                 "gpu": gpu,
                 "outcomes": [
-                    next((k for k, *_ in rec.events if k in ("hangup", "transfer")), "caller hung up")
+                    next(
+                        (k for k, *_ in rec.events if k in ("hangup", "transfer")),
+                        "caller hung up",
+                    )
                     for rec in recs
                 ],
                 "turns": turns,
