@@ -2844,7 +2844,7 @@ Fixed by chain round 4 item 26: a "statt" swaps out the one word after it, what 
 
 ## Open Points from Reviews (archive, spoken corrections that booked both numbers, fixed 27.11.2026)
 
-Fixed by chain round 4 item 31: behind a number `_takes_a_number_back` takes back on "ich meine" or "meine ich" anywhere in the piece, read as words (next to a "Chow Mein" the search would find a dish in them), on "also" alone before a bare card number, and counts a card number behind words as a number after the piece. The deep review (`/code-review max`, six angles and a sweep) dropped a broader first version: it took back behind any piece, a greeting too, and on dish names, pauses and sound-alike hits, and asked on normal orders. The rest stays open in docs/24.
+Fixed by chain round 4 item 31: behind a number `_takes_a_number_back` takes back on "ich meine" or "meine ich" anywhere in the piece, read as words (next to a "Chow Mein" the search would find a dish in them), and counts a card number behind words as a number after the piece. The deep review (`/code-review max`, six angles and a sweep) dropped a broader first version: it took back behind any piece, a greeting too, and on dish names, pauses and sound-alike hits, and asked on normal orders. The rest stays open in docs/24.
 
 | Point | Why still open | When due |
 |---|---|---|

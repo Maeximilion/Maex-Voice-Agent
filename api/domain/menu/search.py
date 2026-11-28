@@ -531,10 +531,9 @@ def _takes_a_number_back(
     or "meine ich" takes back wherever it stands in the piece, read as words,
     not by the search, which finds "Chow Mein" in "ich mein" ("die 23, ich
     mein die 24", "die 23, die 24 meine ich", "die 23, die 24, meine ich");
-    "also" alone takes back right before a bare card number though it is
-    filler ("die 23, also die 24", "die 23, also, die 24"), not as "so, then"
-    ("die 13, also dann noch die 24"); and a card number behind words of its
-    own counts as one after the piece ("die 23, sorry, Pho Bo die 13")."""
+    and a card number behind words of its own counts as one after the piece
+    ("die 23, sorry, Pho Bo die 13"). "also" takes nothing back: "die 13,
+    also die 24" is as often "and also" as a correction (Codex PR #1098)."""
     leads = [_leads_with_card_number(piece, card) for piece in pieces]
     heads = [_words_before_card_number(piece, card) for piece in pieces]
     # Read once from each end instead of again for each piece (docs/24): is
@@ -558,15 +557,8 @@ def _takes_a_number_back(
             continue
         text = piece if head is None else head
         # A quantity in front goes with the number ("doch zweimal die 24"), so
-        # a head of filler alone takes nothing back ("zweimal", "bitte"),
-        # unless it is "also" alone right before a bare card number.
-        if not normalize_query(text):
-            if _folded_words(text) == ["also"] and (
-                head is not None or _bare_card_number(k + 1, leads, heads)
-            ):
-                return True
-            continue
-        if head is None and has_number(text):
+        # only a head of filler alone takes nothing back ("zweimal", "bitte").
+        if not normalize_query(text) or (head is None and has_number(text)):
             continue
         try:
             search(text)
@@ -593,14 +585,6 @@ def _says_i_mean(words: list[str]) -> bool:
         (a == "ich" and b in _MEANT) or (a in _MEANT and b == "ich")
         for a, b in pairwise(words)
     )
-
-
-def _bare_card_number(k: int, leads: list[bool], heads: list[str | None]) -> bool:
-    """Is piece k a card number with nothing but its article in front ("die
-    24", "Nummer 24", "24")?"""
-    if k >= len(leads) or not leads[k]:
-        return False
-    return set(_folded_words(heads[k] or "")) <= _CARD_NUMBER_LEADS
 
 
 def _leads_with_card_number(piece: str, card: CardFormat) -> bool:

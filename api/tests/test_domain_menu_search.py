@@ -1607,8 +1607,6 @@ def near_words(session, tenant_id):
 # item 31): the shapes the deep reviews of 23.11. and 27.11.2026 found that
 # hold a card number on both sides of the correction.
 _TAKEN_BACK = [
-    ("die 23, also die 24", "23"),
-    ("die 23, also, die 24", "23"),
     ("die 23, die 24 meine ich", "23"),
     ("die 23, die 24 meinte ich", "23"),
     ("die 23, die 24, meine ich", "23"),
@@ -1641,7 +1639,6 @@ def test_a_correction_takes_the_number_before_it_back(session, sushi, said, take
         ("die 23, ich mein die 24", "23"),
         ("die 23, ich mein, die 24", "23"),
         ("die 23, die 24 meine ich", "23"),
-        ("die 23, also die 24", "23"),
     ],
 )
 def test_a_form_of_meinen_takes_back_next_to_chow_mein(
@@ -1701,6 +1698,7 @@ def test_a_second_number_the_number_reading_refuses_is_never_booked(
             "die 13, meine Adresse ist Hauptstraße 5, und die 24",
             ["die 13", "und die 24"],
         ),
+        ("die 13, also die 24", ["die 13", "also die 24"]),
         ("die 13, also dann noch die 24", ["die 13", "also dann noch die 24"]),
         ("die 13 und dann also noch die 24", ["die 13", "dann also noch die 24"]),
         ("die 13, also, und dann noch die 24", ["die 13", "und dann noch die 24"]),
@@ -1725,9 +1723,9 @@ def test_a_second_number_the_number_reading_refuses_is_never_booked(
     ],
 )
 def test_a_normal_order_is_cut_as_before_item_31(session, sushi, said, clear):
-    """ "meine" as a possessive, "also" as "so, then", a pause, a greeting in
-    front and a dish said in other words take nothing back; only "ich
-    meine" and "also" alone before a bare card number do."""
+    """ "meine" as a possessive, "also", a pause, a greeting in front and a
+    dish said in other words take nothing back; only "ich meine" and "meine
+    ich" do."""
     assert _clear_parts(session, sushi, said) == clear
 
 
