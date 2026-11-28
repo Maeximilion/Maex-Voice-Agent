@@ -1287,7 +1287,9 @@ def wish_candidates(text: str) -> list[tuple[str, str, str]]:
     candidates = []
     for n, start in enumerate(starts):
         at = tokens[start].start()
-        dish = text[:at].strip(" ,.;")
+        # "die 41, aber ohne Koriander": the joining word in front of the wish
+        # is no part of the dish either (docs/24, deep review of item 26).
+        dish = _drop_trailing_glue(text[:at].strip(" ,.;"))
         wish = _clean(text[at:])
         end = tokens[starts[n + 1]].start() if n + 1 < len(starts) else len(text)
         # "mit Salami, aber" - das Bindewort vor dem naechsten Wunsch gehoert
