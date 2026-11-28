@@ -2842,6 +2842,14 @@ Fixed by chain round 4 item 26: a "statt" swaps out the one word after it, what 
 |---|---|---|
 | Everything after the first „statt" is cut (`api/domain/menu/wishes.py` `_classify`) | Deep review of #1076 (27.11.2026, pre-existing): `wanted` keeps only the words before „statt", so an option named „Nudeln statt Reis" (register format, docs/14; eval card dishes 32, 33, 40 to 42, 49) never matches and „mit Tofu und Nudeln statt Reis" is declined (eval target `abholung_0064`), and „Nudeln statt Reis und Huhn" drops Huhn without a word. | with the next wish change |
 
+## Open Points from Reviews (archive, leading aber in the dish part, fixed 28.11.2026)
+
+Fixed by chain round 4 item 33: `wish_candidates` drops the joining words at the end of the dish part („aber", „und", „dann", „bitte", „dafür"), as it already did for the end of each wish segment, so „die 41, aber ohne Koriander" searches the dish „die 41".
+
+| Point | Why still open | When due |
+|---|---|---|
+| A leading „aber" stays in the dish part (`api/domain/menu/search.py` `search_menu`, the first of `wish_candidates`) | Deep review of chain round 4 item 26 (27.11.2026), as on main: „die 41, aber mit Nudeln statt Reis" and „die 41, aber ohne Koriander" search the dish „die 41, aber" and find nothing, so the guest is asked for the number. | with the next wish change |
+
 ## Open Points from Reviews (archive, spoken corrections that booked both numbers, fixed 27.11.2026)
 
 Fixed by chain round 4 item 31: behind a number `_takes_a_number_back` takes back on "ich meine" or "meine ich" anywhere in the piece, read as words (next to a "Chow Mein" the search would find a dish in them), and counts a card number behind words as a number after the piece. The deep review (`/code-review max`, six angles and a sweep) dropped a broader first version: it took back behind any piece, a greeting too, and on dish names, pauses and sound-alike hits, and asked on normal orders. The rest stays open in docs/24.

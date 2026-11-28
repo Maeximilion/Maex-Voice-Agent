@@ -18,7 +18,7 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from api.core.errors import Ambiguous
+from api.core.errors import Ambiguous, NotFound
 from api.domain.menu import wishes
 from api.domain.menu.details import get_item_details
 from api.domain.menu.importer import (
@@ -1104,6 +1104,55 @@ def test_ganzer_name_vor_aber(session, tenant_id):
     result = suche(session, tenant_id, "Pizza mit Salami, aber ohne Zwiebeln")
     assert [h.number for h in result.results] == ["60"]
     assert (result.wish.kind, result.wish.text) == ("note", "ohne Zwiebeln")
+
+
+def test_leading_aber_before_an_option_stays_out_of_the_dish(session, tenant_id):
+    """docs/24, deep review of chain round 4 item 26: "die 47, aber mit Nudeln
+    statt Reis" searched the dish "die 47, aber", found nothing and asked for
+    the number. The "aber" joins the wish, it is no part of the dish."""
+    result = suche(session, tenant_id, "die 47, aber mit Nudeln statt Reis")
+    assert [h.number for h in result.results] == ["47"]
+    assert (result.wish.kind, result.wish.option) == ("option", "Nudeln")
+
+
+@pytest.mark.parametrize(
+    "gesagt",
+    [
+        "die 13, aber ohne Koriander",
+        "die 13 aber ohne Koriander",
+        "Pho Bo, aber ohne Koriander",
+        # A run of joining words before the wish.
+        "die 13, aber dann bitte ohne Koriander",
+    ],
+)
+def test_leading_aber_before_a_note_stays_out_of_the_dish(session, tenant_id, gesagt):
+    result = suche(session, tenant_id, gesagt)
+    assert [h.number for h in result.results] == ["13"]
+    assert (result.wish.kind, result.wish.text) == ("note", "ohne Koriander")
+
+
+@pytest.mark.parametrize(
+    ("gesagt", "gericht"),
+    [
+        ("die 41, aber mit Nudeln statt Reis", "die 41"),
+        ("die 41, aber ohne Koriander", "die 41"),
+        ("Pho Bo aber bitte ohne Koriander", "Pho Bo"),
+        # A word that only holds "aber" is no joining word.
+        ("Haberkorn ohne Koriander", "Haberkorn"),
+        # Nothing in front of the "aber": the dish part stays as it was.
+        ("aber ohne Koriander", "aber"),
+    ],
+)
+def test_the_dish_part_ends_before_its_joining_words(gesagt, gericht):
+    assert wish_candidates(gesagt)[0][0] == gericht
+
+
+def test_aber_with_no_wish_behind_it_still_asks(session, tenant_id):
+    """Nothing after the "aber": no wish split, and the search still does not
+    take the 13 for a sentence the guest broke off (as before)."""
+    assert wish_candidates("die 13, aber") == []
+    with pytest.raises((Ambiguous, NotFound)):
+        suche(session, tenant_id, "die 13, aber")
 
 
 @pytest.mark.parametrize("gesagt", ["allergiefrei", "ist das allergenfrei"])
