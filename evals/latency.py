@@ -497,7 +497,7 @@ def gpu_sample() -> str:
 def environment(sha: str) -> dict[str, Any]:
     from api.config import settings
 
-    versions = {}
+    versions: dict[str, str | None] = {}
     for name in (
         "faster-whisper",
         "ctranslate2",
@@ -563,9 +563,8 @@ def main(argv: list[str] | None = None) -> int:
     levels = [int(n) for n in args.calls.split(",")]
     models = Path(os.environ.get("SPEECH_MODELS", "/models"))
     speech_engines.MODELS = models
-    settings.voice_ear_device = os.environ.get(
-        "SPEECH_DEVICE", settings.voice_ear_device
-    )
+    device = os.environ.get("SPEECH_DEVICE", settings.voice_ear_device)
+    settings.voice_ear_device = "cpu" if device == "cpu" else "cuda"
 
     cases = {c["id"]: c for c in load_cases(CASES, [])}
     scenarios = []
