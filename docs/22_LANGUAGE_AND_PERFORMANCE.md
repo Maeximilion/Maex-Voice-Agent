@@ -71,9 +71,95 @@ LLM/tool hop, Python CPU versus native work, DB/network waits, queueing, TTS and
 audio transport. Preserve span overlap instead of adding durations twice. Reuse
 #400's audio evals and coordinate with #56/#398's model/engine comparisons.
 
-The existing tool p95 budget is <300 ms with a local database. The voice-to-voice
-median <=1.5 s in docs/20 remains **a proposal awaiting Maxi's confirmation**;
-do not silently convert it into an approved p95 target.
+The existing tool p95 budget is <300 ms with a local database. The end-to-end
+target is **p50 1.5 s and p95 2.5 s** from the end of the caller's speech to the
+first audible answer (Maxi, 27.11.2026, by popup on #550).
+
+### Result of 28.11.2026 (#550)
+
+`python -m evals.latency` (the harness, its stages and what it does not model are
+in its docstring) in the image of `voice` on the workbench, commit
+`ee21403dd9cac42cd21928990d831a20c4b3c21f`: AMD Ryzen 9 7950X3D (32 threads),
+one RTX 4080 (16 GB, driver 621.01) shared by the ear and the model, Python 3.12.15,
+faster-whisper 1.2.1 with CTranslate2 4.8.3 (large-v3-turbo on the card), Piper
+1.8.0 with onnxruntime 1.31.0 (the agent's default voice on the CPU), the model
+`qwen3.6-35b-a3b` (`Qwen3.6-35B-A3B-UD-IQ4_XS.gguf`) on llama.cpp `b1-51ce9c1` with
+`--parallel 1`, `reasoning_effort` none. Every call is the product's path:
+`CallSession` with the service's ear and mouth, `CallHandler` with the model and the
+tools on a scratch database with the eval menu. Synthetic only: six eval cases
+(`abholung_0001`, `_0058`, `_0076`, `lieferung_0005`, `reservierung_0001`, `_0036`),
+their caller lines spoken by `de_DE-kerstin-low` through the modelled line, streamed
+on real time with line noise between them. Six rounds per level, one run (24 min).
+
+| Simultaneous calls | Turns answered / not heard | p50 / p95 total | Model share of a turn (p50) | Without the model p50 / p95 | Model per hop p50 / p95 | Turns over 10 s |
+|---|---|---|---|---|---|---|
+| 1 | 27 / 3 | 5.22 / 7.80 s | 72 % | 1.48 / 1.65 s | 1.99 / 3.51 s | 0 |
+| 2 | 52 / 1 | 7.08 / 10.85 s | 78 % | 1.50 / 2.24 s | 2.69 / 4.10 s | 6 |
+| 3 | 68 / 3 | 7.60 / 11.44 s | 81 % | 1.41 / 2.29 s | 3.24 / 5.09 s | 15 |
+
+The stages, p50 / p95 in seconds; they are consecutive time stamps on the critical
+path and add up to the total, so nothing is counted twice:
+
+| Calls | Turn end | Wait for the ear | Ear | Core: model | Core: tools | Core: Python and DB | Mouth (whole sentence) | Line to first audible frame |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 0.77 / 0.79 | 0 / 0 | 0.53 / 0.62 | 3.87 / 6.11 | 0.009 / 0.027 | 0.004 / 0.007 | 0.08 / 0.21 | 0.06 / 0.29 |
+| 2 | 0.77 / 0.80 | 0 / 0 | 0.50 / 1.28 | 5.44 / 9.43 | 0.011 / 0.030 | 0.004 / 0.008 | 0.10 / 0.25 | 0.06 / 0.28 |
+| 3 | 0.77 / 0.81 | 0 / 0.13 | 0.34 / 1.34 | 5.98 / 9.99 | 0.009 / 0.025 | 0.004 / 0.007 | 0.09 / 0.28 | 0.08 / 0.30 |
+
+The handoff from the ear to the core and from the mouth to the line took under 5 ms.
+A turn makes 1.9 to 2.0 model requests on average (one to four).
+
+- **The target is missed at every level, and the model is the dominant part, with
+  high confidence.** Not one of 147 answered turns was within 2.5 s. The model's
+  requests, timed around `next_turn` (HTTP and the client's parsing included), take
+  72 to 81 % of a turn. With two and three calls the one slot of the model server
+  (`--parallel 1`) queues the calls, and a request likely finds the slot's cache
+  holding the other call's conversation (inferred, not measured per request): the
+  time per request grows from 2.0 to 3.2 s, and 10 of the 30 calls at two and three went to
+  the team, 9 of them because a model request ran past the 10 s turn deadline
+  (`model failed, handing over to the team`; rule 5 held, every call ended with the
+  team or the agent). The workbench model is not the operation's (#920, docs/18;
+  the measured model figures are posted there).
+- **Without the model, the path already takes the target's median.** Turn end
+  0.77 s (the ear's 0.7 s of silence by design, plus its 32 ms windows), the ear 0.3
+  to 0.5 s, the mouth and the line about 0.15 s: 1.41 to 1.50 s p50. The target
+  leaves almost nothing for the model unless the turn end or the ear gets shorter
+  too (#1104). The ear's p95 grows with simultaneous calls while the wait for its lock stays
+  at most 0.13 s: likely the graphics card shared with the model (15.7 of 16 GB
+  used), not profiled on the card.
+- **Python is not the bottleneck.** The core's own work outside the model and the
+  tools is 4 ms p50 (8 ms p95), the tools 9 to 11 ms p50 (under 30 ms p95, inside
+  the 300 ms budget), the CPU time of the call's thread 10 ms per turn (20 ms p95).
+  The whole process used 0.4, 0.7 and 0.9 cores on average of 32 at one, two and
+  three calls, at most 1.7 GB resident; its short peaks of 18 to 22 cores are the
+  thread pools of the native engines. No queue, lock contention, memory pressure or
+  repeated serialization showed in the session or the core. **No rewrite**: no
+  Python hotspot exists to profile, and #551 stays blocked.
+- **Joining a sentence before it plays costs little.** The mouth's first piece came
+  after 0.05 s, the whole sentence after 0.08 to 0.10 s (p50): streaming the
+  pieces would save about 0.04 s.
+- **Cold and warm.** A fresh process with a warm model answered its first turn in
+  3.47 s, inside the warm first turns (p50 4.76 s at one call): loading the engines
+  at the start leaves no penalty. A model that had slept (llama.cpp
+  `--sleep-idle-seconds 600` on the workbench) is a different case: twice, at 05:15
+  and 05:53 UTC after more than ten idle minutes, the first request took 10.0 s
+  while the model loaded again, ran into the 10 s turn deadline, and the call
+  went to the team (11.4 and 11.5 s to the handover sentence). The first caller
+  after a quiet spell on the workbench reaches the team, not the agent (#1105).
+- **Limits.** One run on Maxi's PC with its local model, not the server of G1; the
+  hop from Asterisk to the caller's telephone (network, the router, the phone's
+  jitter buffer) is not modelled; one synthetic caller voice and six scenarios on
+  the eval menu at one instant; 7 of 154 caller lines ("Nein, danke.", "Auf Kaya.",
+  "Ja, passt so.") were not heard as an utterance by the ear, a recognition limit
+  of short lines known from the audio evals (docs/20 §11, 29.10.2026), counted as
+  not heard and left out of the times.
+
+Rerun it on the workbench (the speech kit's model files, the model on port 8080):
+
+    docker compose --profile voice run --rm --no-deps --user "$(id -u):$(id -g)" \
+      -e HOME=/tmp -v "$PWD:/app" -w /app \
+      -e LLM_BASE_URL=http://host.docker.internal:8080/v1 -e GIT_SHA="$(git rev-parse HEAD)" \
+      voice python -m evals.latency --run-dir evals/reports/latency [--calls 1,2,3] [--rounds 6]
 
 [Issue #551](https://github.com/Maeximilion/Maex-Voice-Agent/issues/551), T-10.15,
 is low priority, carries `status: blocked`, and is natively blocked by #550.
