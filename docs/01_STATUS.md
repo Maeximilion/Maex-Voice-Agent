@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 28.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.131
+> Status: 28.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.132
 
 ---
 
@@ -183,6 +183,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.132 · 28.11.2026:** Chain round 4 item 34 (docs/24): one real-model run (`qwen3.6-35b-a3b`, cases 50/116, targets 3/27, three ad hoc dialogs) measured the seven docs/24 rows that waited for a real model; a taken-back wish (3 of 3) and a removal joined to the answer to "Wogegen?" (5 of 5, #1107) show up, two options on one dish do not (2 of 2), an announced order (2 of 85) and a dropped number (2 of 116) are rare, the table-details row shows in the state only, the in-order allergy question is not reached
 - **v2.69.131 · 28.11.2026:** Chain round 4 item 19 (#550, T-10.14): end-to-end voice latency by stage on the workbench (`python -m evals.latency`), 1 to 3 simultaneous calls on the real ear, mouth and model; p50 / p95 5.2 / 7.8 s at one call against the target 1.5 / 2.5 s, the model dominant, the path without it 1.4 to 1.5 s, Python and the database a few milliseconds; no rewrite, #551 stays blocked
 - **v2.69.130 · 28.11.2026:** Chain round 4 item 33 (docs/24): a joining word between the dish and its wish („die 41, aber ohne Koriander", „die 47, aber mit Nudeln statt Reis") no longer stays in the dish part, so the dish is found and the wish read instead of nothing found
 - **v2.69.129 · 28.11.2026:** Chain round 4 item 31 (docs/24): behind a number "ich meine" or "meine ich" (also clipped, also next to a Chow Mein on the menu) takes the number before it back, and a card number behind words counts as one after the piece; the sentence asks, never books both. Corrections from or to a dish name, sound-alike words, "also", "äh" without its second comma and "doch 24" stay open in docs/24
