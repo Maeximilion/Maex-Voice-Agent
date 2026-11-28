@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 28.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.130
+> Status: 28.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.131
 
 ---
 
@@ -183,6 +183,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.131 · 28.11.2026:** Chain round 4 item 19 (#550, T-10.14): end-to-end voice latency by stage on the workbench (`python -m evals.latency`), 1 to 3 simultaneous calls on the real ear, mouth and model; p50 / p95 5.2 / 7.8 s at one call against the target 1.5 / 2.5 s, the model dominant, the path without it 1.4 to 1.5 s, Python and the database a few milliseconds; no rewrite, #551 stays blocked
 - **v2.69.130 · 28.11.2026:** Chain round 4 item 33 (docs/24): a joining word between the dish and its wish („die 41, aber ohne Koriander", „die 47, aber mit Nudeln statt Reis") no longer stays in the dish part, so the dish is found and the wish read instead of nothing found
 - **v2.69.129 · 28.11.2026:** Chain round 4 item 31 (docs/24): behind a number "ich meine" or "meine ich" (also clipped, also next to a Chow Mein on the menu) takes the number before it back, and a card number behind words counts as one after the piece; the sentence asks, never books both. Corrections from or to a dish name, sound-alike words, "also", "äh" without its second comma and "doch 24" stay open in docs/24
 - **v2.69.128 · 27.11.2026:** Chain round 4 item 32 (docs/24): "anstatt" in a wish is read as "statt", so "Nudeln anstatt Reis" matches the card option "Nudeln statt Reis" instead of being asked about; a sentence unclear with "statt" stays unclear with "anstatt" (hard rule 2)
