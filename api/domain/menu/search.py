@@ -32,6 +32,7 @@ import zlib
 from collections.abc import Callable
 from datetime import datetime
 from functools import partial
+from itertools import pairwise
 
 from sqlalchemy import ColumnElement, func, literal, or_, select
 from sqlalchemy.orm import InstrumentedAttribute, Session
@@ -522,25 +523,37 @@ def _takes_a_number_back(
     habe Zöliakie.", "die 13, zwei Cola") the piece takes nothing back, and the
     cut stays as before. Neither does a piece that hits a dish unclearly
     ("Ente" between two numbers is a dish to ask about), filler or a quantity
-    alone ("zweimal", "also"), nor a piece with a quantity, a price or a time of
-    its own ("zwei Cola", "für 8,50", "um 19 Uhr"): a correction carries none."""
-    card_numbers = [_leads_with_card_number(piece, card) for piece in pieces]
+    alone ("zweimal", "bitte"), nor a piece with a quantity, a price or a time
+    of its own ("zwei Cola", "für 8,50", "um 19 Uhr"): a correction carries
+    none.
+
+    Chain round 4 item 31 (docs/24), each only behind a number: "ich meine"
+    or "meine ich" takes back wherever it stands in the piece, read as words,
+    not by the search, which finds "Chow Mein" in "ich mein" ("die 23, ich
+    mein die 24", "die 23, die 24 meine ich", "die 23, die 24, meine ich");
+    and a card number behind words of its own counts as one after the piece
+    ("die 23, sorry, Pho Bo die 13"). "also" takes nothing back: "die 13,
+    also die 24" is as often "and also" as a correction (Codex PR #1098)."""
+    leads = [_leads_with_card_number(piece, card) for piece in pieces]
+    heads = [_words_before_card_number(piece, card) for piece in pieces]
     # Read once from each end instead of again for each piece (docs/24): is
     # there a card number in a piece after this one, and a number before it.
     after = [False] * len(pieces)
     for k in range(len(pieces) - 2, -1, -1):
-        after[k] = after[k + 1] or card_numbers[k + 1]
+        after[k] = after[k + 1] or leads[k + 1] or heads[k + 1] is not None
     before = False
     for k, piece in enumerate(pieces):
         number_before = before
-        before = before or card_numbers[k] or has_number(piece)
+        before = before or leads[k] or has_number(piece)
         if not number_before:
             continue
+        if _says_i_mean(_folded_words(piece)):
+            return True
         # "ich meine die 47": the number reading skips the words in front and
         # the piece hits the 47, so only those words are searched: hitting no
         # dish, they may take the number before them back (docs/24).
-        head = _words_before_card_number(piece, card)
-        if head is None and (card_numbers[k] or not after[k]):
+        head = heads[k]
+        if head is None and (leads[k] or not after[k]):
             continue
         text = piece if head is None else head
         # A quantity in front goes with the number ("doch zweimal die 24"), so
@@ -554,6 +567,24 @@ def _takes_a_number_back(
         except Ambiguous:
             continue
     return False
+
+
+# The forms of "meinen" that make a number a correction next to "ich", after
+# fold() ("ich meine", "ich meinte", the clipped "ich mein", "meine ich").
+# Read as words: the menu search would find "Chow Mein" in them and take them
+# for a dish; without the "ich" they are a possessive ("für meine Frau").
+_MEANT = frozenset({"mein", "meine", "meinte"})
+
+
+def _folded_words(text: str) -> list[str]:
+    return [fold(word).strip(".,;:!?") for word in text.split()]
+
+
+def _says_i_mean(words: list[str]) -> bool:
+    return any(
+        (a == "ich" and b in _MEANT) or (a in _MEANT and b == "ich")
+        for a, b in pairwise(words)
+    )
 
 
 def _leads_with_card_number(piece: str, card: CardFormat) -> bool:

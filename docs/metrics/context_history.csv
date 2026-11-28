@@ -111,3 +111,4 @@ date,task,session,model,calls,first,at_first_edit,last,peak
 2026-11-27,chain4-item25 correction without comma,6861f9f8-a84e-4ece-a7a7-51bc37ede320,claude-opus-5-5,120,105298,136822,309565,309565
 2026-11-27,chain4-item26 statt cut,207aa9d3-52ef-4ecc-81d4-3653e2bbe3a5,claude-opus-5-5,103,105342,147926,334823,334823
 2026-11-27,chain4-item30 allergy question names dish,989e5f93-1be8-473c-9ee5-773e7d85f5a3,claude-opus-5-5,127,105299,148202,315437,315437
+2026-11-28,chain round 4 item 31,af0932da-e071-4718-9d00-8c955c43bbd2,claude-opus-5-5,148,105311,149180,397390,397390

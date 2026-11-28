@@ -1583,6 +1583,152 @@ def test_a_spoken_correction_never_books_both(session, sushi, said, taken_back):
     assert not any(taken_back in part for part in clear), clear
 
 
+@pytest.fixture
+def near_words(session, tenant_id):
+    """The sushi menu with dishes a correction word fuzzily hits: "sorry" next
+    to "Mango Sorbet", "ne" next to "Nem Rán", "ich meine" next to "Chow
+    Mein"."""
+    rows = (
+        "S1;Lachs Nigiri;Sushi;4,50;;ja\n"
+        "S12;Thunfisch Maki;Sushi;5,90;;ja\n"
+        "60;Mango Sorbet;Desserts;4,50;;ja\n"
+        "61;Nem Rán;Vorspeisen;5,50;;ja\n"
+        "62;Chow Mein;Hauptgerichte;11,50;;ja\n"
+    )
+    plan = parse(
+        {MENU_FILE: KARTE[MENU_FILE] + rows, ALIASES_FILE: KARTE[ALIASES_FILE]}
+    )
+    assert plan.ok, plan.errors
+    apply(session, tenant_id, plan, now=NOW)
+    return tenant_id
+
+
+# docs/24 "Spoken corrections that still book both numbers" (chain round 4
+# item 31): the shapes the deep reviews of 23.11. and 27.11.2026 found that
+# hold a card number on both sides of the correction.
+_TAKEN_BACK = [
+    ("die 23, die 24 meine ich", "23"),
+    ("die 23, die 24 meinte ich", "23"),
+    ("die 23, die 24, meine ich", "23"),
+    ("die 23, die 24 mein ich", "23"),
+    ("die 23, die 24 meinte ich doch", "23"),
+    ("die 23, die 24 mit Reis meine ich", "23"),
+    ("die 23, ich meine die 24 danke", "23"),
+    ("die 23, ich mein die 24", "23"),
+    ("die 23, ich mein, die 24", "23"),
+    ("die 23, sorry, Pho Bo die 13", "23"),
+    ("die 23, sorry und eine Erdnussallergie, die 24", "23"),
+    ("die 23, sorry, die 24 und eine Erdnussallergie", "23"),
+]
+
+
+@pytest.mark.parametrize(("said", "taken_back"), _TAKEN_BACK)
+def test_a_correction_takes_the_number_before_it_back(session, sushi, said, taken_back):
+    """The sentence asks instead of booking the corrected number."""
+    clear = _clear_parts(session, sushi, said)
+    assert len(clear) < 2, clear
+    assert not any(taken_back in part for part in clear), clear
+
+
+@pytest.mark.parametrize(
+    ("said", "taken_back"),
+    [
+        ("die 23, ich meine die 24", "23"),
+        ("die 23, ich meinte die 24", "23"),
+        ("die 23, ich meine 24", "23"),
+        ("die 23, ich mein die 24", "23"),
+        ("die 23, ich mein, die 24", "23"),
+        ("die 23, die 24 meine ich", "23"),
+    ],
+)
+def test_a_form_of_meinen_takes_back_next_to_chow_mein(
+    session, near_words, said, taken_back
+):
+    """On a menu with "Chow Mein" the search finds a dish in "ich mein", so
+    the forms of "meinen" are read as words; "die 23, ich mein, die 24" booked
+    the 23, Chow Mein and the 24."""
+    clear = _clear_parts(session, near_words, said)
+    assert len(clear) < 2, clear
+    assert not any(taken_back in part for part in clear), clear
+
+
+@pytest.mark.parametrize("said", ["die 23, doch 24", "die 23, doch 24 danke"])
+def test_a_second_number_the_number_reading_refuses_is_never_booked(
+    session, sushi, said
+):
+    """Left open in docs/24: the number reading takes no number from "doch
+    24", so the 23 stays clear and the rest is not found; never both."""
+    assert _clear_parts(session, sushi, said) == ["die 23"]
+
+
+@pytest.mark.parametrize(
+    ("said", "clear"),
+    [
+        # Item 31's deep review: normal orders a broader version asked about.
+        # Each keeps the cut of main before item 31 (as computed there).
+        ("Ja, also, die 13 und die 24", ["die 13", "die 24"]),
+        (
+            "Guten Tag, also ich hätte gerne die 13 und die 24",
+            ["also ich hätte gerne die 13", "die 24"],
+        ),
+        (
+            "Hallo, ich hätte gern äh die 13 und die 24",
+            ["ich hätte gern äh die 13", "die 24"],
+        ),
+        ("Falsch, ich meinte die Nummer 24.", ["ich meinte die Nummer 24"]),
+        ("Okay, super, dann die 13", ["dann die 13"]),
+        (
+            "Sind bei den Sommerrollen Garnelen drin? Ach, steht ja im Namen, dann zweimal die 24.",
+            ["dann zweimal die 24"],
+        ),
+        ("die 13 und äh die 24", ["die 13", "äh die 24"]),
+        (
+            "zweimal die 13 und ähm einmal die 24",
+            ["zweimal die 13", "ähm einmal die 24"],
+        ),
+        ("die 13, die 24 äh und die 12", ["die 13", "die 24 äh", "die 12"]),
+        ("die 13 und die 24 genau", ["die 13", "die 24 genau"]),
+        ("die 23 und die 24 wäre das", ["die 23", "die 24 wäre das"]),
+        ("die 13 und die 25 g", ["die 13", "die 25 g"]),
+        ("die 13 und die 24 für meine Frau", ["die 13"]),
+        ("die 13, die 24 für meine Frau, die 12", ["die 13", "die 12"]),
+        ("die 13 und die 24 für meine Frau und die 12", ["die 13", "die 12"]),
+        ("die 13, die Sommerrollen für meine Frau und die 12", ["die 13", "die 12"]),
+        (
+            "die 13, meine Adresse ist Hauptstraße 5, und die 24",
+            ["die 13", "und die 24"],
+        ),
+        ("die 13, also die 24", ["die 13", "also die 24"]),
+        ("die 13, also dann noch die 24", ["die 13", "also dann noch die 24"]),
+        ("die 13 und dann also noch die 24", ["die 13", "dann also noch die 24"]),
+        ("die 13, also, und dann noch die 24", ["die 13", "und dann noch die 24"]),
+        ("die 13, also und dann die 24", ["die 13", "dann die 24"]),
+        ("die 13 und auch die Sommerrollen", ["die 13", "auch die Sommerrollen"]),
+        ("die 13 und als Vorspeise die Sommerrollen", ["die 13"]),
+        ("die 13, für meine Frau die Sommerrollen", ["die 13"]),
+        (
+            "die 13, ich nehme die Sommerrollen",
+            ["die 13", "ich nehme die Sommerrollen"],
+        ),
+        (
+            "die 13, eine Frühlingsrolle und die 24",
+            ["die 13", "eine Frühlingsrolle", "die 24"],
+        ),
+        ("die 13, Fruehlingsrollen und die 24", ["die 13", "die 24"]),
+        (
+            "Pho Bo, ich habe eine Erdnussallergie und die 23",
+            ["Pho Bo, ich habe eine Erdnussallergie", "die 23"],
+        ),
+        ("Pho Bo und äh die Sommerrollen", ["Pho Bo", "äh die Sommerrollen"]),
+    ],
+)
+def test_a_normal_order_is_cut_as_before_item_31(session, sushi, said, clear):
+    """ "meine" as a possessive, "also", a pause, a greeting in front and a
+    dish said in other words take nothing back; only "ich meine" and "meine
+    ich" do."""
+    assert _clear_parts(session, sushi, said) == clear
+
+
 @pytest.mark.parametrize(
     "said",
     [

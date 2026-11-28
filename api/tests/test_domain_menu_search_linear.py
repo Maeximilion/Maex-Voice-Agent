@@ -280,9 +280,17 @@ def test_takes_a_number_back_matches_the_old_version(card: CardFormat) -> None:
             (old, old_calls) != (new, new_calls)
             and not _numbered_wish(pieces, card)
             and not _words_before_a_number(pieces, card)
+            and not _item_31_words(pieces)
         ):
             differ.append((sentence, old, new, old_calls, new_calls))
     assert differ == []
+
+
+def _item_31_words(pieces: list[str]) -> bool:
+    """Chain round 4 item 31 (docs/24) reads "ich meine" or "meine ich" as
+    words, on purpose; the old version searched them or skipped them as
+    filler. Only sentences with such a pair may differ."""
+    return any(search._says_i_mean(search._folded_words(p)) for p in pieces)
 
 
 def _numbered_wish(pieces: list[str], card: CardFormat) -> bool:
